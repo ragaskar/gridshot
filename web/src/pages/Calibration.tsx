@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   calibrateIntrinsics,
   deleteAllDeviceProfiles,
   deleteDeviceProfile,
   getDeviceProfiles,
   getMats,
+  inspectCalibrationSignatures,
+  type CaptureSignature,
   type DeviceProfileSummary,
   type IntrinsicsCalibrationResult,
   type Mat,
+  type SignatureReport,
+  type SignatureRow,
 } from "../api";
 import { useApp } from "../state";
 
@@ -21,12 +25,18 @@ export function Calibration() {
   const [matId, setMatId] = useState("");
   const [name, setName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [report, setReport] = useState<SignatureReport | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectError, setInspectError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [result, setResult] = useState<IntrinsicsCalibrationResult | null>(
     null,
   );
+  // Only the newest selection's report may land: a large batch inspected
+  // before a small one would otherwise overwrite it out of order.
+  const inspectToken = useRef(0);
 
   useEffect(() => {
     Promise.all([getMats(), getDeviceProfiles()])
@@ -57,13 +67,41 @@ export function Calibration() {
     };
   }, [result]);
 
+  const minViews = report?.min_views ?? MIN_VIEWS;
+  const matchingFiles = useMemo(() => {
+    if (!report) return files;
+    return report.rows
+      .filter((row) => row.matches)
+      .map((row) => files[row.index - 1])
+      .filter((file): file is File => file != null);
+  }, [report, files]);
+
+  async function selectFiles(chosen: File[]) {
+    setFiles(chosen);
+    setReport(null);
+    setInspectError(null);
+    const token = ++inspectToken.current;
+    if (chosen.length === 0) return;
+    setInspecting(true);
+    try {
+      const value = await inspectCalibrationSignatures(chosen);
+      if (token === inspectToken.current) setReport(value);
+    } catch (reason) {
+      if (token === inspectToken.current) {
+        setInspectError((reason as Error).message);
+      }
+    } finally {
+      if (token === inspectToken.current) setInspecting(false);
+    }
+  }
+
   async function runCalibration() {
-    if (!matId || files.length < MIN_VIEWS) return;
+    if (!matId || matchingFiles.length < minViews) return;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const value = await calibrateIntrinsics(files, matId, name);
+      const value = await calibrateIntrinsics(matchingFiles, matId, name);
       setResult(value);
       setProfiles((current) => [
         value.profile,
@@ -226,16 +264,29 @@ export function Calibration() {
                 multiple
                 disabled={busy}
                 onChange={(event) =>
-                  setFiles(Array.from(event.target.files ?? []))
+                  void selectFiles(Array.from(event.target.files ?? []))
                 }
               />
               <span className="font-mono text-xs text-muted block mt-2">
-                {files.length} selected · {MIN_VIEWS} minimum ·{" "}
+                {files.length} selected · {minViews} minimum ·{" "}
                 {RECOMMENDED_VIEWS}+ recommended
               </span>
             </label>
 
-            {files.length > 0 && (
+            {inspecting && (
+              <p className="font-mono text-xs text-muted">
+                Reading capture settings…
+              </p>
+            )}
+
+            {inspectError && (
+              <p className="font-mono text-xs text-orange-text" role="alert">
+                Could not read capture settings: {inspectError}. Calibration
+                will still check them when it runs.
+              </p>
+            )}
+
+            {files.length > 0 && !inspecting && !report && (
               <div className="border border-line bg-paper-2 px-3 py-2 max-h-36 overflow-auto">
                 {files.map((file, index) => (
                   <div
@@ -251,14 +302,23 @@ export function Calibration() {
               </div>
             )}
 
+            {report && <SignatureTable report={report} />}
+
             <button
               className="btn btn-primary"
               disabled={
-                busy || !matId || files.length < MIN_VIEWS
+                busy ||
+                inspecting ||
+                !matId ||
+                matchingFiles.length < minViews
               }
               onClick={runCalibration}
             >
-              {busy ? "Calibrating…" : "Create camera profile"}
+              {busy
+                ? "Calibrating…"
+                : report && report.matching_count < report.total
+                  ? `Calibrate with ${matchingFiles.length} matching photos`
+                  : "Create camera profile"}
             </button>
           </div>
         </section>
@@ -382,6 +442,124 @@ export function Calibration() {
         )}
       </section>
     </div>
+  );
+}
+
+function text(value: string | null): string {
+  return value && value.trim() ? value : "—";
+}
+
+function number(value: number | null, digits: number, unit = ""): string {
+  return value == null ? "—" : `${value.toFixed(digits)}${unit}`;
+}
+
+const SIGNATURE_COLUMNS: {
+  key: string;
+  label: string;
+  value: (signature: CaptureSignature) => string;
+}[] = [
+  { key: "device_make", label: "Make", value: (s) => text(s.device_make) },
+  { key: "device_model", label: "Model", value: (s) => text(s.device_model) },
+  { key: "lens_model", label: "Lens", value: (s) => text(s.lens_model) },
+  {
+    key: "image_size",
+    label: "Size",
+    value: (s) => `${s.image_size[0]}×${s.image_size[1]}`,
+  },
+  {
+    key: "orientation_deg",
+    label: "Orient",
+    value: (s) => `${s.orientation_deg}°`,
+  },
+  { key: "mirrored", label: "Mirror", value: (s) => (s.mirrored ? "yes" : "no") },
+  { key: "focal_mm", label: "Focal", value: (s) => number(s.focal_mm, 2, "mm") },
+  {
+    key: "focal_35mm",
+    label: "35mm eq",
+    value: (s) => number(s.focal_35mm, 1, "mm"),
+  },
+  {
+    key: "digital_zoom_ratio",
+    label: "Zoom",
+    value: (s) => number(s.digital_zoom_ratio, 2, "×"),
+  },
+];
+
+function SignatureTable({ report }: { report: SignatureReport }) {
+  const allMatch = report.matching_count === report.total;
+  return (
+    <div>
+      <div
+        className={`font-mono text-xs mb-2 ${
+          report.can_calibrate ? "text-olive" : "text-red"
+        }`}
+        role="status"
+      >
+        {allMatch
+          ? `All ${report.total} photos share one capture setup.`
+          : `${report.matching_count} of ${report.total} photos share the ` +
+            "majority capture setup."}
+        {!report.can_calibrate &&
+          ` Calibration needs ${report.min_views}; replace the mismatched ` +
+            "photos and reselect."}
+      </div>
+      <div className="border border-line bg-paper-2 max-h-64 overflow-auto">
+        <table className="w-full font-mono text-xs border-collapse">
+          <thead>
+            <tr className="text-muted text-left">
+              <th className="px-2 py-1 font-normal">#</th>
+              <th className="px-2 py-1 font-normal">Photo</th>
+              <th className="px-2 py-1 font-normal">Match</th>
+              {SIGNATURE_COLUMNS.map((column) => (
+                <th key={column.key} className="px-2 py-1 font-normal">
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {report.rows.map((row) => (
+              <SignatureTableRow key={row.index} row={row} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="font-mono text-xs text-muted mt-2">
+        Photos match field by field, within tolerance (focal ±0.05 mm, 35 mm eq
+        ±0.5 mm, zoom ±0.01×); there is no single signature value to compare.
+        Differing fields are underlined.
+      </p>
+    </div>
+  );
+}
+
+function SignatureTableRow({ row }: { row: SignatureRow }) {
+  const differing = new Set(row.mismatch_fields);
+  return (
+    <tr
+      className={`border-t border-line ${
+        row.matches ? "text-olive" : "text-red"
+      }`}
+      title={row.reason || undefined}
+    >
+      <td className="px-2 py-1">{String(row.index).padStart(2, "0")}</td>
+      <td className="px-2 py-1 max-w-[14ch] truncate" title={row.name}>
+        {row.name}
+      </td>
+      <td className="px-2 py-1 whitespace-nowrap">
+        {row.matches ? "● match" : "● differs"}
+      </td>
+      {SIGNATURE_COLUMNS.map((column) => (
+        <td
+          key={column.key}
+          className={`px-2 py-1 whitespace-nowrap ${
+            differing.has(column.key) ? "underline decoration-dotted" : ""
+          }`}
+        >
+          {column.value(row.signature)}
+        </td>
+      ))}
+    </tr>
   );
 }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -23,6 +24,7 @@ ROUTES: tuple[RouteSpec, ...] = (
     ("GET", "/api/device-profiles", "device_profiles"),
     ("DELETE", "/api/device-profiles", "device_profiles_delete_all"),
     ("DELETE", "/api/device-profiles/{device_id}", "device_profile_delete"),
+    ("POST", "/api/calibration/signatures", "calibration_signatures"),
     ("POST", "/api/calibration/intrinsics", "calibration_intrinsics"),
 )
 
@@ -147,6 +149,64 @@ def device_profile_delete(device_id: str) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"deleted": device_id}
+
+
+def signature_row_json(row) -> dict:
+    return {
+        "index": row.index,
+        "name": row.name,
+        "matches": row.matches,
+        "mismatch_fields": list(row.mismatch_fields),
+        "reason": row.reason,
+        "signature": row.signature.model_dump(mode="json"),
+    }
+
+
+async def calibration_signatures(files: list[UploadFile] = File(...)) -> dict:
+    """Report every uploaded photo's capture signature without calibrating.
+
+    Reading EXIF is cheap next to board detection, so the SPA can show the
+    whole batch's agreement as soon as the photos are chosen. Pixels are
+    released per photo — a 20-shot batch would otherwise sit in memory at once.
+    """
+    owner = _owner()
+    if not files:
+        raise HTTPException(
+            status_code=422, detail="upload at least one calibration photo"
+        )
+
+    signatures = []
+    names: list[str] = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for index, upload in enumerate(files, start=1):
+            name = upload.filename or f"view-{index:03d}"
+            path = Path(tmpdir) / f"view-{index:03d}{owner._photo_ext(upload.filename)}"
+            path.write_bytes(await upload.read())
+            names.append(name)
+            try:
+                source = owner.ingest_mod.load(path)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{name}: could not read image ({exc})",
+                ) from exc
+            signatures.append(owner.devices_mod.signature_for(source))
+            del source
+
+    report = owner.devices_mod.build_signature_report(signatures, names)
+    minimum = owner.calibrate_mod.MIN_INTRINSICS_VIEWS
+    return {
+        "rows": [owner._signature_row_json(row) for row in report.rows],
+        "canonical_signature": (
+            report.canonical.model_dump(mode="json")
+            if report.canonical is not None
+            else None
+        ),
+        "matching_count": report.matching_count,
+        "total": len(report.rows),
+        "min_views": minimum,
+        "can_calibrate": report.matching_count >= minimum,
+    }
 
 
 async def calibration_intrinsics(

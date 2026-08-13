@@ -260,6 +260,44 @@ export async function deleteAllDeviceProfiles(): Promise<number> {
   return data.deleted;
 }
 
+export interface SignatureRow {
+  index: number;
+  name: string;
+  matches: boolean;
+  mismatch_fields: string[];
+  reason: string;
+  signature: CaptureSignature;
+}
+
+export interface SignatureReport {
+  rows: SignatureRow[];
+  canonical_signature: CaptureSignature | null;
+  matching_count: number;
+  total: number;
+  min_views: number;
+  can_calibrate: boolean;
+}
+
+export async function inspectCalibrationSignatures(
+  files: File[],
+): Promise<SignatureReport> {
+  const fd = new FormData();
+  files.forEach((file) => fd.append("files", file));
+  const r = await fetch("/api/calibration/signatures", {
+    method: "POST",
+    body: fd,
+  });
+  const data = await r.json().catch(() => ({ detail: r.statusText }));
+  if (!r.ok) {
+    throw new Error(
+      typeof data.detail === "string"
+        ? data.detail
+        : "capture signature check failed",
+    );
+  }
+  return data as SignatureReport;
+}
+
 export async function calibrateIntrinsics(
   files: File[],
   matId: string,

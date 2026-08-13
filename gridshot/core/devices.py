@@ -400,50 +400,168 @@ def find_profile(
     return select_profile(signature).profile
 
 
-def same_capture_stream(
+STREAM_NUMERIC_TOLERANCES: tuple[tuple[str, float], ...] = (
+    ("focal_mm", 0.05),
+    ("focal_35mm", 0.5),
+    ("digital_zoom_ratio", 0.01),
+)
+
+MIRRORED_REASON = "mirrored captures cannot be used for calibration"
+
+
+def signature_mismatch_fields(
     left: CaptureSignature, right: CaptureSignature
-) -> bool:
-    if (
-        left.image_size != right.image_size
-        or left.orientation_deg != right.orientation_deg
-        or left.mirrored != right.mirrored
-    ):
-        return False
+) -> list[str]:
+    """Signature fields that keep two captures out of the same pixel stream.
+
+    Empty means the two are interchangeable for calibration. Named fields let
+    the caller say *why* a photo was rejected instead of only that it was.
+    """
+    fields: list[str] = []
+    if left.image_size != right.image_size:
+        fields.append("image_size")
+    if left.orientation_deg != right.orientation_deg:
+        fields.append("orientation_deg")
+    if left.mirrored != right.mirrored:
+        fields.append("mirrored")
     for field_name in ("device_make", "device_model", "lens_model"):
         if _clean(getattr(left, field_name)) != _clean(
             getattr(right, field_name)
         ):
-            return False
-    for field_name, tolerance in (
-        ("focal_mm", 0.05),
-        ("focal_35mm", 0.5),
-        ("digital_zoom_ratio", 0.01),
-    ):
+            fields.append(field_name)
+    for field_name, tolerance in STREAM_NUMERIC_TOLERANCES:
         left_value = getattr(left, field_name)
         right_value = getattr(right, field_name)
         if (left_value is None) != (right_value is None):
-            return False
-        if not _relative_close(
+            fields.append(field_name)
+        elif not _relative_close(
             left_value, right_value, absolute=tolerance, relative=0.01
         ):
-            return False
-    return True
+            fields.append(field_name)
+    return fields
+
+
+def same_capture_stream(
+    left: CaptureSignature, right: CaptureSignature
+) -> bool:
+    return not signature_mismatch_fields(left, right)
+
+
+@dataclass(frozen=True)
+class SignatureRow:
+    """One calibration photo judged against the canonical capture setup."""
+
+    index: int  # 1-based, matching the order the photos were supplied in
+    name: str
+    signature: CaptureSignature
+    matches: bool
+    mismatch_fields: tuple[str, ...] = ()
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class SignatureReport:
+    rows: tuple[SignatureRow, ...]
+    canonical: CaptureSignature | None
+    matching_count: int
+
+
+def build_signature_report(
+    signatures: list[CaptureSignature], names: list[str] | None = None
+) -> SignatureReport:
+    """Judge every capture against the setup the most photos agree on.
+
+    Unlike a first-mismatch abort, this reports on all photos in one pass so a
+    whole batch can be triaged at once. The canonical setup is the eligible
+    signature that the greatest number of eligible signatures match, ties going
+    to the earliest photo. Mirrored captures are never eligible — camera
+    calibration cannot use them — so they are always reported as mismatched.
+    """
+    if names is not None and len(names) != len(signatures):
+        raise ValueError("names must contain one label per signature")
+    labels = (
+        list(names)
+        if names is not None
+        else [f"view {index}" for index in range(1, len(signatures) + 1)]
+    )
+
+    eligible = [i for i, sig in enumerate(signatures) if not sig.mirrored]
+    canonical: CaptureSignature | None = None
+    best_count = 0
+    for i in eligible:
+        count = sum(
+            1
+            for j in eligible
+            if same_capture_stream(signatures[i], signatures[j])
+        )
+        if count > best_count:
+            best_count = count
+            canonical = signatures[i]
+
+    rows: list[SignatureRow] = []
+    for index, signature in enumerate(signatures):
+        if signature.mirrored or canonical is None:
+            rows.append(
+                SignatureRow(
+                    index=index + 1,
+                    name=labels[index],
+                    signature=signature,
+                    matches=False,
+                    mismatch_fields=("mirrored",),
+                    reason=MIRRORED_REASON,
+                )
+            )
+            continue
+        differing = signature_mismatch_fields(canonical, signature)
+        rows.append(
+            SignatureRow(
+                index=index + 1,
+                name=labels[index],
+                signature=signature,
+                matches=not differing,
+                mismatch_fields=tuple(differing),
+                reason=(
+                    ""
+                    if not differing
+                    else "differs from the majority capture setup: "
+                    + ", ".join(differing)
+                ),
+            )
+        )
+    return SignatureReport(
+        rows=tuple(rows),
+        canonical=canonical,
+        matching_count=sum(1 for row in rows if row.matches),
+    )
+
+
+def signature_report(
+    sources: list, names: list[str] | None = None
+) -> SignatureReport:
+    """Capture-signature report for already-loaded source images."""
+    if names is not None and len(names) != len(sources):
+        raise ValueError("names must contain one label per source")
+    return build_signature_report(
+        [signature_for(source) for source in sources], names
+    )
 
 
 def calibration_signature(sources: list) -> CaptureSignature:
     if not sources:
         raise ValueError("at least one calibration image is required")
-    first = signature_for(sources[0])
-    if first.mirrored:
-        raise ValueError("mirrored images cannot be used for calibration")
-    for index, source in enumerate(sources[1:], start=2):
-        candidate = signature_for(source)
-        if not same_capture_stream(first, candidate):
-            raise ValueError(
-                f"calibration image {index} has a different capture signature; "
-                "use one device, lens, resolution, orientation, and zoom"
-            )
-    return first
+    report = signature_report(sources)
+    mismatched = [row for row in report.rows if not row.matches]
+    if mismatched:
+        detail = "; ".join(
+            f"image {row.index} ({row.reason})" for row in mismatched
+        )
+        raise ValueError(
+            f"{len(mismatched)} of {len(report.rows)} calibration images do "
+            "not share one capture signature; use one device, lens, "
+            f"resolution, orientation, and zoom — {detail}"
+        )
+    assert report.canonical is not None
+    return report.canonical
 
 
 def next_revision(
