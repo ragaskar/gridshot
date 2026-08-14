@@ -35,8 +35,10 @@ done
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 
-mkdir -p config projects
-docker compose up -d --build segserver web
+# shellcheck source=scripts/lib-compose.sh
+source scripts/lib-compose.sh
+gridshot_compose_setup
+gridshot_compose up -d --build segserver web
 
 echo
 echo "GridShot is up:"

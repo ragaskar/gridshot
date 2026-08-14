@@ -83,7 +83,7 @@ The same accepted outline can produce three bin styles:
 
 ### Requirements
 
-- Docker with Compose
+- Docker with Compose, or rootless Podman in Docker-compatibility mode
 - NVIDIA Container Toolkit
 - NVIDIA Ampere-generation or newer GPU with at least **8 GB VRAM**
 - Tailscale CLI (optional) for the phone-friendly HTTPS endpoint used by `scripts/up`
@@ -99,6 +99,26 @@ device for the current launch:
 
 ```bash
 GRIDSHOT_GPU_DEVICE=nvidia.com/gpu=1 scripts/up --no-tailscale
+```
+
+#### Podman and other rootless engines
+
+`scripts/up` and `scripts/gridshot` handle this for you — no setup needed. They
+use `docker compose` when a `docker` binary exists (including podman-docker's
+shim) and `podman compose` otherwise; `GRIDSHOT_COMPOSE` overrides the choice.
+
+Bind mounts carry the `:z` SELinux shared label, which Docker ignores on hosts
+without SELinux. The one thing that differs by engine is the container user:
+rootless engines map container UID 0 to the host user, so `0:0` is what writes
+files you own, while under rootful Docker it would mean real root. The scripts
+ask the engine which it is and set `GRIDSHOT_USER` accordingly, warning rather
+than guessing quietly when no daemon answers.
+
+Driving compose directly instead? Set it yourself, in `.env` or the environment
+(see `.env.example`):
+
+```bash
+GRIDSHOT_USER=0:0 podman compose up -d --build segserver web
 ```
 
 ### 1. Create and verify a calibration mat
