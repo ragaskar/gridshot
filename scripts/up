@@ -13,6 +13,10 @@ Options:
   --public-bind   Bind the web port to 0.0.0.0 instead of 127.0.0.1, so
                   other machines on the LAN can reach it directly.
   -h, --help      Show this help message.
+
+Requires HF_TOKEN to be set (environment or .env); set
+DISABLE_TOKEN_CHECK=1 to skip that check, e.g. if models are already
+cached locally.
 EOF
 }
 
@@ -51,6 +55,27 @@ cd "$(dirname "$(readlink -f "$0")")/.."
 
 if "$public_bind"; then
     export GRIDSHOT_BIND_ADDR=0.0.0.0
+fi
+
+# segserver silently fails to load models without HF_TOKEN, which otherwise
+# only surfaces later as an inference error. Fail fast here instead, unless
+# the model is already cached locally and the check is deliberately skipped.
+if [ -z "${DISABLE_TOKEN_CHECK:-}" ] && [ -z "${HF_TOKEN:-}" ] \
+    && ! { [ -f .env ] && grep -qE '^[[:space:]]*HF_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]' .env; }; then
+    cat >&2 <<'EOF'
+
+########################################################################
+# ERROR: HF_TOKEN is not set.
+#
+# segserver needs a Hugging Face token to download models. Set HF_TOKEN
+# in your environment or in .env (see .env.example).
+#
+# To bypass this check (e.g. if models are already cached locally):
+#   DISABLE_TOKEN_CHECK=1 scripts/up
+########################################################################
+
+EOF
+    exit 1
 fi
 
 # shellcheck source=scripts/lib-compose.sh
