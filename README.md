@@ -81,6 +81,11 @@ The same accepted outline can produce three bin styles:
 
 ## Quick start
 
+> New to GridShot? [docs/usage](docs/usage/README.md) is a full first-tool
+> walkthrough — Hugging Face access, printing and verifying a mat, the empty-mat
+> reference photo, camera calibration, and a ChArUco/camera-setup primer — written
+> for someone who's never used the app before.
+
 ### Requirements
 
 - Docker with Compose, or rootless Podman in Docker-compatibility mode
