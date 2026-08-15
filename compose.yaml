@@ -43,7 +43,7 @@ services:
       GRIDSHOT_CONFIG_DIR: /app/config
       GRIDSHOT_SEGSERVER_URL: http://segserver:8801
     ports:
-      - "127.0.0.1:8800:8800"  # localhost only; tailscale serve fronts HTTPS
+      - "${GRIDSHOT_BIND_ADDR:-127.0.0.1}:8800:8800"  # localhost by default; scripts/up --public-bind widens this to 0.0.0.0
     volumes:
       - ./projects:/app/projects:z
       - ./config:/app/config:z

@@ -4,21 +4,27 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: scripts/up [--no-tailscale]
+Usage: scripts/up [--no-tailscale] [--public-bind]
 
 Build and start the GridShot web and segmentation services.
 
 Options:
   --no-tailscale  Skip Tailscale Serve configuration; use localhost only.
+  --public-bind   Bind the web port to 0.0.0.0 instead of 127.0.0.1, so
+                  other machines on the LAN can reach it directly.
   -h, --help      Show this help message.
 EOF
 }
 
 use_tailscale=true
+public_bind=false
 while (($#)); do
     case "$1" in
         --no-tailscale)
             use_tailscale=false
+            ;;
+        --public-bind)
+            public_bind=true
             ;;
         -h|--help)
             usage
@@ -33,7 +39,19 @@ while (($#)); do
     shift
 done
 
+# Best-effort guess at this host's LAN IP, for the --public-bind banner.
+# The route-to-1.1.1.1 trick reports the source address the kernel would use
+# for outbound traffic without sending any packet, so it works offline too.
+lan_ip() {
+    ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' && return
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
+
 cd "$(dirname "$(readlink -f "$0")")/.."
+
+if "$public_bind"; then
+    export GRIDSHOT_BIND_ADDR=0.0.0.0
+fi
 
 # shellcheck source=scripts/lib-compose.sh
 source scripts/lib-compose.sh
@@ -50,3 +68,11 @@ else
     echo "  Tailscale configuration skipped (--no-tailscale)"
 fi
 echo "  local:  http://localhost:8800"
+if "$public_bind"; then
+    ip=$(lan_ip || true)
+    if [ -n "$ip" ]; then
+        echo "  LAN:    http://$ip:8800  (--public-bind: bound to 0.0.0.0)"
+    else
+        echo "  LAN:    http://<this host's LAN IP>:8800  (--public-bind: bound to 0.0.0.0; couldn't auto-detect the IP)"
+    fi
+fi
