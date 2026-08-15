@@ -43,7 +43,8 @@ export type View =
   | "result"
   | "library"
   | "batch"
-  | "calibration";
+  | "calibration"
+  | "reference";
 
 interface AppState {
   view: View;

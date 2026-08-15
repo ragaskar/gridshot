@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from ._builder import RouteSpec, build_domain_router
 
@@ -21,6 +21,8 @@ ROUTES: tuple[RouteSpec, ...] = (
     ("GET", "/api/health/capabilities", "health_capabilities"),
     ("GET", "/api/health", "health"),
     ("GET", "/api/mats", "mats"),
+    ("POST", "/api/mats/{mat_id}/reference", "mat_reference_upload"),
+    ("GET", "/api/mats/{mat_id}/reference", "mat_reference_photo"),
     ("GET", "/api/device-profiles", "device_profiles"),
     ("DELETE", "/api/device-profiles", "device_profiles_delete_all"),
     ("DELETE", "/api/device-profiles/{device_id}", "device_profile_delete"),
@@ -107,9 +109,76 @@ def mats() -> list[dict]:
             "verified": profile.verified,
             "scale_x": profile.scale_x,
             "scale_y": profile.scale_y,
+            "has_reference": owner.mat_mod.reference_path(profile.mat_id).is_file(),
         }
         for profile in owner.mat_mod.list_profiles()
     ]
+
+
+async def mat_reference_upload(mat_id: str, photo: UploadFile = File(...)) -> dict:
+    """Store an empty-mat reference photo — tool photos are diffed against it
+    to locate tools for SAM segmentation. Mirrors `gridshot mat reference`."""
+    owner = _owner()
+    try:
+        profile = owner.mat_mod.load_profile(mat_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / f"reference{owner._photo_ext(photo.filename)}"
+        path.write_bytes(await photo.read())
+        try:
+            source = owner.ingest_mod.load(path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422, detail=f"could not read image ({exc})"
+            ) from exc
+        prepared = owner.devices_mod.prepare_image(source)
+
+    warnings = list(prepared.warnings)
+    device = prepared.profile
+    if device is None:
+        warnings.append(
+            "no device profile for this camera — reference will carry lens "
+            "distortion (calibrate the camera first for best results)"
+        )
+
+    try:
+        cal = owner.calibrate_mod.calibrate_image(
+            prepared.pixels,
+            profile,
+            K=prepared.K,
+            dist=None,
+            exif=source.exif,
+            device_profile_id=device.device_id if device else None,
+            device_profile_revision=device.revision if device else None,
+            capture_signature=prepared.signature,
+            intrinsics_source="profile" if device else None,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    warnings.extend(cal.warnings)
+
+    canonical = owner.diffseg_mod.canonical_warp(prepared.pixels, cal, profile.spec)
+    owner.mat_mod.save_reference(profile.mat_id, canonical)
+
+    return {
+        "mat_id": profile.mat_id,
+        "n_corners": cal.n_corners,
+        "reproj_rms_px": cal.reproj_rms_px,
+        "capture_signature": prepared.signature.model_dump(mode="json"),
+        "warnings": warnings,
+    }
+
+
+def mat_reference_photo(mat_id: str) -> FileResponse:
+    owner = _owner()
+    path = owner.mat_mod.reference_path(mat_id)
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404, detail="no reference photo stored for this mat"
+        )
+    return FileResponse(path)
 
 
 def device_profile_json(profile) -> dict:

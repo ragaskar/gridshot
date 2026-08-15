@@ -6,6 +6,7 @@ import { Result } from "./pages/Result";
 import { Library } from "./pages/Library";
 import { Batch } from "./pages/Batch";
 import { Calibration } from "./pages/Calibration";
+import { MatReference } from "./pages/MatReference";
 import { AppNavigation } from "./components/AppNavigation";
 import { getSession, type Session, type TraceResult } from "./api";
 
@@ -51,6 +52,7 @@ export function App() {
   else if (view === "library") page = <Library />;
   else if (view === "batch") page = <Batch />;
   else if (view === "calibration") page = <Calibration />;
+  else if (view === "reference") page = <MatReference />;
   else if (view === "editor") page = <Editor />;
   else if (view === "tracing") page = <Tracing />;
   else page = <Upload />;

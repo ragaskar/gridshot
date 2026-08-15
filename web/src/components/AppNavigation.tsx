@@ -9,6 +9,7 @@ const PRIMARY: { view: NavView; label: string }[] = [
   { view: "batch", label: "Batch ZIP" },
   { view: "library", label: "Library" },
   { view: "calibration", label: "Calibration" },
+  { view: "reference", label: "Mat Reference" },
 ];
 
 /** Persistent navigation for the stable application screens. Tool editing and

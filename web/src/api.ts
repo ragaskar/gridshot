@@ -176,6 +176,7 @@ export interface Mat {
   verified: boolean;
   scale_x: number;
   scale_y: number;
+  has_reference: boolean;
 }
 
 export async function getHealth(): Promise<Health> {
@@ -296,6 +297,37 @@ export async function inspectCalibrationSignatures(
     );
   }
   return data as SignatureReport;
+}
+
+export interface MatReferenceResult {
+  mat_id: string;
+  n_corners: number;
+  reproj_rms_px: number;
+  capture_signature: CaptureSignature;
+  warnings: string[];
+}
+
+export async function uploadMatReference(
+  matId: string,
+  photo: File,
+): Promise<MatReferenceResult> {
+  const fd = new FormData();
+  fd.append("photo", photo);
+  const r = await fetch(`/api/mats/${encodeURIComponent(matId)}/reference`, {
+    method: "POST",
+    body: fd,
+  });
+  const data = await r.json().catch(() => ({ detail: r.statusText }));
+  if (!r.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "reference upload failed",
+    );
+  }
+  return data as MatReferenceResult;
+}
+
+export function matReferencePhotoUrl(matId: string): string {
+  return `/api/mats/${encodeURIComponent(matId)}/reference`;
 }
 
 export async function calibrateIntrinsics(
