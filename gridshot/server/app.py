@@ -15,6 +15,7 @@ import stat
 import sys
 import threading
 import time
+import traceback
 import uuid
 import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -59,6 +60,20 @@ async def _library_schema_error(
     _request: Request, exc: library_mod.LibrarySchemaError
 ) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+# Any exception that reaches here wasn't anticipated by a route (those raise
+# HTTPException with a useful detail already). Single-user, no-auth app — the
+# tailnet ACL is the boundary, not obscurity — so the client is trusted with
+# the real error instead of a bare "Internal Server Error". Full traceback
+# still goes to stderr so it's in the container logs either way.
+@app.exception_handler(Exception)
+async def _unhandled_error(_request: Request, exc: Exception) -> JSONResponse:
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+    )
 
 # Process caches. Single-tool and batch source-of-truth state is durable on disk;
 # only segmentation embeddings and library edit scratch state remain ephemeral.
