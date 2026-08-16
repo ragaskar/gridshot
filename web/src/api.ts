@@ -135,6 +135,9 @@ export interface TraceResult {
     full_height_mm: number | null;
     clearance_mm: number;
     lip: boolean;
+    magnet_holes: boolean;
+    magnet_hole_diameter_mm: number;
+    magnet_hole_depth_mm: number;
     derivation_key: string;
     reserved_cells: [number, number][];
     available_cells: [number, number][];
@@ -685,6 +688,9 @@ export interface LibraryTool {
   lip: boolean;
   round_tool: boolean;
   finger_hole: boolean;
+  magnet_holes: boolean;
+  magnet_hole_diameter_mm: number;
+  magnet_hole_depth_mm: number;
   has_photo: boolean;
   source_project: string;
   source_tool: string;
@@ -890,6 +896,9 @@ export async function updateLibraryTool(
     pocket_depth_mm?: number | null;
     round_tool?: boolean;
     finger_hole?: boolean;
+    magnet_holes?: boolean;
+    magnet_hole_diameter_mm?: number;
+    magnet_hole_depth_mm?: number;
     outline?: Poly;
     raw_outline?: Poly;
     edit_source?: "sam" | "manual" | "physical";
@@ -988,11 +997,14 @@ export async function combinePreview(
   lip = true,
   overrides?: CombineToolOverride[] | null,
   binStyle: BinStyle = "pocket",
+  magnetHoles = false,
+  magnetHoleDiameterMm?: number | null,
+  magnetHoleDepthMm?: number | null,
 ): Promise<CombinePreview> {
   const r = await fetch("/api/library/combine/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1008,11 +1020,14 @@ export async function combinePreviewGlb(
   lip = true,
   overrides?: CombineToolOverride[] | null,
   binStyle: BinStyle = "pocket",
+  magnetHoles = false,
+  magnetHoleDiameterMm?: number | null,
+  magnetHoleDepthMm?: number | null,
 ): Promise<Blob> {
   const r = await fetch("/api/library/combine/preview.glb", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1028,11 +1043,14 @@ export async function combineLibrary(
   lip = true,
   overrides?: CombineToolOverride[] | null,
   binStyle: BinStyle = "pocket",
+  magnetHoles = false,
+  magnetHoleDiameterMm?: number | null,
+  magnetHoleDepthMm?: number | null,
 ): Promise<void> {
   const r = await fetch("/api/library/combine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1053,11 +1071,14 @@ export async function combineLibrarySlice(
   lip = true,
   overrides?: CombineToolOverride[] | null,
   binStyle: BinStyle = "pocket",
+  magnetHoles = false,
+  magnetHoleDiameterMm?: number | null,
+  magnetHoleDepthMm?: number | null,
 ): Promise<void> {
   const r = await fetch("/api/library/combine/slice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1101,6 +1122,9 @@ export interface GenerateParams {
   finger_hole: boolean;
   lip: boolean;
   round_tool?: boolean;
+  magnet_holes?: boolean;
+  magnet_hole_diameter_mm?: number;
+  magnet_hole_depth_mm?: number;
 }
 
 export async function startSession(
@@ -1199,6 +1223,11 @@ export async function sessionAddToLibrary(
   fd.append("finger_hole", String(params.finger_hole));
   fd.append("lip", String(params.lip));
   fd.append("round_tool", String(params.round_tool ?? false));
+  fd.append("magnet_holes", String(params.magnet_holes ?? false));
+  if (params.magnet_hole_diameter_mm != null)
+    fd.append("magnet_hole_diameter_mm", String(params.magnet_hole_diameter_mm));
+  if (params.magnet_hole_depth_mm != null)
+    fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/library`, { method: "POST", body: fd });
   if (!r.ok) {
@@ -1224,6 +1253,11 @@ export async function sessionGenerate(
   fd.append("finger_hole", String(params.finger_hole));
   fd.append("lip", String(params.lip));
   fd.append("round_tool", String(params.round_tool ?? false));
+  fd.append("magnet_holes", String(params.magnet_holes ?? false));
+  if (params.magnet_hole_diameter_mm != null)
+    fd.append("magnet_hole_diameter_mm", String(params.magnet_hole_diameter_mm));
+  if (params.magnet_hole_depth_mm != null)
+    fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/generate`, { method: "POST", body: fd });
   if (!r.ok) {

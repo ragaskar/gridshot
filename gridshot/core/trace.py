@@ -40,6 +40,9 @@ class TraceResult:
     bin_style: grid_mod.BinStyle = "pocket"
     overall_height_mm: float = 0.0
     lip: bool = True
+    magnet_holes: bool = False
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     tool_poly: Poly | None = None  # tool outline in the same bin frame as pocket
     thickness_mm: float = 0.0
     silhouette_height_mm: float = 0.0
@@ -620,6 +623,9 @@ def run(
     overall_height_mm: float | None = None,
     lip: bool = True,
     finger_hole: bool = False,
+    magnet_holes: bool = False,
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM,
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM,
     mat_id: str | None = None,
     out_dir: Path = Path("out"),
     stem: str | None = None,
@@ -682,6 +688,9 @@ def run(
         overall_height_mm=overall_height_mm,
         lip=lip,
         finger_hole=finger_hole,
+        magnet_holes=magnet_holes,
+        magnet_hole_diameter_mm=magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=magnet_hole_depth_mm,
         out_dir=out_dir,
         stem=stem or f"{photo.stem}-bin",
         warnings=warnings,
@@ -705,6 +714,9 @@ def finalize_bin(
     overall_height_mm: float | None = None,
     lip: bool = True,
     finger_hole: bool = False,
+    magnet_holes: bool = False,
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM,
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM,
     out_dir: Path = Path("out"),
     stem: str = "bin",
     warnings: list[str] | None = None,
@@ -764,6 +776,9 @@ def finalize_bin(
             lip=lip,
             finger_hole=finger_hole,
             round_tool=round_tool,
+            magnet_holes=magnet_holes,
+            magnet_hole_diameter_mm=magnet_hole_diameter_mm,
+            magnet_hole_depth_mm=magnet_hole_depth_mm,
         ),
         printer,
     )
@@ -784,6 +799,9 @@ def finalize_bin(
         finger_holes=fingers,
         lip=spec.lip,
         style=spec.bin_style,
+        magnet_holes=spec.magnet_holes,
+        magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
     )
     mesh = grid_mod.to_trimesh(solid)
     if not mesh.is_watertight:
@@ -849,6 +867,9 @@ def finalize_bin(
         bin_style=spec.bin_style,
         overall_height_mm=spec.overall_height_mm,
         lip=spec.lip,
+        magnet_holes=spec.magnet_holes,
+        magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
         tool_poly=tool_bin,
         thickness_mm=thickness_mm,
         silhouette_height_mm=thickness_mm,

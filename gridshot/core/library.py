@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from . import bench as bench_mod
 from . import derive as derive_mod
+from . import gridfinity as grid_mod
 from .models import Calibration, Poly, PrinterProfile, config_dir
 from .readiness import ArtifactProvenance, ReadinessReport
 
@@ -98,6 +99,9 @@ class LibraryTool(BaseModel):
     round_tool: bool = False  # domed/barrel → auto depth off ~2× widest-outline height
     finger_hole: bool = True  # full-depth pockets need a scallop to lift the tool out
     lip: bool = True
+    magnet_holes: bool = False
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     # stored photo + calibration → SAM re-editing against the image in the library
     has_photo: bool = False
     calibration: Optional[Calibration] = None
@@ -262,6 +266,9 @@ def derive_tool_spec(
             lip=tool.lip if lip is None else lip,
             finger_hole=tool.finger_hole,
             round_tool=tool.round_tool,
+            magnet_holes=tool.magnet_holes,
+            magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,
+            magnet_hole_depth_mm=tool.magnet_hole_depth_mm,
         ),
         printer,
     )

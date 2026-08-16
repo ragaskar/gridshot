@@ -89,7 +89,8 @@ The same accepted outline can produce three bin styles:
 > [docs/deployment.md](docs/deployment.md) (Docker vs. rootless Podman, SELinux,
 > LAN/remote access) and
 > [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md) (print-checking a
-> pocket fit before committing to the full bin).
+> pocket fit before committing to the full bin), and
+> [docs/magnet-holes.md](docs/magnet-holes.md) (adding magnet holes to a bin's feet).
 
 ### Requirements
 
@@ -311,6 +312,9 @@ Features added on top of the original public release, newest last:
   [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
 - "Re-open as current" button on each library card, to bring a previously
   saved tool's full details and downloads back as the app's current tool
+- Optional magnet holes (on/off, diameter, depth) at each foot corner,
+  configurable wherever a bin is generated — single-tool, library, combine,
+  and CLI (see [docs/magnet-holes.md](docs/magnet-holes.md))
 
 ## License
 

@@ -415,7 +415,39 @@ export function Library() {
                         >
                           Finger access: {t.finger_hole ? "on" : "off"}
                         </button>
+                        <button
+                          className={`px-2 py-1 border ${t.magnet_holes ? "text-teal border-teal" : "text-muted border-line"}`}
+                          style={{ borderRadius: 2 }}
+                          title="Cut magnet holes at each corner of every foot"
+                          onClick={() => patch(t.id, { magnet_holes: !t.magnet_holes }).catch(() => {})}
+                        >
+                          Magnet holes: {t.magnet_holes ? "on" : "off"}
+                        </button>
                       </div>
+                      {t.magnet_holes && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="min-w-0">
+                            <span className="block font-mono text-[9px] uppercase text-muted">Magnet diameter</span>
+                            <input
+                              aria-label="Magnet hole diameter in millimetres"
+                              className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                              type="number" step={0.1} min={0.1}
+                              defaultValue={t.magnet_hole_diameter_mm}
+                              onBlur={(e) => Number(e.target.value) !== t.magnet_hole_diameter_mm && patch(t.id, { magnet_hole_diameter_mm: Number(e.target.value) })}
+                            />
+                          </label>
+                          <label className="min-w-0">
+                            <span className="block font-mono text-[9px] uppercase text-muted">Magnet depth</span>
+                            <input
+                              aria-label="Magnet hole depth in millimetres"
+                              className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                              type="number" step={0.1} min={0.1} max={4.7}
+                              defaultValue={t.magnet_hole_depth_mm}
+                              onBlur={(e) => Number(e.target.value) !== t.magnet_hole_depth_mm && patch(t.id, { magnet_hole_depth_mm: Number(e.target.value) })}
+                            />
+                          </label>
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                         <label className="min-w-0">
                           <span className="block font-mono text-[9px] uppercase text-muted">Silhouette height</span>

@@ -312,7 +312,8 @@ On the **Capture** page:
 4. Pick a bin style (**Pocket**, **Stackable corral**, or **Live grid**) and adjust
    clearance/depth/height if the defaults don't fit your case — see the main
    README's [How it works](../../README.md#how-it-works) table for what each style
-   produces.
+   produces. Optional magnet holes (diameter/depth) are available here too — see
+   [docs/magnet-holes.md](../magnet-holes.md).
 5. Submit, then review/correct the segmentation in the editor before generating —
    the point of GridShot's whole pipeline is that you see and can fix the evidence
    rather than trust a black box.

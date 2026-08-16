@@ -36,6 +36,13 @@ FOOT_CHAMFER_TOP = 2.15  # z 2.6 → 4.75
 MIN_WALL = 2.0  # pocket to outer wall
 MIN_FLOOR = 1.2  # under-pocket floor above the base
 
+# Magnet holes: one per corner of every foot, per the gridfinity.xyz spec.
+FOOT_BOTTOM_SIZE = BIN_SIZE - 2 * (FOOT_CHAMFER_TOP + FOOT_CHAMFER_BOT)  # 35.6
+MAGNET_HOLE_INSET_FROM_EDGE_MM = 4.8  # hole centre inset from the foot's bottom edge
+MAGNET_HOLE_OFFSET_MM = FOOT_BOTTOM_SIZE / 2 - MAGNET_HOLE_INSET_FROM_EDGE_MM  # 13.0
+MAGNET_HOLE_DIAMETER_MM = 6.5
+MAGNET_HOLE_DEPTH_MM = 2.0
+
 # stacking lip, per gridfinity.xyz spec (gridfinity-rebuilt STACKING_LIP_LINE):
 # from the opening at the outer wall going down-inward: 1.9mm 45° chamfer,
 # 1.8mm vertical, 0.7mm 45° to the inner tip 2.6mm inside the wall face
@@ -401,6 +408,9 @@ def bin_solid(
     lip: bool = False,
     pockets: list[tuple[Poly, float]] | None = None,
     style: BinStyle = "pocket",
+    magnet_holes: bool = False,
+    magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
+    magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
 ) -> Manifold:
     """A Gridfinity pocket, corral, or live-grid tool holder.
 
@@ -451,12 +461,36 @@ def bin_solid(
 
     foot = _foot()
     feet = []
+    foot_centers = []
     for ix in range(gx):
         for iy in range(gy):
             cx = (ix - (gx - 1) / 2) * PITCH
             cy = (iy - (gy - 1) / 2) * PITCH
             feet.append(foot.translate((cx, cy, 0)))
+            foot_centers.append((cx, cy))
     solid = Manifold.batch_boolean([body, *feet], OpType.Add)
+
+    if magnet_holes:
+        if not math.isfinite(magnet_hole_diameter_mm) or magnet_hole_diameter_mm <= 0:
+            raise ValueError("magnet hole diameter must be > 0")
+        if not math.isfinite(magnet_hole_depth_mm) or magnet_hole_depth_mm <= 0:
+            raise ValueError("magnet hole depth must be > 0")
+        if magnet_hole_depth_mm >= BASE_H:
+            raise ValueError(
+                f"magnet hole depth {magnet_hole_depth_mm}mm must be less than "
+                f"the {BASE_H}mm foot height"
+            )
+        radius = magnet_hole_diameter_mm / 2
+        hole = Manifold.cylinder(
+            magnet_hole_depth_mm + EPS, radius, radius, CIRCULAR_SEGMENTS
+        ).translate((0, 0, -EPS))
+        holes = [
+            hole.translate((cx + hx, cy + hy, 0))
+            for cx, cy in foot_centers
+            for hx in (-MAGNET_HOLE_OFFSET_MM, MAGNET_HOLE_OFFSET_MM)
+            for hy in (-MAGNET_HOLE_OFFSET_MM, MAGNET_HOLE_OFFSET_MM)
+        ]
+        solid = solid - Manifold.batch_boolean(holes, OpType.Add)
 
     for entry in cuts:
         pk, depth = entry[0], entry[1]

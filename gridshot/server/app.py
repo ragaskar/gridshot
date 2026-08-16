@@ -844,6 +844,13 @@ def _result_payload(
             "lip": result_lip,
             "round_tool": round_tool,
             "finger_hole": finger_hole,
+            "magnet_holes": getattr(result, "magnet_holes", False),
+            "magnet_hole_diameter_mm": getattr(
+                result, "magnet_hole_diameter_mm", grid_mod.MAGNET_HOLE_DIAMETER_MM
+            ),
+            "magnet_hole_depth_mm": getattr(
+                result, "magnet_hole_depth_mm", grid_mod.MAGNET_HOLE_DEPTH_MM
+            ),
             "derivation_key": result.derivation_key,
             "reserved_cells": [
                 list(cell) for cell in getattr(result, "reserved_cells", [])
@@ -1150,6 +1157,9 @@ def session_generate(
     finger_hole: bool = Form(True),
     lip: bool = Form(True),
     round_tool: bool = Form(False),
+    magnet_holes: bool = Form(False),
+    magnet_hole_diameter_mm: float = Form(grid_mod.MAGNET_HOLE_DIAMETER_MM),
+    magnet_hole_depth_mm: float = Form(grid_mod.MAGNET_HOLE_DEPTH_MM),
     outline_variant: str = Form("recommended"),
 ) -> dict:
     sess = _single_session(sid)
@@ -1178,6 +1188,9 @@ def session_generate(
             finger_hole=finger_hole,
             lip=lip,
             round_tool=round_tool,
+            magnet_holes=magnet_holes,
+            magnet_hole_diameter_mm=magnet_hole_diameter_mm,
+            magnet_hole_depth_mm=magnet_hole_depth_mm,
             mat_id=sess["mat_id"],
             out_dir=proj,
             stem="bin",
@@ -1224,6 +1237,9 @@ def session_add_to_library(
     finger_hole: bool = Form(True),
     lip: bool = Form(True),
     round_tool: bool = Form(False),
+    magnet_holes: bool = Form(False),
+    magnet_hole_diameter_mm: float = Form(grid_mod.MAGNET_HOLE_DIAMETER_MM),
+    magnet_hole_depth_mm: float = Form(grid_mod.MAGNET_HOLE_DEPTH_MM),
     outline_variant: str = Form("recommended"),
 ) -> dict:
     """Save the accepted selection without constructing or exporting a bin."""
@@ -1289,6 +1305,9 @@ def session_add_to_library(
                 lip=lip,
                 finger_hole=finger_hole,
                 round_tool=round_tool,
+                magnet_holes=magnet_holes,
+                magnet_hole_diameter_mm=magnet_hole_diameter_mm,
+                magnet_hole_depth_mm=magnet_hole_depth_mm,
             ),
             bench_mod.load_profile() or bench_mod.default_profile(),
         )
@@ -1320,6 +1339,9 @@ def session_add_to_library(
         lip=lip,
         round_tool=round_tool,
         finger_hole=finger_hole,
+        magnet_holes=magnet_holes,
+        magnet_hole_diameter_mm=magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=magnet_hole_depth_mm,
         calibration=calibration,
         photo_src=PROJECTS / sid / "display.jpg",
         readiness=readiness,
@@ -1579,7 +1601,9 @@ def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
                lip=True, calibration=None, photo_src=None,
                round_tool=False, finger_hole=True, full_height=None,
                raw_outline=None, readiness=None, provenance=None,
-               outline_history=None, outline_revision=0):
+               outline_history=None, outline_revision=0,
+               magnet_holes=False, magnet_hole_diameter_mm=None,
+               magnet_hole_depth_mm=None):
     _render_thumb(thumb_points, library_mod.library_dir() / f"{tool_id}.png")
     has_photo = _store_lib_photo(tool_id, photo_src) if (photo_src and calibration is not None) else False
     outline_poly = contour_mod.Poly(**outline) if isinstance(outline, dict) else outline
@@ -1595,6 +1619,17 @@ def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
         clearance_mm=float(clearance or 1.0), bin_style=bin_style,
         pocket_depth_mm=depth,
         round_tool=bool(round_tool), finger_hole=bool(finger_hole), lip=bool(lip),
+        magnet_holes=bool(magnet_holes),
+        magnet_hole_diameter_mm=(
+            float(magnet_hole_diameter_mm)
+            if magnet_hole_diameter_mm is not None
+            else grid_mod.MAGNET_HOLE_DIAMETER_MM
+        ),
+        magnet_hole_depth_mm=(
+            float(magnet_hole_depth_mm)
+            if magnet_hole_depth_mm is not None
+            else grid_mod.MAGNET_HOLE_DEPTH_MM
+        ),
         has_photo=has_photo, calibration=calibration,
         source_project=project, source_tool=source_tool,
         readiness=readiness, provenance=provenance, created_ts=int(time.time()),
@@ -1646,6 +1681,9 @@ def library_add(project: str) -> dict:
             full_height=b.get("full_height_mm"),
             lip=b.get("lip", True), raw_outline=r.get("raw_poly"),
             round_tool=b.get("round_tool", False), finger_hole=b.get("finger_hole", True),
+            magnet_holes=b.get("magnet_holes", False),
+            magnet_hole_diameter_mm=b.get("magnet_hole_diameter_mm"),
+            magnet_hole_depth_mm=b.get("magnet_hole_depth_mm"),
             calibration=cal_full, photo_src=disp,
             readiness=stored_readiness, provenance=r.get("provenance")))
     else:
@@ -1995,6 +2033,9 @@ class LibraryUpdate(BaseModel):
     pocket_depth_mm: Optional[float] = Field(None, gt=0)  # null clears → auto
     round_tool: Optional[bool] = None  # domed/barrel → deeper auto pocket
     finger_hole: Optional[bool] = None  # scallop to lift a recessed tool out
+    magnet_holes: Optional[bool] = None
+    magnet_hole_diameter_mm: Optional[float] = Field(None, gt=0)
+    magnet_hole_depth_mm: Optional[float] = Field(None, gt=0)
     outline: Optional[dict] = None  # edited Poly from the outline editor
     raw_outline: Optional[dict] = None  # matching visible silhouette on the photo
     edit_source: Optional[Literal["sam", "manual", "physical"]] = None
@@ -2216,6 +2257,9 @@ def library_compose_preview_glb(req: ComposeRequest) -> Response:
             finger_holes=spec.finger_holes,
             lip=spec.lip,
             style=spec.bin_style,
+            magnet_holes=spec.magnet_holes,
+            magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
+            magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
         )
         mesh = grid_mod.to_trimesh(solid)
         if placement.rotated:
@@ -2298,6 +2342,9 @@ def library_export(req: ComposeRequest) -> Response:
                 overall_height_mm=oh, lip=t.lip,
                 finger_hole=t.finger_hole, out_dir=Path(tmp), stem=t.id,
                 pre_corrected=True, round_tool=t.round_tool,
+                magnet_holes=t.magnet_holes,
+                magnet_hole_diameter_mm=t.magnet_hole_diameter_mm,
+                magnet_hole_depth_mm=t.magnet_hole_depth_mm,
                 readiness=_tool_readiness(t),
                 thickness_source=(
                     t.provenance.thickness_source if t.provenance else "legacy"
@@ -2360,6 +2407,9 @@ class CombineRequest(BaseModel):
     bin_style: Literal["pocket", "corral", "grid"] = "pocket"
     placements: Optional[list[Placement]] = None  # manual arrange; else auto-pack
     overrides: Optional[list[CombineToolOverride]] = None
+    magnet_holes: bool = False
+    magnet_hole_diameter_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
+    magnet_hole_depth_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
 
 
 def _combine_layout(req: "CombineRequest") -> dict:
@@ -2576,6 +2626,9 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
         return grid_mod.bin_solid(
             lay["gx"], lay["gy"], lay["height_u"], pockets=pockets,
             lip=lay["lip"], style=req.bin_style,
+            magnet_holes=req.magnet_holes,
+            magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
+            magnet_hole_depth_mm=req.magnet_hole_depth_mm,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

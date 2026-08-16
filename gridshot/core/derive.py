@@ -69,6 +69,9 @@ class BinSettings:
     lip: bool = True
     finger_hole: bool = False
     round_tool: bool = False
+    magnet_holes: bool = False
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
 
 
 @dataclass
@@ -88,6 +91,9 @@ class DerivedBinSpec:
     overall_height_mm: float
     silhouette_height_mm: float
     full_height_mm: float | None
+    magnet_holes: bool = False
+    magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
+    magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     finger_holes: list[tuple[float, float, float]] = field(default_factory=list)
     reserved_cells: list[tuple[float, float]] = field(default_factory=list)
     available_cells: list[tuple[float, float]] = field(default_factory=list)
@@ -366,6 +372,9 @@ def derive_bin_spec(
         ),
         silhouette_height_mm=silhouette_height_mm,
         full_height_mm=full_height_mm,
+        magnet_holes=settings.magnet_holes,
+        magnet_hole_diameter_mm=settings.magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=settings.magnet_hole_depth_mm,
         finger_holes=fingers,
         reserved_cells=reserved_cells,
         available_cells=available_cells,

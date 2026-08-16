@@ -43,6 +43,15 @@ export function Result() {
   const [fullToolHeight, setFullToolHeight] = useState(
     result?.bin.full_height_mm?.toString() ?? "",
   );
+  const [magnetHoles, setMagnetHoles] = useState(
+    result?.bin.magnet_holes ?? false,
+  );
+  const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(
+    (result?.bin.magnet_hole_diameter_mm ?? 6.5).toString(),
+  );
+  const [magnetHoleDepth, setMagnetHoleDepth] = useState(
+    (result?.bin.magnet_hole_depth_mm ?? 2).toString(),
+  );
   const [regenerating, setRegenerating] = useState(false);
   const [returning, setReturning] = useState(false);
   const [editingCutout, setEditingCutout] = useState(false);
@@ -87,6 +96,11 @@ export function Result() {
           finishedHeight,
           "Finished bin height",
         ),
+        magnet_holes: magnetHoles,
+        magnet_hole_diameter_mm:
+          parseOptionalPositive(magnetHoleDiameter, "Magnet hole diameter") ?? undefined,
+        magnet_hole_depth_mm:
+          parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setResult(nextResult, nextParams);
@@ -113,6 +127,11 @@ export function Result() {
           finishedHeight,
           "Finished bin height",
         ),
+        magnet_holes: magnetHoles,
+        magnet_hole_diameter_mm:
+          parseOptionalPositive(magnetHoleDiameter, "Magnet hole diameter") ?? undefined,
+        magnet_hole_depth_mm:
+          parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setEditingCutout(false);
@@ -374,10 +393,49 @@ export function Result() {
                 </span>
               </label>
             </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3 items-end">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={magnetHoles}
+                  disabled={regenerating || returning}
+                  onChange={(event) => setMagnetHoles(event.target.checked)}
+                />
+                <span className="grp-label">Magnet holes</span>
+              </label>
+              <label className="block">
+                <span className="grp-label block mb-2">Magnet diameter (mm)</span>
+                <input
+                  aria-label="Magnet hole diameter"
+                  className="mono-input w-full"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={magnetHoleDiameter}
+                  disabled={regenerating || returning || !magnetHoles}
+                  onChange={(event) => setMagnetHoleDiameter(event.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className="grp-label block mb-2">Magnet depth (mm)</span>
+                <input
+                  aria-label="Magnet hole depth"
+                  className="mono-input w-full"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={magnetHoleDepth}
+                  disabled={regenerating || returning || !magnetHoles}
+                  onChange={(event) => setMagnetHoleDepth(event.target.value)}
+                />
+              </label>
+            </div>
             <p className="font-mono text-[10px] text-muted mt-4">
               Finished height includes the stacking lip and snaps upward to a whole
               7 mm Gridfinity unit. Corral places its thin tool shelf at the selected
-              recess depth and runs the separator to the stacking plane.
+              recess depth and runs the separator to the stacking plane. Magnet holes
+              are cut at each corner of every foot; depth must stay below the 4.75 mm
+              foot height.
             </p>
             {controlError && (
               <p className="font-mono text-xs text-orange mt-4">

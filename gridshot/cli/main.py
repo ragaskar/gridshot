@@ -578,10 +578,20 @@ def trace(
     ),
     lip: bool = typer.Option(True, help="Spec stacking lip on the rim (--no-lip to omit)."),
     finger_hole: bool = typer.Option(False, help="Cut a 20mm finger hole in the pocket."),
+    magnet_holes: bool = typer.Option(
+        False, help="Cut magnet holes at each corner of every foot."
+    ),
+    magnet_hole_diameter: Optional[float] = typer.Option(
+        None, help="Magnet hole diameter, mm (default: 6.5)."
+    ),
+    magnet_hole_depth: Optional[float] = typer.Option(
+        None, help="Magnet hole depth, mm (default: 2.0)."
+    ),
     mat: Optional[str] = typer.Option(None, help="Mat id (default: the single verified mat)."),
     out: Path = typer.Option(Path("out"), help="Output directory."),
 ) -> None:
     """Trace a tool photo into a printable gridfinity bin (STL + 3MF + debug SVG)."""
+    from gridshot.core import gridfinity as grid_mod
     from gridshot.core import trace as trace_mod
 
     result = trace_mod.run(
@@ -596,6 +606,9 @@ def trace(
         height_u=height_u,
         lip=lip,
         finger_hole=finger_hole,
+        magnet_holes=magnet_holes,
+        magnet_hole_diameter_mm=magnet_hole_diameter or grid_mod.MAGNET_HOLE_DIAMETER_MM,
+        magnet_hole_depth_mm=magnet_hole_depth or grid_mod.MAGNET_HOLE_DEPTH_MM,
         mat_id=mat,
         out_dir=out,
     )

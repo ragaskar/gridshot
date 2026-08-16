@@ -62,6 +62,9 @@ export function CombineEditor({
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [binStyle, setBinStyle] = useState<BinStyle>("pocket");
+  const [magnetHoles, setMagnetHoles] = useState(false);
+  const [magnetHoleDiameter, setMagnetHoleDiameter] = useState("6.5");
+  const [magnetHoleDepth, setMagnetHoleDepth] = useState("2");
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const previewSequence = useRef(0);
@@ -82,6 +85,9 @@ export function CombineEditor({
         lip,
         overrides,
         style,
+        magnetHoles,
+        Number(magnetHoleDiameter),
+        Number(magnetHoleDepth),
       );
       setMeta(p);
       setTools(p.tools);
@@ -118,6 +124,7 @@ export function CombineEditor({
     const timer = window.setTimeout(() => {
       combinePreviewGlb(
         ids, placements, overallHeight, lip, overrides, binStyle,
+        magnetHoles, Number(magnetHoleDiameter), Number(magnetHoleDepth),
       )
         .then((blob) => {
           if (sequence !== previewSequence.current) return;
@@ -136,7 +143,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -221,6 +228,9 @@ export function CombineEditor({
         lip,
         overridesFor(tools),
         binStyle,
+        magnetHoles,
+        Number(magnetHoleDiameter),
+        Number(magnetHoleDepth),
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -240,6 +250,9 @@ export function CombineEditor({
         lip,
         overridesFor(tools),
         binStyle,
+        magnetHoles,
+        Number(magnetHoleDiameter),
+        Number(magnetHoleDepth),
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -398,6 +411,46 @@ export function CombineEditor({
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={magnetHoles}
+                disabled={busy}
+                onChange={(event) => {
+                  setMagnetHoles(event.target.checked);
+                  void load(placementsFor(tools), overridesFor(tools));
+                }}
+              />
+              <span className="font-mono text-[10px] uppercase text-muted">Magnet holes</span>
+            </label>
+            {magnetHoles && (
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Diameter (mm)</span>
+                  <input
+                    aria-label="Magnet hole diameter"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={0.1} min={0.1}
+                    value={magnetHoleDiameter}
+                    onChange={(event) => setMagnetHoleDiameter(event.target.value)}
+                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Depth (mm)</span>
+                  <input
+                    aria-label="Magnet hole depth"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={0.1} min={0.1} max={4.7}
+                    value={magnetHoleDepth}
+                    onChange={(event) => setMagnetHoleDepth(event.target.value)}
+                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                  />
+                </label>
+              </div>
+            )}
           </div>
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Rotation (degrees)</span>
