@@ -200,7 +200,10 @@ printer profile, settings, warnings, and non-destructive outline revisions.
 
 From the library you can regenerate one tool, combine several tools into one bin, or
 compose bins across a drawer. Cards, previews, and exports all use the same canonical
-derivation path.
+derivation path. Each card also has **"Re-open as current"**, which brings that
+tool's full capture/calibration details and downloads back as the app's current
+tool — useful after scanning something else has moved on from it, since the
+current-tool view only ever holds one tool at a time.
 
 <table>
   <tr>
@@ -306,6 +309,8 @@ Features added on top of the original public release, newest last:
   multi-tool combined bins, and drawer exports — print a small coupon through
   a tool's cutout to check fit before committing to the full bin (see
   [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
+- "Re-open as current" button on each library card, to bring a previously
+  saved tool's full details and downloads back as the app's current tool
 
 ## License
 

@@ -8,6 +8,7 @@ import {
   exportDrawer,
   getLibraryOutline,
   getLibraryPhotoOutline,
+  getResult,
   libraryEditClick,
   libraryEditHistory,
   libraryEditSave,
@@ -21,6 +22,7 @@ import {
   type PhotoOutline,
   type Poly,
 } from "../api";
+import { useApp } from "../state";
 import { OutlineCorrectionEditor } from "../components/OutlineCorrectionEditor";
 import { PhysicalCutoutEditor } from "../components/PhysicalCutoutEditor";
 import { CombineEditor } from "../components/CombineEditor";
@@ -34,6 +36,8 @@ const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "
  *  tools saved from separate captures, pick a drawer size, and nest them —
  *  building a big set from small, accurate, fully-on-mat captures. */
 export function Library() {
+  const currentResult = useApp((s) => s.result);
+  const setCurrentResult = useApp((s) => s.setResult);
   const [tools, setTools] = useState<LibraryTool[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [cols, setCols] = useState(8);
@@ -138,6 +142,33 @@ export function Library() {
       invalidateComposition();
     } catch (e) {
       alert("Save failed: " + (e as Error).message);
+    }
+  }
+
+  async function reopenAsCurrent(t: LibraryTool) {
+    if (!t.source_project) {
+      setLibraryNotice(
+        "This tool has no capture project on record, so it can't be reopened as the current tool.",
+      );
+      return;
+    }
+    const isAlreadyCurrent = currentResult?.project === t.source_project;
+    const currentIsUnsaved =
+      !isAlreadyCurrent &&
+      currentResult != null &&
+      !tools.some((tool) => tool.source_project === currentResult.project);
+    if (currentIsUnsaved) {
+      const confirmed = window.confirm(
+        "The current tool hasn't been saved to the library — reopening " +
+          `"${t.label || t.id}" will replace it. Continue?`,
+      );
+      if (!confirmed) return;
+    }
+    setLibraryNotice(null);
+    try {
+      setCurrentResult(await getResult(t.source_project));
+    } catch (e) {
+      setLibraryNotice((e as Error).message);
     }
   }
 
@@ -450,6 +481,19 @@ export function Library() {
                         {t.has_photo && (
                           <button className="font-mono text-[10px] text-teal hover:underline" onClick={() => openSam(t.id)}>
                             ◐ Correct photo selection
+                          </button>
+                        )}
+                        {t.source_project && (
+                          <button
+                            className="font-mono text-[10px] text-teal hover:underline"
+                            onClick={() => reopenAsCurrent(t)}
+                            title={
+                              'Reopen this tool as "current tool" — examine its full ' +
+                              "capture/calibration details, download its bin files, " +
+                              "and regenerate it with adjusted settings"
+                            }
+                          >
+                            ↺ Re-open as current
                           </button>
                         )}
                       </div>

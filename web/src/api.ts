@@ -1126,6 +1126,15 @@ export async function getSession(session: string): Promise<Session> {
   return r.json();
 }
 
+export async function getResult(project: string): Promise<TraceResult> {
+  const r = await fetch(`/api/result/${project}`, { cache: "no-store" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "result failed to load");
+  }
+  return r.json();
+}
+
 
 export interface SessionEditResult extends OutlineEditState {
   warnings: string[];
