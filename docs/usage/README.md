@@ -317,6 +317,11 @@ On the **Capture** page:
    the point of GridShot's whole pipeline is that you see and can fix the evidence
    rather than trust a black box.
 
+Before committing to a full print, download the small trace-tolerance slice next to
+the bin's STL/3MF and print just that — it's a 1mm coupon through the tool's cutout
+that shows you the actual fit in minutes instead of the full bin's print time. See
+[docs/trace-tolerance-slice.md](../trace-tolerance-slice.md).
+
 **One easy-to-miss gotcha:** the basic Capture page doesn't have a mat picker. It
 requires exactly one verified mat to exist; if you've verified more than one, it'll
 error asking you to specify which. Keep a single verified mat around for the simple
@@ -347,6 +352,11 @@ scripts/gridshot trace photo1.jpg photo2.jpg --mat <mat-id> --style pocket
   unverify/remove the extras or use a flow that accepts an explicit mat ID.
 - **High reprojection RMS / "camera tilt > 15°" warnings** — reshoot flatter, more
   overhead, better lit, and braced against motion blur.
+- **Tool is too tight or too loose in the printed pocket** — print the small
+  [trace-tolerance slice](../trace-tolerance-slice.md) instead of the whole bin while
+  you dial this in. If it's consistently off in the same direction, that's usually
+  printer shrink, not a bad trace — see
+  [Printer compensation](../../README.md#printer-compensation) in the main README.
 - **A request fails with a Hugging Face / gated-model error** — you're hitting SAM 3
   concept detection without approved access. Revisit
   [step 1](#getting-a-token).

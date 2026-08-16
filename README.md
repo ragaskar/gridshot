@@ -85,7 +85,11 @@ The same accepted outline can produce three bin styles:
 > New to GridShot? [docs/usage](docs/usage/README.md) is a full first-tool
 > walkthrough — Hugging Face access, printing and verifying a mat, the empty-mat
 > reference photo, camera calibration, and a ChArUco/camera-setup primer — written
-> for someone who's never used the app before.
+> for someone who's never used the app before. See also
+> [docs/deployment.md](docs/deployment.md) (Docker vs. rootless Podman, SELinux,
+> LAN/remote access) and
+> [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md) (print-checking a
+> pocket fit before committing to the full bin).
 
 ### Requirements
 
@@ -287,6 +291,7 @@ Still gated on real evidence:
 Features added on top of the original public release, newest last:
 
 - Rootless Podman/SELinux support for the compose stack, alongside Docker
+  (see [docs/deployment.md](docs/deployment.md))
 - Batch calibration signature triage: reports every photo's mismatch in one pass
   instead of aborting at the first one that disagrees
 - `--public-bind` flag for `scripts/up` to expose the web UI on the LAN
@@ -299,7 +304,8 @@ Features added on top of the original public release, newest last:
 - First-tool walkthrough doc for new users
 - Downloadable 1mm trace-tolerance slice (STL/3MF) for single-tool bins,
   multi-tool combined bins, and drawer exports — print a small coupon through
-  a tool's cutout to check fit before committing to the full bin
+  a tool's cutout to check fit before committing to the full bin (see
+  [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
 
 ## License
 
