@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   combineLibrary,
+  combineLibrarySlice,
   combinePreview,
   combinePreviewGlb,
   type CombinePreview,
@@ -214,6 +215,25 @@ export function CombineEditor({
     setErr(null);
     try {
       await combineLibrary(
+        ids,
+        placementsFor(tools),
+        overallHeight,
+        lip,
+        overridesFor(tools),
+        binStyle,
+      );
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportSlice() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await combineLibrarySlice(
         ids,
         placementsFor(tools),
         overallHeight,
@@ -477,6 +497,14 @@ export function CombineEditor({
           <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>
           <button className="btn btn-primary w-full" disabled={busy || !tools.length} onClick={exportBin}>
             ↓ Export bin (3MF)
+          </button>
+          <button
+            className="btn w-full text-xs"
+            disabled={busy || !tools.length}
+            onClick={exportSlice}
+            title="1mm coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
+          >
+            ↓ Export slice (3MF)
           </button>
           <button className="btn w-full" onClick={onClose}>Close</button>
         </div>

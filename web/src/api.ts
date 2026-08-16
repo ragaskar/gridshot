@@ -1046,6 +1046,31 @@ export async function combineLibrary(
   URL.revokeObjectURL(url);
 }
 
+export async function combineLibrarySlice(
+  ids: string[],
+  placements?: Placement[] | null,
+  overallHeight?: number | null,
+  lip = true,
+  overrides?: CombineToolOverride[] | null,
+  binStyle: BinStyle = "pocket",
+): Promise<void> {
+  const r = await fetch("/api/library/combine/slice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "slice export failed");
+  }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "multitool-bin-slice.3mf";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function exportDrawer(
   ids: string[],
   cols: number,

@@ -808,6 +808,26 @@ def finalize_bin(
     )
     files = export_mod.write_all(out_dir, stem, mesh, svg=svg, layout=layout)
 
+    total_h = height_u * grid_mod.UNIT_H
+    window = grid_mod.slice_window(total_h, [depth])
+    if window is not None:
+        slice_z0, slice_thickness = window
+        slice_solid = grid_mod.slice_layer(solid, slice_z0, slice_thickness)
+        slice_mesh = grid_mod.to_trimesh(slice_solid)
+        slice_stl = out_dir / f"{stem}-slice.stl"
+        slice_stl.write_bytes(export_mod.stl_bytes(slice_mesh))
+        slice_3mf = out_dir / f"{stem}-slice.3mf"
+        slice_3mf.write_bytes(
+            export_mod.threemf_bytes(slice_mesh, name=f"{stem}-slice")
+        )
+        files["slice-stl"] = slice_stl
+        files["slice-3mf"] = slice_3mf
+    else:
+        warnings.append(
+            f"pocket/recess depth {depth:.1f}mm is too shallow for a "
+            f"{grid_mod.SLICE_THICKNESS_MM:.0f}mm trace-tolerance slice; skipped it"
+        )
+
     runtime_readiness = readiness_mod.evaluate(
         calibration=calibration,
         warnings=warnings,

@@ -524,6 +524,49 @@ def bin_solid(
     return solid
 
 
+SLICE_THICKNESS_MM = 1.0
+MIN_SLICE_THICKNESS_MM = 0.4  # thinner than this isn't reliably printable
+
+
+def slice_window(
+    total_h: float, depths: list[float], thickness: float = SLICE_THICKNESS_MM
+) -> tuple[float, float] | None:
+    """z0 and clamped thickness for a coupon that intersects every pocket in
+    `depths` at once.
+
+    Each pocket/recess occupies [total_h - depth, total_h] — open straight
+    through to the top, regardless of style — so any z within every pocket's
+    range works for all of them simultaneously; centring on the shallowest
+    pocket's range keeps clear of both the top face and its floor. Returns
+    None if the shallowest pocket can't support a printable slice.
+    """
+    if not depths:
+        return None
+    min_depth = min(depths)
+    clamped = min(thickness, min_depth)
+    if clamped < MIN_SLICE_THICKNESS_MM:
+        return None
+    z0 = total_h - (min_depth + clamped) / 2
+    return z0, clamped
+
+
+def slice_layer(
+    solid: Manifold, z0: float, thickness: float = SLICE_THICKNESS_MM
+) -> Manifold:
+    """A horizontal slab of `solid` spanning [z0, z0 + thickness], full XY extent.
+
+    Pocket/recess cutouts are single constant-section extrusions with no
+    draft or taper, so a slab anywhere within a cutout's depth range exposes
+    the identical trace as the full bin — this crops one out into a small,
+    fast-printing coupon for checking fit before committing to the full bin.
+    """
+    span = 1000.0  # comfortably larger than any bin footprint
+    slab = Manifold.extrude(
+        CrossSection.square((span, span), center=True), thickness
+    ).translate((0, 0, z0))
+    return Manifold.batch_boolean([solid, slab], OpType.Intersect)
+
+
 def to_trimesh(solid: Manifold):
     import trimesh
 

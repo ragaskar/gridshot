@@ -14,7 +14,11 @@ import { BinViewer } from "../components/BinViewer";
 import { ReadinessPanel } from "../components/ReadinessPanel";
 import { PhysicalCutoutEditor } from "../components/PhysicalCutoutEditor";
 
-const DOWNLOAD_ORDER = ["3mf", "stl", "layout", "svg"];
+const DOWNLOAD_ORDER = ["3mf", "stl", "slice-3mf", "slice-stl", "layout", "svg"];
+const DOWNLOAD_LABEL: Record<string, string> = {
+  "slice-3mf": "slice (3mf)",
+  "slice-stl": "slice (stl)",
+};
 
 export function Result() {
   const {
@@ -279,8 +283,13 @@ export function Result() {
                   className="btn btn-ghost text-xs px-4 py-2"
                   href={artifactUrl(files[kind])}
                   download
+                  title={
+                    kind.startsWith("slice-")
+                      ? "1mm horizontal coupon through the tool cutout — print this alone to check trace tolerance before committing to the full bin"
+                      : undefined
+                  }
                 >
-                  {kind}
+                  {DOWNLOAD_LABEL[kind] ?? kind}
                 </a>
               ))}
             </div>

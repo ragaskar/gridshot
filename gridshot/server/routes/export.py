@@ -11,6 +11,7 @@ ROUTES: tuple[RouteSpec, ...] = (
     ("POST", "/api/library/combine/preview", "library_combine_preview"),
     ("POST", "/api/library/combine/preview.glb", "library_combine_preview_glb"),
     ("POST", "/api/library/combine", "library_combine"),
+    ("POST", "/api/library/combine/slice", "library_combine_slice"),
     ("GET", "/api/files/{project}/{name}", "get_file"),
 )
 

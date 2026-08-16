@@ -2314,8 +2314,13 @@ def library_export(req: ComposeRequest) -> Response:
                 )
             fname = f"bins/{(t.label or t.id)}.3mf"
             z.write(res.files["3mf"], fname)
+            slice_fname = None
+            if "slice-3mf" in res.files:
+                slice_fname = f"slices/{(t.label or t.id)}-slice.3mf"
+                z.write(res.files["slice-3mf"], slice_fname)
             manifest["bins"].append({
-                "file": fname, "label": t.label, "col": p.col, "row": p.row,
+                "file": fname, "slice_file": slice_fname,
+                "label": t.label, "col": p.col, "row": p.row,
                 "grid_x": p.grid_x, "grid_y": p.grid_y, "rotated": p.rotated,
                 "thickness_mm": t.thickness_mm, "height_u": res.height_u,
                 "bin_style": res.bin_style,
@@ -2598,6 +2603,39 @@ def library_combine(req: CombineRequest) -> Response:
     return Response(
         data, media_type="model/3mf",
         headers={"Content-Disposition": "attachment; filename=multitool-bin.3mf"},
+    )
+
+
+def library_combine_slice(req: CombineRequest) -> Response:
+    """A thin coupon through every placed tool's cutout at once, so the whole
+    multi-tool bin's trace tolerance can be print-checked without committing
+    to the full bin. Every pocket/recess opens straight through to the bin's
+    top regardless of its own depth, so one z-window intersects all of them —
+    see grid_mod.slice_window."""
+    from gridshot.core import export as export_mod
+
+    lay = _combine_layout(req)
+    total_h = lay["height_u"] * grid_mod.UNIT_H
+    window = grid_mod.slice_window(total_h, lay["depths"])
+    if window is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"shallowest recess ({min(lay['depths']):.1f}mm) is too thin "
+                f"for a {grid_mod.SLICE_THICKNESS_MM:.0f}mm trace-tolerance slice"
+            ),
+        )
+    z0, thickness = window
+    solid = _combine_solid(req, lay)
+    sliced = grid_mod.slice_layer(solid, z0, thickness)
+    data = export_mod.threemf_bytes(
+        grid_mod.to_trimesh(sliced), name="multitool-bin-slice"
+    )
+    return Response(
+        data, media_type="model/3mf",
+        headers={
+            "Content-Disposition": "attachment; filename=multitool-bin-slice.3mf"
+        },
     )
 
 
