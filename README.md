@@ -12,7 +12,8 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#batch-processing-and-tool-library">Batch + library</a> ·
   <a href="#product-status">Product status</a> ·
-  <a href="#operations">Operations</a>
+  <a href="#operations">Operations</a> ·
+  <a href="#changes-in-this-fork">Fork changes</a>
 </p>
 
 <p align="center">
@@ -280,6 +281,25 @@ Still gated on real evidence:
 - The retained physical G1 accuracy matrix
 - Production matcher thresholds selected and validated on a representative GridShot capture corpus
 - Published first-print-fit and recapture-rate claims
+
+## Changes in this fork
+
+Features added on top of the original public release, newest last:
+
+- Rootless Podman/SELinux support for the compose stack, alongside Docker
+- Batch calibration signature triage: reports every photo's mismatch in one pass
+  instead of aborting at the first one that disagrees
+- `--public-bind` flag for `scripts/up` to expose the web UI on the LAN
+- `scripts/up` fails fast when `HF_TOKEN` is missing, instead of surfacing the
+  failure later as an inference-time error
+- Unhandled server errors return their real error text instead of a bare
+  "Internal Server Error"
+- Web UI for storing the empty-mat reference photo (previously CLI-only and
+  undocumented)
+- First-tool walkthrough doc for new users
+- Downloadable 1mm trace-tolerance slice (STL/3MF) for single-tool bins,
+  multi-tool combined bins, and drawer exports — print a small coupon through
+  a tool's cutout to check fit before committing to the full bin
 
 ## License
 
