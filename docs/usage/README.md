@@ -361,3 +361,11 @@ scripts/gridshot trace photo1.jpg photo2.jpg --mat <mat-id> --style pocket
 - **A request fails with a Hugging Face / gated-model error** — you're hitting SAM 3
   concept detection without approved access. Revisit
   [step 1](#getting-a-token).
+- **A `huggingface_hub` warning about not being able to reach the Hub** in segserver's
+  logs — not fatal by itself. Once a model has downloaded, segserver's own startup
+  only needs `huggingface.co` reachable to check for a *newer* version; if that
+  check fails but the model is already cached, `huggingface_hub` logs a warning and
+  uses the cached copy rather than failing (this is upstream default behavior, not
+  something GridShot has to opt into). If capture actually stops working, check
+  `/api/health/capabilities` — a segmentation lane in `"status": "error"` means the
+  cache itself is missing or corrupt, not just an update check that failed.

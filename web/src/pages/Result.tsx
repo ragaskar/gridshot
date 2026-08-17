@@ -31,6 +31,9 @@ export function Result() {
     setResult,
   } = useApp();
   const [saved, setSaved] = useState(false);
+  const [clearance, setClearance] = useState(
+    (result?.bin.clearance_mm ?? 1).toString(),
+  );
   const [pocketDepth, setPocketDepth] = useState(
     result?.bin.pocket_depth_override_mm?.toString() ?? "",
   );
@@ -90,6 +93,7 @@ export function Result() {
       const nextParams: GenerateParams = {
         ...params,
         bin_style: binStyle,
+        clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
         full_height: parseOptionalPositive(fullToolHeight, "Full tool height"),
         overall_height: parseOptionalPositive(
@@ -121,6 +125,7 @@ export function Result() {
       const nextParams: GenerateParams = {
         ...params,
         bin_style: binStyle,
+        clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
         full_height: parseOptionalPositive(fullToolHeight, "Full tool height"),
         overall_height: parseOptionalPositive(
@@ -336,7 +341,23 @@ export function Result() {
                 </button>
               ))}
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
+              <label className="block">
+                <span className="grp-label block mb-2">Clearance (mm)</span>
+                <input
+                  aria-label="Pocket clearance"
+                  className="mono-input w-full"
+                  type="number"
+                  min={0}
+                  step={0.25}
+                  value={clearance}
+                  disabled={regenerating || returning}
+                  onChange={(event) => setClearance(event.target.value)}
+                />
+                <span className="font-mono text-[10px] text-muted block mt-2">
+                  Gap around the traced outline — raise this for a looser fit.
+                </span>
+              </label>
               <label className="block">
                 <span className="grp-label block mb-2">
                   {binStyle === "pocket" ? "Pocket depth override (mm)" : "Tool recess depth override (mm)"}
@@ -533,6 +554,14 @@ function parseOptionalPositive(value: string, label: string): number | null {
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${label} must be a positive number or left blank for automatic.`);
+  }
+  return parsed;
+}
+
+function parseRequiredNonNegative(value: string, label: string): number {
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} must be zero or a positive number.`);
   }
   return parsed;
 }
