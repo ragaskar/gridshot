@@ -33,10 +33,15 @@ function placementsFor(tools: CombineTool[]): Placement[] {
 }
 
 function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
-  return tools.map(({ id, finger_hole_override, clearance_mm_override }) => ({
+  return tools.map(({
+    id, finger_hole_override, clearance_mm_override,
+    finger_hole_side_flip_override, finger_hole_offset_mm_override,
+  }) => ({
     id,
     finger_hole: finger_hole_override,
     clearance_mm: clearance_mm_override,
+    finger_hole_side_flip: finger_hole_side_flip_override,
+    finger_hole_offset_mm: finger_hole_offset_mm_override,
   }));
 }
 
@@ -224,6 +229,26 @@ export function CombineEditor({
       ...tool,
       clearance_mm: mm ?? tool.clearance_mm_inherited,
       clearance_mm_override: mm === tool.clearance_mm_inherited ? null : mm,
+    } : tool);
+    await load(placementsFor(updated), overridesFor(updated));
+  }
+
+  async function setFingerHoleSideFlip(flip: boolean | null) {
+    if (!sel) return;
+    const updated = tools.map((tool) => tool.id === sel ? {
+      ...tool,
+      finger_hole_side_flip: flip ?? false,
+      finger_hole_side_flip_override: flip,
+    } : tool);
+    await load(placementsFor(updated), overridesFor(updated));
+  }
+
+  async function setFingerHoleOffset(mm: number | null) {
+    if (!sel) return;
+    const updated = tools.map((tool) => tool.id === sel ? {
+      ...tool,
+      finger_hole_offset_mm: mm ?? 0,
+      finger_hole_offset_mm_override: mm,
     } : tool);
     await load(placementsFor(updated), overridesFor(updated));
   }
@@ -562,6 +587,53 @@ export function CombineEditor({
                 >
                   ↩ Use library setting ({selectedTool.finger_hole_inherited ? "on" : "off"})
                 </button>
+              )}
+              {selectedTool.finger_hole && selectedTool.finger_hole_side !== "center" && (
+                <div className="mt-3 space-y-2 border-t border-line pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-knockout">Switch sides</span>
+                    <button
+                      aria-pressed={selectedTool.finger_hole_side_flip}
+                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole_side_flip ? "border-teal text-teal" : "btn-ghost"}`}
+                      disabled={busy}
+                      onClick={() => void setFingerHoleSideFlip(selectedTool.finger_hole_side_flip ? null : true)}
+                    >
+                      {selectedTool.finger_hole_side_flip ? "Flipped" : "Default"}
+                    </button>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-muted">
+                      <span>Position</span>
+                      <span className="text-knockout">{selectedTool.finger_hole_offset_mm} mm</span>
+                    </div>
+                    <input
+                      aria-label="Finger-hole position offset"
+                      className="w-full accent-teal"
+                      type="range"
+                      min={-selectedTool.finger_hole_offset_mm_max}
+                      max={selectedTool.finger_hole_offset_mm_max}
+                      step={0.5}
+                      disabled={busy}
+                      value={selectedTool.finger_hole_offset_mm}
+                      onChange={(event) => void setFingerHoleOffset(Number(event.target.value))}
+                    />
+                  </div>
+                  {selectedTool.finger_hole_offset_mm_override !== null && (
+                    <button
+                      className="w-full text-left text-teal hover:text-knockout"
+                      disabled={busy}
+                      onClick={() => void setFingerHoleOffset(null)}
+                    >
+                      ↩ Reset position (0 mm)
+                    </button>
+                  )}
+                </div>
+              )}
+              {selectedTool.finger_hole && selectedTool.finger_hole_side === "center" && (
+                <p className="mt-3 border-t border-line pt-3 text-muted">
+                  This tool's shape doesn't sit on a single side — switch-sides/position
+                  controls aren't available.
+                </p>
               )}
             </div>
           ) : (

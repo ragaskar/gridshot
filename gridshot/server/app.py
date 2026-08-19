@@ -2399,6 +2399,9 @@ class CombineToolOverride(BaseModel):
     # Null/omitted means inherit the current library value.
     finger_hole: Optional[bool] = None
     clearance_mm: Optional[float] = Field(None, ge=0)
+    # Null/omitted means the default finger-hole side/position for this bin.
+    finger_hole_side_flip: Optional[bool] = None
+    finger_hole_offset_mm: Optional[float] = None
 
 
 class CombineRequest(BaseModel):
@@ -2457,10 +2460,22 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.clearance_mm is not None
             else t.clearance_mm
         )
+        finger_hole_side_flip = (
+            override.finger_hole_side_flip
+            if override is not None and override.finger_hole_side_flip is not None
+            else False
+        )
+        finger_hole_offset_mm = (
+            override.finger_hole_offset_mm
+            if override is not None and override.finger_hole_offset_mm is not None
+            else 0.0
+        )
         effective_tool = t.model_copy(update={
             "finger_hole": finger,
             "bin_style": req.bin_style,
             "clearance_mm": clearance,
+            "finger_hole_side_flip": finger_hole_side_flip,
+            "finger_hole_offset_mm": finger_hole_offset_mm,
         })
         spec = library_mod.derive_tool_spec(
             effective_tool, printer_profile=printer, lip=effective_lip
@@ -2593,7 +2608,16 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.clearance_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_side_flip_override = next(
+            (item.finger_hole_side_flip for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
+        requested_offset_override = next(
+            (item.finger_hole_offset_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         retention_override = t.pocket_depth_mm is not None
+        spec = lay["specs"][i]
         tools_json.append({
             "id": t.id, "label": t.label, "bin_style": req.bin_style,
             "depth_mm": round(lay["depths"][i], 1),
@@ -2606,6 +2630,12 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "finger_hole": bool(lay["local_fingers"][i]),
             "finger_hole_inherited": lay["inherited_fingers"][i],
             "finger_hole_override": requested_override,
+            "finger_hole_side": spec.finger_hole_side,
+            "finger_hole_offset_mm_max": round(spec.finger_hole_offset_max_mm, 2),
+            "finger_hole_side_flip": requested_side_flip_override is True,
+            "finger_hole_side_flip_override": requested_side_flip_override,
+            "finger_hole_offset_mm": requested_offset_override or 0.0,
+            "finger_hole_offset_mm_override": requested_offset_override,
             "finger_holes": [
                 [round(float(x), 2), round(float(y), 2), round(float(diameter), 2)]
                 for x, y, diameter in lay["local_fingers"][i]

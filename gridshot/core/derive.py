@@ -68,6 +68,8 @@ class BinSettings:
     overall_height_mm: float | None = None
     lip: bool = True
     finger_hole: bool = False
+    finger_hole_side_flip: bool = False
+    finger_hole_offset_mm: float = 0.0
     round_tool: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -95,6 +97,8 @@ class DerivedBinSpec:
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     finger_holes: list[tuple[float, float, float]] = field(default_factory=list)
+    finger_hole_side: str | None = None
+    finger_hole_offset_max_mm: float = 0.0
     reserved_cells: list[tuple[float, float]] = field(default_factory=list)
     available_cells: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -151,6 +155,21 @@ def _align_for_bin(shape, wall: float):
     return apply(shape), apply
 
 
+_MIRROR_SIDE = {"bottom": "top", "top": "bottom", "left": "right", "right": "left"}
+
+
+def _side_anchor(bounds: tuple[float, float, float, float], side: str) -> Point:
+    """The bbox edge-midpoint for one of the four named finger-hole sides."""
+    minx, miny, maxx, maxy = bounds
+    if side == "bottom":
+        return Point((minx + maxx) / 2, miny)
+    if side == "top":
+        return Point((minx + maxx) / 2, maxy)
+    if side == "left":
+        return Point(minx, (miny + maxy) / 2)
+    return Point(maxx, (miny + maxy) / 2)  # "right"
+
+
 def _derivation_key(
     tool: ToolGeometry, settings: BinSettings, printer: PrinterProfile
 ) -> str:
@@ -191,6 +210,8 @@ def derive_bin_spec(
         raise ValueError("full tool height must be > 0")
     if not math.isfinite(settings.clearance_mm) or settings.clearance_mm < 0:
         raise ValueError("clearance must be >= 0")
+    if not math.isfinite(settings.finger_hole_offset_mm):
+        raise ValueError("finger hole offset must be finite")
     if settings.bin_style not in ("pocket", "corral", "grid"):
         raise ValueError(f"unknown bin style: {settings.bin_style}")
     if settings.pocket_depth_mm is not None and (
@@ -271,6 +292,8 @@ def derive_bin_spec(
 
     fingers: list[tuple[float, float, float]] = []
     sizing = pocket_shape
+    finger_hole_side: str | None = None
+    finger_hole_offset_max_mm = 0.0
     if settings.finger_hole:
         base_grid = grid_mod.auto_grid(
             contour_mod.from_shapely(pocket_shape), wall=wall
@@ -296,6 +319,52 @@ def derive_bin_spec(
                 placed = (point, candidate_shape)
                 break
         point, sizing = placed
+
+        # Classify the winning point by which bbox edge it actually sits
+        # nearest to — independent of which anchor produced it, since the
+        # interior/representative-point anchor often snaps onto a real edge
+        # too. Only a point that isn't close to any edge (e.g. deep in a
+        # concave notch) is left as "center", where flip/offset don't apply.
+        bbox_w, bbox_h = maxx - minx, maxy - miny
+        edge_gaps = {
+            "bottom": point.y - miny,
+            "top": maxy - point.y,
+            "left": point.x - minx,
+            "right": maxx - point.x,
+        }
+        nearest_side = min(edge_gaps, key=edge_gaps.get)
+        near_threshold = max(
+            1.0,
+            0.25 * (bbox_w if nearest_side in ("bottom", "top") else bbox_h),
+        )
+        chosen_side = nearest_side if edge_gaps[nearest_side] <= near_threshold else "center"
+
+        if (
+            settings.finger_hole_side_flip or settings.finger_hole_offset_mm
+        ) and chosen_side != "center":
+            side = (
+                _MIRROR_SIDE[chosen_side]
+                if settings.finger_hole_side_flip
+                else chosen_side
+            )
+            offset_anchor = _side_anchor(pocket_shape.bounds, side)
+            if side in ("bottom", "top"):
+                offset_anchor = Point(
+                    offset_anchor.x + settings.finger_hole_offset_mm, offset_anchor.y
+                )
+            else:
+                offset_anchor = Point(
+                    offset_anchor.x, offset_anchor.y + settings.finger_hole_offset_mm
+                )
+            point = nearest_points(pocket_shape.exterior, offset_anchor)[0]
+            sizing = pocket_shape.union(point.buffer(10.0))
+            chosen_side = side
+
+        finger_hole_side = chosen_side
+        if chosen_side != "center":
+            minx, miny, maxx, maxy = pocket_shape.bounds
+            edge_length = (maxx - minx) if chosen_side in ("bottom", "top") else (maxy - miny)
+            finger_hole_offset_max_mm = max(0.0, edge_length / 2)
         fingers.append((float(point.x), float(point.y), 20.0))
 
     # Centre the complete cut envelope, including the optional scallop.
@@ -376,6 +445,8 @@ def derive_bin_spec(
         magnet_hole_diameter_mm=settings.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=settings.magnet_hole_depth_mm,
         finger_holes=fingers,
+        finger_hole_side=finger_hole_side,
+        finger_hole_offset_max_mm=finger_hole_offset_max_mm,
         reserved_cells=reserved_cells,
         available_cells=available_cells,
         warnings=warnings,

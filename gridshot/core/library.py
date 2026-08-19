@@ -98,6 +98,10 @@ class LibraryTool(BaseModel):
     pocket_depth_mm: float | None = None
     round_tool: bool = False  # domed/barrel → auto depth off ~2× widest-outline height
     finger_hole: bool = True  # full-depth pockets need a scallop to lift the tool out
+    # Bin-time-only plumbing for the combine editor's finger-hole side/offset
+    # override (see CombineToolOverride) — no library-page UI sets these.
+    finger_hole_side_flip: bool = False
+    finger_hole_offset_mm: float = 0.0
     lip: bool = True
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -265,6 +269,8 @@ def derive_tool_spec(
             overall_height_mm=overall_height_mm,
             lip=tool.lip if lip is None else lip,
             finger_hole=tool.finger_hole,
+            finger_hole_side_flip=tool.finger_hole_side_flip,
+            finger_hole_offset_mm=tool.finger_hole_offset_mm,
             round_tool=tool.round_tool,
             magnet_holes=tool.magnet_holes,
             magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,

@@ -318,6 +318,9 @@ Features added on top of the original public release, newest last:
 - Per-tool clearance override in the multi-tool combine editor, independent
   of each tool's library-wide clearance (see
   [docs/combine-tool-overrides.md](docs/combine-tool-overrides.md))
+- Fine control over finger-hole placement in the multi-tool combine editor —
+  switch which side it's on, and slide its position along that side (see
+  [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
 
 ## License
 
