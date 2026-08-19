@@ -71,7 +71,9 @@ export function CombineEditor({
   const [magnetHoles, setMagnetHoles] = useState(false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState("6.5");
   const [magnetHoleDepth, setMagnetHoleDepth] = useState("2");
+  const [nudge, setNudge] = useState("0.1");
   const svgRef = useRef<SVGSVGElement>(null);
+  const arrangeRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
@@ -195,6 +197,7 @@ export function CombineEditor({
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
     setSel(id);
+    arrangeRef.current?.focus();
     const t = tools.find((x) => x.id === id)!;
     const [mx, my] = toData(e);
     drag.current = { id, ox: mx - t.tx, oy: my - t.ty };
@@ -209,6 +212,26 @@ export function CombineEditor({
   function rotate(deg: number) {
     if (!sel) return;
     setTools((ts) => ts.map((t) => (t.id === sel ? { ...t, rot: t.rot + deg } : t)));
+  }
+  function nudgeSelected(dx: number, dy: number) {
+    if (!sel) return;
+    setTools((ts) => ts.map((t) => (t.id === sel ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
+  }
+  function handleArrangeKeyDown(e: React.KeyboardEvent) {
+    if (!sel) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+    const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
+    const deltas: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const d = deltas[e.key];
+    if (!d) return;
+    e.preventDefault();
+    nudgeSelected(d[0], d[1]);
   }
   function setRotation(deg: number) {
     if (!sel || !Number.isFinite(deg)) return;
@@ -341,7 +364,13 @@ export function CombineEditor({
               Preview 3D
             </button>
           </div>
-          <div className="border border-line bg-field min-w-0 overflow-hidden" style={{ borderRadius: 2 }}>
+          <div
+            ref={arrangeRef}
+            className="border border-line bg-field min-w-0 overflow-hidden"
+            style={{ borderRadius: 2 }}
+            tabIndex={0}
+            onKeyDown={handleArrangeKeyDown}
+          >
             {view === "arrange" ? <svg
             ref={svgRef}
             viewBox={vb}
@@ -523,6 +552,23 @@ export function CombineEditor({
             <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(1)}>+1°</button>
             <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(15)}>+15°</button>
           </div>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                aria-label="Keyboard nudge step in millimetres"
+                className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
+                type="number"
+                step={0.05}
+                min={0.01}
+                value={nudge}
+                onChange={(event) => setNudge(event.target.value)}
+              />
+            </div>
+            <p className="mt-1 font-mono text-[9px] text-muted">
+              Select a tool, arrow keys to nudge · Shift+arrow for 10×.
+            </p>
+          </label>
           {selectedTool ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
               <div className="mb-2 truncate text-xs text-knockout">
@@ -648,7 +694,7 @@ export function CombineEditor({
                 key={t.id}
                 className="w-full border px-2 py-1 text-left font-mono text-[10px]"
                 style={{ borderRadius: 2, borderColor: sel === t.id ? color(i) : "var(--c-line)" }}
-                onClick={() => setSel(t.id)}
+                onClick={() => { setSel(t.id); arrangeRef.current?.focus(); }}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />

@@ -321,6 +321,10 @@ Features added on top of the original public release, newest last:
 - Fine control over finger-hole placement in the multi-tool combine editor —
   switch which side it's on, and slide its position along that side (see
   [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
+- Keyboard nudge for precise manual placement in the multi-tool combine
+  editor — arrow keys move the selected tool by a configurable step,
+  Shift+arrow for 10× (see
+  [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
 
 ## License
 
