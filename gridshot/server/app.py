@@ -2398,6 +2398,7 @@ class CombineToolOverride(BaseModel):
     id: str
     # Null/omitted means inherit the current library value.
     finger_hole: Optional[bool] = None
+    clearance_mm: Optional[float] = Field(None, ge=0)
 
 
 class CombineRequest(BaseModel):
@@ -2436,6 +2437,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         )
     tools, specs, pack_stamps, pocket_stamps = [], [], [], []
     depths, fingers, inherited_fingers = [], [], []
+    clearances, inherited_clearances = [], []
     for tid in req.ids:
         try:
             t = library_mod.load(tid)
@@ -2450,9 +2452,15 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.finger_hole is not None
             else t.finger_hole
         )
+        clearance = (
+            override.clearance_mm
+            if override is not None and override.clearance_mm is not None
+            else t.clearance_mm
+        )
         effective_tool = t.model_copy(update={
             "finger_hole": finger,
             "bin_style": req.bin_style,
+            "clearance_mm": clearance,
         })
         spec = library_mod.derive_tool_spec(
             effective_tool, printer_profile=printer, lip=effective_lip
@@ -2472,6 +2480,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
             for x, y, diameter in spec.finger_holes
         ])
         inherited_fingers.append(t.finger_hole)
+        clearances.append(clearance)
+        inherited_clearances.append(t.clearance_mm)
     if len(pack_stamps) < 2:
         raise HTTPException(status_code=422, detail="select at least 2 tools with outlines")
 
@@ -2556,6 +2566,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "centered": centered, "tfs": ctfs,
         "depths": depths, "fingers": centered_fingers,
         "local_fingers": fingers, "inherited_fingers": inherited_fingers,
+        "clearances": clearances, "inherited_clearances": inherited_clearances,
         "gx": gx, "gy": gy,
         "wall": wall,
         "lip": effective_lip,
@@ -2578,12 +2589,18 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.finger_hole for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_clearance_override = next(
+            (item.clearance_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         retention_override = t.pocket_depth_mm is not None
         tools_json.append({
             "id": t.id, "label": t.label, "bin_style": req.bin_style,
             "depth_mm": round(lay["depths"][i], 1),
             "depth_mode": "library override" if retention_override else "automatic",
-            "clearance_mm": round(t.clearance_mm, 2),
+            "clearance_mm": round(lay["clearances"][i], 2),
+            "clearance_mm_inherited": round(lay["inherited_clearances"][i], 2),
+            "clearance_mm_override": requested_clearance_override,
             "round_tool": t.round_tool,
             "finger": bool(lay["local_fingers"][i]),
             "finger_hole": bool(lay["local_fingers"][i]),

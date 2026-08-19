@@ -315,6 +315,9 @@ Features added on top of the original public release, newest last:
 - Optional magnet holes (on/off, diameter, depth) at each foot corner,
   configurable wherever a bin is generated — single-tool, library, combine,
   and CLI (see [docs/magnet-holes.md](docs/magnet-holes.md))
+- Per-tool clearance override in the multi-tool combine editor, independent
+  of each tool's library-wide clearance (see
+  [docs/combine-tool-overrides.md](docs/combine-tool-overrides.md))
 
 ## License
 

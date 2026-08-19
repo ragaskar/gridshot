@@ -957,6 +957,7 @@ export interface Placement {
 export interface CombineToolOverride {
   id: string;
   finger_hole: boolean | null;
+  clearance_mm: number | null;
 }
 
 export interface CombineTool extends Placement {
@@ -965,6 +966,8 @@ export interface CombineTool extends Placement {
   depth_mm: number;
   depth_mode: "automatic" | "library override";
   clearance_mm: number;
+  clearance_mm_inherited: number;
+  clearance_mm_override: number | null;
   round_tool: boolean;
   finger: boolean;
   finger_hole: boolean;

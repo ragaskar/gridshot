@@ -33,9 +33,10 @@ function placementsFor(tools: CombineTool[]): Placement[] {
 }
 
 function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
-  return tools.map(({ id, finger_hole_override }) => ({
+  return tools.map(({ id, finger_hole_override, clearance_mm_override }) => ({
     id,
     finger_hole: finger_hole_override,
+    clearance_mm: clearance_mm_override,
   }));
 }
 
@@ -213,6 +214,16 @@ export function CombineEditor({
       finger: enabled,
       finger_hole: enabled,
       finger_hole_override: enabled === tool.finger_hole_inherited ? null : enabled,
+    } : tool);
+    await load(placementsFor(updated), overridesFor(updated));
+  }
+
+  async function setClearance(mm: number | null) {
+    if (!sel) return;
+    const updated = tools.map((tool) => tool.id === sel ? {
+      ...tool,
+      clearance_mm: mm ?? tool.clearance_mm_inherited,
+      clearance_mm_override: mm === tool.clearance_mm_inherited ? null : mm,
     } : tool);
     await load(placementsFor(updated), overridesFor(updated));
   }
@@ -490,13 +501,43 @@ export function CombineEditor({
                 {selectedTool.label || selectedTool.id.slice(0, 8)}
               </div>
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                <dt>Clearance · library</dt>
-                <dd className="text-knockout">{selectedTool.clearance_mm} mm</dd>
                 <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
                 <dd className="text-knockout">{selectedTool.depth_mm} mm</dd>
                 <dt>Depth source</dt>
                 <dd className="text-right text-knockout">{selectedTool.depth_mode}</dd>
               </dl>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                <div className="min-w-0">
+                  <div className="text-knockout">Clearance</div>
+                  <div className="truncate text-muted">
+                    {selectedTool.clearance_mm_override === null ? "Inherited from library" : "Override for this bin"}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <input
+                    aria-label="Clearance override in millimetres"
+                    className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                    type="number" step={0.1} min={0}
+                    disabled={busy}
+                    defaultValue={selectedTool.clearance_mm}
+                    key={`${selectedTool.id}-clearance-${selectedTool.clearance_mm}`}
+                    onBlur={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isFinite(value) && value !== selectedTool.clearance_mm) void setClearance(value);
+                    }}
+                  />
+                  <span className="text-muted">mm</span>
+                </div>
+              </div>
+              {selectedTool.clearance_mm_override !== null && (
+                <button
+                  className="mt-2 w-full text-left text-teal hover:text-knockout"
+                  disabled={busy}
+                  onClick={() => void setClearance(null)}
+                >
+                  ↩ Use library setting ({selectedTool.clearance_mm_inherited} mm)
+                </button>
+              )}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
                 <div className="min-w-0">
                   <div className="text-knockout">Finger access</div>
