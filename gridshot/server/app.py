@@ -2402,6 +2402,8 @@ class CombineToolOverride(BaseModel):
     # Null/omitted means the default finger-hole side/position for this bin.
     finger_hole_side_flip: Optional[bool] = None
     finger_hole_offset_mm: Optional[float] = None
+    # Auto-pack only: restrict this tool's rotation search to this one angle.
+    locked_rotation_deg: Optional[float] = None
 
 
 class CombineRequest(BaseModel):
@@ -2514,7 +2516,14 @@ def _combine_layout(req: "CombineRequest") -> dict:
         # Pack the complete cut envelope, not just the pocket. Finger access
         # therefore cannot silently collide with a neighbour or force a larger
         # footprint only after export.
-        tfs = binpack_mod.pack(pack_stamps, wall=wall)
+        rotation_options = []
+        for t in tools:
+            override = override_map.get(t.id)
+            if override is not None and override.locked_rotation_deg is not None:
+                rotation_options.append((override.locked_rotation_deg,))
+            else:
+                rotation_options.append((0.0, 90.0, 180.0, 270.0))
+        tfs = binpack_mod.pack(pack_stamps, wall=wall, rotations=rotation_options)
 
     placed_envelopes = [
         binpack_mod.place_stamp(

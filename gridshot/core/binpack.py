@@ -44,7 +44,7 @@ def place_stamp(poly: Poly, tx: float, ty: float, rot: float) -> Poly:
 
 def pack(
     polys: list[Poly], wall: float = 2.0, step: float = 2.5,
-    rotations: tuple[float, ...] = (0.0, 90.0, 180.0, 270.0),
+    rotations: tuple[float, ...] | list[tuple[float, ...]] = (0.0, 90.0, 180.0, 270.0),
 ) -> list[dict]:
     """Bottom-left-fill placements, one per input tool (original order).
 
@@ -52,8 +52,17 @@ def pack(
     is `place_stamp(poly, tx, ty, rot)`. Largest-first; for each tool every
     rotation is tried and the spot that keeps the overall footprint smallest
     wins. More rotations than the legacy 0/90 lets asymmetric tools interlock.
+
+    `rotations` may be one tuple shared by every tool (legacy/default), or a
+    list with one rotation-tuple per input poly — e.g. a 1-element tuple to
+    lock a specific tool to a single rotation during the search.
     """
     stamps = [_stamp(to_shapely(p).buffer(0)) for p in polys]
+    per_tool_rotations = (
+        rotations if isinstance(rotations, list) else [rotations] * len(stamps)
+    )
+    if len(per_tool_rotations) != len(stamps):
+        raise ValueError("rotations list must have one entry per tool")
     order = sorted(range(len(stamps)), key=lambda i: -stamps[i].area)
     placed: list = []  # shapes in a bottom-left (origin) frame
     out: list[dict | None] = [None] * len(stamps)
@@ -61,7 +70,7 @@ def pack(
     for idx in order:
         # each rotation, normalised so its bbox-min sits at the origin
         variants = []
-        for rot in rotations:
+        for rot in per_tool_rotations[idx]:
             r = srotate(stamps[idx], rot, origin=(0, 0))
             b = r.bounds
             variants.append((rot, translate(r, -b[0], -b[1])))

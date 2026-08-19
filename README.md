@@ -328,6 +328,9 @@ Features added on top of the original public release, newest last:
 - Adjustable trace-tolerance slice thickness (0.5–5mm, default 1mm) when
   exporting a multi-tool combine bin's slice, via a dialog before export
   (see [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
+- Per-tool rotation lock for auto-pack in the multi-tool combine editor —
+  keep a tool at its current angle while the rest re-pack around it (see
+  [docs/combine-editor-rotation-lock.md](docs/combine-editor-rotation-lock.md))
 
 ## License
 

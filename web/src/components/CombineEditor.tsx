@@ -32,19 +32,6 @@ function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot }) => ({ id, tx, ty, rot }));
 }
 
-function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
-  return tools.map(({
-    id, finger_hole_override, clearance_mm_override,
-    finger_hole_side_flip_override, finger_hole_offset_mm_override,
-  }) => ({
-    id,
-    finger_hole: finger_hole_override,
-    clearance_mm: clearance_mm_override,
-    finger_hole_side_flip: finger_hole_side_flip_override,
-    finger_hole_offset_mm: finger_hole_offset_mm_override,
-  }));
-}
-
 /** Interactive multi-tool-bin editor: auto-packed layout you can drag + rotate,
  *  inspect as the exact generated solid, then export the arrangement as one 3MF. */
 export function CombineEditor({
@@ -74,11 +61,26 @@ export function CombineEditor({
   const [nudge, setNudge] = useState("0.1");
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
+  const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
+
+  function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
+    return tools.map(({
+      id, rot, finger_hole_override, clearance_mm_override,
+      finger_hole_side_flip_override, finger_hole_offset_mm_override,
+    }) => ({
+      id,
+      finger_hole: finger_hole_override,
+      clearance_mm: clearance_mm_override,
+      finger_hole_side_flip: finger_hole_side_flip_override,
+      finger_hole_offset_mm: finger_hole_offset_mm_override,
+      locked_rotation_deg: lockedRotations.has(id) ? rot : null,
+    }));
+  }
 
   async function load(
     placements?: Placement[],
@@ -538,6 +540,22 @@ export function CombineEditor({
               <span className="font-mono text-xs text-muted">°</span>
             </div>
           </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              disabled={!sel}
+              checked={sel !== null && lockedRotations.has(sel)}
+              onChange={(event) => {
+                if (!sel) return;
+                setLockedRotations((current) => {
+                  const next = new Set(current);
+                  event.target.checked ? next.add(sel) : next.delete(sel);
+                  return next;
+                });
+              }}
+            />
+            <span className="font-mono text-[10px] uppercase text-muted">Lock rotation (auto-pack)</span>
+          </label>
           <input
             aria-label="Tool rotation"
             className="w-full accent-teal"
@@ -702,6 +720,7 @@ export function CombineEditor({
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />
                   <span className="truncate text-knockout">{t.label || t.id.slice(0, 6)}</span>
+                  {lockedRotations.has(t.id) && <span title="Rotation locked for auto-pack">🔒</span>}
                 </span>
                 <span className="mt-1 flex flex-wrap gap-x-2 pl-4 text-muted">
                   <span>Clearance {t.clearance_mm} mm</span>

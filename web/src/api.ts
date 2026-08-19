@@ -960,6 +960,7 @@ export interface CombineToolOverride {
   clearance_mm: number | null;
   finger_hole_side_flip: boolean | null;
   finger_hole_offset_mm: number | null;
+  locked_rotation_deg: number | null;
 }
 
 export type FingerHoleSide = "top" | "bottom" | "left" | "right" | "center";
