@@ -114,6 +114,9 @@ export function CombineEditor({
       tool.ty,
       tool.rot,
       tool.finger_hole_override,
+      tool.clearance_mm_override,
+      tool.finger_hole_side_flip_override,
+      tool.finger_hole_offset_mm_override,
     ])),
     [tools],
   );
