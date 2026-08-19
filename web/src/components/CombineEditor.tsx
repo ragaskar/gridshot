@@ -72,6 +72,8 @@ export function CombineEditor({
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState("6.5");
   const [magnetHoleDepth, setMagnetHoleDepth] = useState("2");
   const [nudge, setNudge] = useState("0.1");
+  const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
+  const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
@@ -301,7 +303,7 @@ export function CombineEditor({
     }
   }
 
-  async function exportSlice() {
+  async function exportSlice(thicknessMm: number) {
     setBusy(true);
     setErr(null);
     try {
@@ -315,6 +317,7 @@ export function CombineEditor({
         magnetHoles,
         Number(magnetHoleDiameter),
         Number(magnetHoleDepth),
+        thicknessMm,
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -716,11 +719,43 @@ export function CombineEditor({
           <button
             className="btn w-full text-xs"
             disabled={busy || !tools.length}
-            onClick={exportSlice}
-            title="1mm coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
+            onClick={() => setSliceDialogOpen(true)}
+            title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
           >
             ↓ Export slice (3MF)
           </button>
+          {sliceDialogOpen && (
+            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+              <label className="block">
+                <span className="block uppercase text-muted">Slice thickness (mm)</span>
+                <input
+                  aria-label="Slice thickness in millimetres"
+                  className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                  type="number" step={0.1} min={0.5} max={5}
+                  value={sliceThickness}
+                  onChange={(event) => setSliceThickness(event.target.value)}
+                />
+              </label>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <button
+                  className="btn text-xs"
+                  onClick={() => setSliceDialogOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary text-xs"
+                  disabled={busy}
+                  onClick={() => {
+                    setSliceDialogOpen(false);
+                    void exportSlice(Number(sliceThickness));
+                  }}
+                >
+                  Export
+                </button>
+              </div>
+            </div>
+          )}
           <button className="btn w-full" onClick={onClose}>Close</button>
         </div>
       </div>

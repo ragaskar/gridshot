@@ -38,6 +38,16 @@ The slice is downloadable from everywhere the full bin's STL/3MF is:
   support one, plus a `slice_file` entry per bin in `manifest.json` (`null` when
   that bin's pocket was too shallow — see below).
 
+## Choosing a thickness in the combine editor
+
+The default 1mm thickness is a starting point, not a fixed rule. Clicking
+**"Export slice (3MF)"** in the multi-tool combine editor opens a small
+dialog first — pick anywhere from **0.5mm to 5mm** before the file
+downloads (the field starts at 1mm). A thinner slice prints faster and uses
+less filament for a quick fit check; a thicker one is sturdier to handle and
+gives more of the wall to inspect at once. The "shallowest pocket too thin"
+rejection above still applies at whatever thickness you choose.
+
 ## When there's no slice
 
 A pocket or recess shallower than 0.4mm can't reliably print as a separate coupon, so

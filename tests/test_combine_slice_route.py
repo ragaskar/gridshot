@@ -42,10 +42,10 @@ def _stub_layout(monkeypatch, depths, height_u=4):
     return lay
 
 
-def _post(client, ids=("a", "b")):
+def _post(client, ids=("a", "b"), **extra):
     return client.post(
         "/api/library/combine/slice",
-        json={"ids": list(ids), "bin_style": "pocket"},
+        json={"ids": list(ids), "bin_style": "pocket", **extra},
     )
 
 
@@ -84,3 +84,44 @@ class TestCombineSlice:
 
         assert response.status_code == 422
         assert "0.2" in response.json()["detail"]
+
+    def test_thickness_below_half_a_millimetre_is_rejected(self, client, monkeypatch):
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+
+        response = _post(client, slice_thickness_mm=0.1)
+
+        assert response.status_code == 422
+
+    def test_thickness_above_five_millimetres_is_rejected(self, client, monkeypatch):
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+
+        response = _post(client, slice_thickness_mm=6.0)
+
+        assert response.status_code == 422
+
+    def test_custom_thickness_is_honoured(self, client, monkeypatch):
+        import re
+
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+
+        response = _post(client, slice_thickness_mm=2.0)
+
+        assert response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            model_xml = zf.read("3D/3dmodel.model").decode()
+        z_values = [float(z) for z in re.findall(r'z="([-0-9.]+)"', model_xml)]
+        assert max(z_values) - min(z_values) == pytest.approx(2.0, abs=1e-2)
+
+    def test_omitted_thickness_still_defaults_to_one_mm(self, client, monkeypatch):
+        import re
+
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+
+        response = _post(client)
+
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            model_xml = zf.read("3D/3dmodel.model").decode()
+        z_values = [float(z) for z in re.findall(r'z="([-0-9.]+)"', model_xml)]
+        assert max(z_values) - min(z_values) == pytest.approx(
+            grid_mod.SLICE_THICKNESS_MM, abs=1e-2
+        )

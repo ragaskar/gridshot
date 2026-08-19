@@ -325,6 +325,9 @@ Features added on top of the original public release, newest last:
   editor — arrow keys move the selected tool by a configurable step,
   Shift+arrow for 10× (see
   [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
+- Adjustable trace-tolerance slice thickness (0.5–5mm, default 1mm) when
+  exporting a multi-tool combine bin's slice, via a dialog before export
+  (see [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
 
 ## License
 

@@ -2414,6 +2414,9 @@ class CombineRequest(BaseModel):
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
     magnet_hole_depth_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
+    # Only consulted by the /combine/slice route; None falls back to the
+    # standard 1mm trace-tolerance thickness.
+    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=5.0)
 
 
 def _combine_layout(req: "CombineRequest") -> dict:
@@ -2715,14 +2718,15 @@ def library_combine_slice(req: CombineRequest) -> Response:
     from gridshot.core import export as export_mod
 
     lay = _combine_layout(req)
+    thickness_mm = req.slice_thickness_mm or grid_mod.SLICE_THICKNESS_MM
     total_h = lay["height_u"] * grid_mod.UNIT_H
-    window = grid_mod.slice_window(total_h, lay["depths"])
+    window = grid_mod.slice_window(total_h, lay["depths"], thickness=thickness_mm)
     if window is None:
         raise HTTPException(
             status_code=422,
             detail=(
                 f"shallowest recess ({min(lay['depths']):.1f}mm) is too thin "
-                f"for a {grid_mod.SLICE_THICKNESS_MM:.0f}mm trace-tolerance slice"
+                f"for a {thickness_mm:.1f}mm trace-tolerance slice"
             ),
         )
     z0, thickness = window
