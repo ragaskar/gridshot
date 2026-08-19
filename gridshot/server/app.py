@@ -2023,6 +2023,17 @@ def library_delete(tool_id: str) -> dict:
     return {"deleted": library_mod.delete(tool_id)}
 
 
+def library_clone(tool_id: str) -> dict:
+    """Duplicate a library entry under a new id, so the clone can be
+    selected alongside the original for a combine/compose bin."""
+    new_id = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"  # same convention as library_add
+    try:
+        cloned = library_mod.clone(tool_id, new_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such tool")
+    return _lib_json(cloned)
+
+
 class LibraryUpdate(BaseModel):
     label: Optional[str] = None
     thickness_mm: Optional[float] = None

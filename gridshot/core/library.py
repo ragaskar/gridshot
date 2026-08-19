@@ -19,7 +19,9 @@ import io
 import json
 import math
 import os
+import shutil
 import threading
+import time
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -322,13 +324,36 @@ def list_tools() -> list[LibraryTool]:
     )
 
 
+_ASSET_SUFFIXES = (".json", ".png", "-photo.jpg", "-photo-thumb.jpg")
+
+
 def delete(tool_id: str) -> bool:
     if not tool_id or Path(tool_id).name != tool_id:
         return False
     removed = False
-    for suffix in (".json", ".png", "-photo.jpg", "-photo-thumb.jpg"):
+    for suffix in _ASSET_SUFFIXES:
         p = library_dir() / f"{tool_id}{suffix}"
         if p.is_file():
             p.unlink()
             removed = removed or suffix == ".json"
     return removed
+
+
+def clone(tool_id: str, new_id: str) -> LibraryTool:
+    """Duplicate a library entry under a new id — same outline, settings,
+    history, and provenance, plus its thumbnail/photo assets on disk. The
+    clone is then just an ordinary, independent library tool: selecting it
+    alongside the source needs no special handling anywhere downstream."""
+    source = load(tool_id)  # raises KeyError if missing
+    cloned = source.model_copy(update={
+        "id": new_id,
+        "label": f"{source.label} (copy)" if source.label else source.label,
+        "created_ts": int(time.time()),
+    })
+    for suffix in _ASSET_SUFFIXES:
+        if suffix == ".json":
+            continue  # written by save() below
+        src_path = library_dir() / f"{tool_id}{suffix}"
+        if src_path.is_file():
+            shutil.copy2(src_path, library_dir() / f"{new_id}{suffix}")
+    return save(cloned)

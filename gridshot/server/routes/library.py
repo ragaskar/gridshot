@@ -18,6 +18,7 @@ ROUTES: tuple[RouteSpec, ...] = (
     ("POST", "/api/library/edit/{sid}/save", "library_edit_save"),
     ("DELETE", "/api/library/{tool_id}", "library_delete"),
     ("PATCH", "/api/library/{tool_id}", "library_edit"),
+    ("POST", "/api/library/{tool_id}/clone", "library_clone"),
 )
 
 

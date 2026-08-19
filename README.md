@@ -334,6 +334,9 @@ Features added on top of the original public release, newest last:
 - Force an exact bin footprint (gx×gy) for a multi-tool combine bin —
   auto-pack fits within it or reports a clear error and disables export
   (see [docs/combine-force-bin-size.md](docs/combine-force-bin-size.md))
+- "⧉ Clone" button on each library card, to duplicate a tool under a new id
+  so two of the same tool can go in one combine/compose bin (see
+  [docs/library-clone-tool.md](docs/library-clone-tool.md))
 
 ## License
 

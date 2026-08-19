@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  cloneLibraryTool,
   composeLibrary,
   createLibraryBackup,
   deleteLibraryTool,
@@ -192,6 +193,11 @@ export function Library() {
     await deleteLibraryTool(id);
     setSel((s) => { const n = new Set(s); n.delete(id); return n; });
     invalidateComposition();
+    refresh();
+  }
+
+  async function clone(id: string) {
+    await cloneLibraryTool(id);
     refresh();
   }
 
@@ -515,6 +521,13 @@ export function Library() {
                             ◐ Correct photo selection
                           </button>
                         )}
+                        <button
+                          className="font-mono text-[10px] text-teal hover:underline"
+                          onClick={() => void clone(t.id)}
+                          title="Duplicate this tool under a new id, so you can select two of the same tool in one combine/compose bin"
+                        >
+                          ⧉ Clone
+                        </button>
                         {t.source_project && (
                           <button
                             className="font-mono text-[10px] text-teal hover:underline"

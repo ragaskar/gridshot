@@ -790,6 +790,15 @@ export async function deleteLibraryTool(id: string): Promise<void> {
   await fetch(`/api/library/${id}`, { method: "DELETE" });
 }
 
+export async function cloneLibraryTool(id: string): Promise<LibraryTool> {
+  const r = await fetch(`/api/library/${id}/clone`, { method: "POST" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "clone failed");
+  }
+  return r.json();
+}
+
 export interface LibraryEditResult extends OutlineEditSession {
   raw: Poly;
   corrected: Poly;
