@@ -27,7 +27,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFilter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from gridshot.core import batch as batch_mod
 from gridshot.core import bench as bench_mod
@@ -2419,6 +2419,16 @@ class CombineRequest(BaseModel):
     # Only consulted by the /combine/slice route; None falls back to the
     # standard 1mm trace-tolerance thickness.
     slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=5.0)
+    # Force auto-pack to fit within an exact gx x gy gridfinity footprint
+    # instead of the smallest one that fits. Both or neither; auto-pack only.
+    force_gx: Optional[int] = Field(default=None, ge=1)
+    force_gy: Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _force_size_is_both_or_neither(self):
+        if (self.force_gx is None) != (self.force_gy is None):
+            raise ValueError("force_gx and force_gy must be set together")
+        return self
 
 
 def _combine_layout(req: "CombineRequest") -> dict:
@@ -2523,7 +2533,30 @@ def _combine_layout(req: "CombineRequest") -> dict:
                 rotation_options.append((override.locked_rotation_deg,))
             else:
                 rotation_options.append((0.0, 90.0, 180.0, 270.0))
-        tfs = binpack_mod.pack(pack_stamps, wall=wall, rotations=rotation_options)
+        max_w = max_h = None
+        if req.force_gx is not None:
+            # Inverse of auto_grid()'s own formula: the largest packed-envelope
+            # footprint that would still make auto_grid land on exactly
+            # (force_gx, force_gy).
+            max_w = (
+                grid_mod.PITCH * req.force_gx
+                - (grid_mod.PITCH - grid_mod.BIN_SIZE) - 2 * wall
+            )
+            max_h = (
+                grid_mod.PITCH * req.force_gy
+                - (grid_mod.PITCH - grid_mod.BIN_SIZE) - 2 * wall
+            )
+        try:
+            tfs = binpack_mod.pack(
+                pack_stamps, wall=wall, rotations=rotation_options,
+                max_w=max_w, max_h=max_h,
+            )
+        except binpack_mod.PackingOverflowError as e:
+            label = tools[e.index].label or tools[e.index].id
+            raise HTTPException(
+                status_code=422,
+                detail=f"{label} doesn't fit — {e}",
+            )
 
     placed_envelopes = [
         binpack_mod.place_stamp(
@@ -2554,6 +2587,12 @@ def _combine_layout(req: "CombineRequest") -> dict:
     minx, miny, maxx, maxy = union.bounds
     rect = contour_mod.Poly(exterior=[(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)], holes=[])
     gx, gy = grid_mod.auto_grid(rect, wall=wall)
+    if req.force_gx is not None:
+        # pack() already guaranteed the envelope fits within the forced
+        # bound — use the forced size exactly rather than shrink-to-fit, so
+        # export honours what was asked for even if the packed result is
+        # tighter than the forced footprint.
+        gx, gy = req.force_gx, req.force_gy
     dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin
 
     centered, centered_fingers, ctfs = [], [], []

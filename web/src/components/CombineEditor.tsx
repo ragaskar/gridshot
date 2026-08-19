@@ -62,6 +62,9 @@ export function CombineEditor({
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
   const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
+  const [forceSize, setForceSize] = useState(false);
+  const [forceGx, setForceGx] = useState("");
+  const [forceGy, setForceGy] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
@@ -86,6 +89,9 @@ export function CombineEditor({
     placements?: Placement[],
     overrides: CombineToolOverride[] = overridesFor(tools),
     style: BinStyle = binStyle,
+    force: [number, number] | null = forceSize && forceGx && forceGy
+      ? [Number(forceGx), Number(forceGy)]
+      : null,
   ) {
     setBusy(true);
     setErr(null);
@@ -100,6 +106,8 @@ export function CombineEditor({
         magnetHoles,
         Number(magnetHoleDiameter),
         Number(magnetHoleDepth),
+        force ? force[0] : null,
+        force ? force[1] : null,
       );
       setMeta(p);
       setTools(p.tools);
@@ -136,10 +144,13 @@ export function CombineEditor({
     const overrides = overridesFor(tools);
     setPreviewBusy(true);
     setPreviewErr(null);
+    const forceGxVal = forceSize && forceGx && forceGy ? Number(forceGx) : null;
+    const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
     const timer = window.setTimeout(() => {
       combinePreviewGlb(
         ids, placements, overallHeight, lip, overrides, binStyle,
         magnetHoles, Number(magnetHoleDiameter), Number(magnetHoleDepth),
+        forceGxVal, forceGyVal,
       )
         .then((blob) => {
           if (sequence !== previewSequence.current) return;
@@ -158,7 +169,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -287,6 +298,7 @@ export function CombineEditor({
     setBusy(true);
     setErr(null);
     try {
+      const force = forceSize && forceGx && forceGy;
       await combineLibrary(
         ids,
         placementsFor(tools),
@@ -297,6 +309,8 @@ export function CombineEditor({
         magnetHoles,
         Number(magnetHoleDiameter),
         Number(magnetHoleDepth),
+        force ? Number(forceGx) : null,
+        force ? Number(forceGy) : null,
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -309,6 +323,7 @@ export function CombineEditor({
     setBusy(true);
     setErr(null);
     try {
+      const force = forceSize && forceGx && forceGy;
       await combineLibrarySlice(
         ids,
         placementsFor(tools),
@@ -320,6 +335,8 @@ export function CombineEditor({
         Number(magnetHoleDiameter),
         Number(magnetHoleDepth),
         thicknessMm,
+        force ? Number(forceGx) : null,
+        force ? Number(forceGy) : null,
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -484,6 +501,57 @@ export function CombineEditor({
                 </button>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={forceSize}
+                disabled={busy}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setForceSize(checked);
+                  let gx = forceGx, gy = forceGy;
+                  if (checked && !gx && !gy && layout) {
+                    gx = String(layout.gx);
+                    gy = String(layout.gy);
+                    setForceGx(gx);
+                    setForceGy(gy);
+                  }
+                  void load(
+                    placementsFor(tools), overridesFor(tools), binStyle,
+                    checked && gx && gy ? [Number(gx), Number(gy)] : null,
+                  );
+                }}
+              />
+              <span className="font-mono text-[10px] uppercase text-muted">Force bin size</span>
+            </label>
+            {forceSize && (
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Width (units)</span>
+                  <input
+                    aria-label="Forced bin width in gridfinity units"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={1} min={1}
+                    value={forceGx}
+                    onChange={(event) => setForceGx(event.target.value)}
+                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Depth (units)</span>
+                  <input
+                    aria-label="Forced bin depth in gridfinity units"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={1} min={1}
+                    value={forceGy}
+                    onChange={(event) => setForceGy(event.target.value)}
+                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                  />
+                </label>
+              </div>
+            )}
           </div>
           <div>
             <label className="flex items-center gap-2">
@@ -732,12 +800,12 @@ export function CombineEditor({
           </div>
           {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
           <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>
-          <button className="btn btn-primary w-full" disabled={busy || !tools.length} onClick={exportBin}>
+          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>
           <button
             className="btn w-full text-xs"
-            disabled={busy || !tools.length}
+            disabled={busy || !tools.length || Boolean(err)}
             onClick={() => setSliceDialogOpen(true)}
             title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
           >

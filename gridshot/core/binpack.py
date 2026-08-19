@@ -42,9 +42,24 @@ def place_stamp(poly: Poly, tx: float, ty: float, rot: float) -> Poly:
     return from_shapely(translate(srotate(s, rot, origin=(0, 0)), tx, ty))
 
 
+class PackingOverflowError(ValueError):
+    """Raised by a bounded `pack()` call when some tool doesn't fit at any
+    allowed rotation/position within the given `max_w`/`max_h` footprint."""
+
+    def __init__(self, index: int, max_w: float, max_h: float):
+        self.index = index
+        self.max_w = max_w
+        self.max_h = max_h
+        super().__init__(
+            f"tool {index} doesn't fit in a {max_w:.1f}x{max_h:.1f}mm "
+            "footprint at any allowed rotation"
+        )
+
+
 def pack(
     polys: list[Poly], wall: float = 2.0, step: float = 2.5,
     rotations: tuple[float, ...] | list[tuple[float, ...]] = (0.0, 90.0, 180.0, 270.0),
+    max_w: float | None = None, max_h: float | None = None,
 ) -> list[dict]:
     """Bottom-left-fill placements, one per input tool (original order).
 
@@ -56,6 +71,11 @@ def pack(
     `rotations` may be one tuple shared by every tool (legacy/default), or a
     list with one rotation-tuple per input poly — e.g. a 1-element tuple to
     lock a specific tool to a single rotation during the search.
+
+    `max_w`/`max_h`, given together, bound the search to a fixed footprint
+    instead of letting it grow unboundedly; a tool that doesn't fit at any
+    allowed rotation/position within that bound raises `PackingOverflowError`
+    naming its index (into `polys`) and the bound.
     """
     stamps = [_stamp(to_shapely(p).buffer(0)) for p in polys]
     per_tool_rotations = (
@@ -63,6 +83,7 @@ def pack(
     )
     if len(per_tool_rotations) != len(stamps):
         raise ValueError("rotations list must have one entry per tool")
+    bounded = max_w is not None and max_h is not None
     order = sorted(range(len(stamps)), key=lambda i: -stamps[i].area)
     placed: list = []  # shapes in a bottom-left (origin) frame
     out: list[dict | None] = [None] * len(stamps)
@@ -74,6 +95,13 @@ def pack(
             r = srotate(stamps[idx], rot, origin=(0, 0))
             b = r.bounds
             variants.append((rot, translate(r, -b[0], -b[1])))
+        if bounded:
+            variants = [
+                (rot, v) for rot, v in variants
+                if v.bounds[2] <= max_w and v.bounds[3] <= max_h
+            ]
+            if not variants:
+                raise PackingOverflowError(idx, max_w, max_h)
         if not placed:
             rot, v = min(variants, key=lambda rv: rv[1].bounds[2] * rv[1].bounds[3])
             placed.append(v)
@@ -85,8 +113,10 @@ def pack(
         best = None  # (footprint_area, shape, rot)
         for rot, v in variants:
             vw, vh = v.bounds[2], v.bounds[3]
-            for y in np.arange(0.0, cur_h + vh + step, step):
-                for x in np.arange(0.0, cur_w + vw + step, step):
+            x_limit = (max_w - vw) if bounded else (cur_w + vw)
+            y_limit = (max_h - vh) if bounded else (cur_h + vh)
+            for y in np.arange(0.0, y_limit + step, step):
+                for x in np.arange(0.0, x_limit + step, step):
                     cand = translate(v, float(x), float(y))
                     if all(cand.distance(q) >= wall for q in placed):
                         cb = cand.bounds
@@ -94,6 +124,10 @@ def pack(
                         if best is None or area < best[0]:
                             best = (area, cand, rot)
                         break  # first x that fits at this y (bottom-left)
+        if best is None:
+            if bounded:
+                raise PackingOverflowError(idx, max_w, max_h)
+            raise AssertionError("unbounded pack() search space exhausted without a fit")
         _, shape, rot = best
         placed.append(shape)
         c = shape.centroid

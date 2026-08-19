@@ -331,6 +331,9 @@ Features added on top of the original public release, newest last:
 - Per-tool rotation lock for auto-pack in the multi-tool combine editor —
   keep a tool at its current angle while the rest re-pack around it (see
   [docs/combine-editor-rotation-lock.md](docs/combine-editor-rotation-lock.md))
+- Force an exact bin footprint (gx×gy) for a multi-tool combine bin —
+  auto-pack fits within it or reports a clear error and disables export
+  (see [docs/combine-force-bin-size.md](docs/combine-force-bin-size.md))
 
 ## License
 

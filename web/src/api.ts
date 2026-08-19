@@ -1014,11 +1014,13 @@ export async function combinePreview(
   magnetHoles = false,
   magnetHoleDiameterMm?: number | null,
   magnetHoleDepthMm?: number | null,
+  forceGx?: number | null,
+  forceGy?: number | null,
 ): Promise<CombinePreview> {
   const r = await fetch("/api/library/combine/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1037,11 +1039,13 @@ export async function combinePreviewGlb(
   magnetHoles = false,
   magnetHoleDiameterMm?: number | null,
   magnetHoleDepthMm?: number | null,
+  forceGx?: number | null,
+  forceGy?: number | null,
 ): Promise<Blob> {
   const r = await fetch("/api/library/combine/preview.glb", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1060,11 +1064,13 @@ export async function combineLibrary(
   magnetHoles = false,
   magnetHoleDiameterMm?: number | null,
   magnetHoleDepthMm?: number | null,
+  forceGx?: number | null,
+  forceGy?: number | null,
 ): Promise<void> {
   const r = await fetch("/api/library/combine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1089,11 +1095,13 @@ export async function combineLibrarySlice(
   magnetHoleDiameterMm?: number | null,
   magnetHoleDepthMm?: number | null,
   sliceThicknessMm?: number | null,
+  forceGx?: number | null,
+  forceGy?: number | null,
 ): Promise<void> {
   const r = await fetch("/api/library/combine/slice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, slice_thickness_mm: sliceThicknessMm ?? undefined }),
+    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, slice_thickness_mm: sliceThicknessMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
