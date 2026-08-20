@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from gridshot.core import batch as batch_mod
 from gridshot.core import bench as bench_mod
+from gridshot.core import binlibrary as binlibrary_mod
 from gridshot.core import calibrate as calibrate_mod
 from gridshot.core import contour as contour_mod
 from gridshot.core import devices as devices_mod
@@ -2834,6 +2835,139 @@ def library_combine_slice(req: CombineRequest) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Bin Library: saved multi-tool combine-editor arrangements (recipe, not a
+# geometry snapshot — export/reopen always regenerate from current tools).
+
+class SaveBinRequest(CombineRequest):
+    label: str
+
+
+class BinUpdate(BaseModel):
+    label: Optional[str] = None
+
+
+class BinSliceRequest(BaseModel):
+    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=5.0)
+
+
+def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRequest:
+    return CombineRequest(
+        ids=saved.tool_ids,
+        overall_height=saved.overall_height,
+        lip=saved.lip,
+        bin_style=saved.bin_style,
+        placements=[Placement(**p.model_dump()) for p in saved.placements],
+        overrides=[CombineToolOverride(**o.model_dump()) for o in saved.overrides],
+        magnet_holes=saved.magnet_holes,
+        magnet_hole_diameter_mm=saved.magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=saved.magnet_hole_depth_mm,
+        force_gx=saved.force_gx,
+        force_gy=saved.force_gy,
+    )
+
+
+def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
+    tool_labels: list[Optional[str]] = []
+    for tid in saved.tool_ids:
+        try:
+            tool_labels.append(library_mod.load(tid).label or tid)
+        except KeyError:
+            tool_labels.append(None)
+    return {
+        "id": saved.id,
+        "label": saved.label,
+        "created_ts": saved.created_ts,
+        "tool_ids": saved.tool_ids,
+        "tool_labels": tool_labels,
+        "placements": [p.model_dump() for p in saved.placements],
+        "overrides": [o.model_dump() for o in saved.overrides],
+        "overall_height": saved.overall_height,
+        "lip": saved.lip,
+        "bin_style": saved.bin_style,
+        "magnet_holes": saved.magnet_holes,
+        "magnet_hole_diameter_mm": saved.magnet_hole_diameter_mm,
+        "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
+        "force_gx": saved.force_gx,
+        "force_gy": saved.force_gy,
+    }
+
+
+def bins_save(req: SaveBinRequest) -> dict:
+    """Persist the current combine-editor arrangement as a named Bin Library
+    entry. Validates the same way a live combine request does (>=2 ready
+    tools with outlines), then stores each surviving tool's *actual* placed
+    transform (auto-packed or manual, whichever the request produced) rather
+    than blindly trusting the request's own placements list."""
+    lay = _combine_layout(req)
+    tool_ids = [t.id for t in lay["tools"]]
+    saved = binlibrary_mod.SavedBin(
+        id=binlibrary_mod.new_bin_id(),
+        label=req.label,
+        created_ts=int(time.time()),
+        tool_ids=tool_ids,
+        placements=[
+            binlibrary_mod.SavedBinPlacement(
+                id=tool_ids[i],
+                tx=lay["tfs"][i]["tx"], ty=lay["tfs"][i]["ty"], rot=lay["tfs"][i]["rot"],
+            )
+            for i in range(len(tool_ids))
+        ],
+        overrides=[
+            binlibrary_mod.SavedBinOverride(**o.model_dump())
+            for o in (req.overrides or [])
+        ],
+        overall_height=req.overall_height,
+        lip=req.lip,
+        bin_style=req.bin_style,
+        magnet_holes=req.magnet_holes,
+        magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
+        magnet_hole_depth_mm=req.magnet_hole_depth_mm,
+        force_gx=req.force_gx,
+        force_gy=req.force_gy,
+    )
+    binlibrary_mod.save_bin(saved)
+    return _bin_json(saved)
+
+
+def bins_list() -> dict:
+    return {"bins": [_bin_json(b) for b in binlibrary_mod.list_bins()]}
+
+
+def bins_update(bin_id: str, upd: BinUpdate) -> dict:
+    try:
+        saved = binlibrary_mod.load_bin(bin_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin")
+    changes = upd.model_dump(exclude_unset=True)
+    if changes:
+        saved = saved.model_copy(update=changes)
+        binlibrary_mod.save_bin(saved)
+    return _bin_json(saved)
+
+
+def bins_delete(bin_id: str) -> dict:
+    return {"deleted": binlibrary_mod.delete_bin(bin_id)}
+
+
+def bins_export(bin_id: str) -> Response:
+    try:
+        saved = binlibrary_mod.load_bin(bin_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin")
+    return library_combine(_combine_request_from_saved_bin(saved))
+
+
+def bins_export_slice(bin_id: str, req: BinSliceRequest) -> Response:
+    try:
+        saved = binlibrary_mod.load_bin(bin_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin")
+    combine_req = _combine_request_from_saved_bin(saved)
+    combine_req.slice_thickness_mm = req.slice_thickness_mm
+    return library_combine_slice(combine_req)
+
+
+# ---------------------------------------------------------------------------
 # batch zip: many tools, two shots each → auto-pair → add all to the library
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp"}
@@ -4537,6 +4671,7 @@ def get_file(project: str, name: str) -> FileResponse:
 # Route topology is organized by domain; handlers remain import-compatible from
 # this module while service extraction can proceed independently of HTTP wiring.
 from gridshot.server.routes import batch as batch_routes
+from gridshot.server.routes import bins as bins_routes
 from gridshot.server.routes import capture as capture_routes
 from gridshot.server.routes import export as export_routes
 from gridshot.server.routes import library as library_routes
@@ -4567,6 +4702,7 @@ for _router_factory in (
     operation_routes.build_router,
     capture_routes.build_router,
     library_routes.build_router,
+    bins_routes.build_router,
     export_routes.build_router,
     batch_routes.build_router,
 ):
