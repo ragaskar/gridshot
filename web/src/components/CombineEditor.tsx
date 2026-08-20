@@ -1095,13 +1095,32 @@ export function CombineEditor({
                     </button>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between text-muted">
+                    <div className="flex items-center justify-between gap-2 text-muted">
                       <span>Position</span>
-                      <span className="text-knockout">{offsetValue === undefined ? "– mm" : `${offsetValue} mm`}</span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <input
+                          aria-label="Finger-hole position offset in millimetres"
+                          className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                          type="number" step={1} min={-offsetMax} max={offsetMax}
+                          disabled={busy}
+                          defaultValue={offsetValue ?? ""}
+                          placeholder={offsetValue === undefined ? "–" : undefined}
+                          key={`${selectionKey}-offset-${offsetValue ?? "mixed"}`}
+                          onBlur={(event) => {
+                            const raw = event.target.value;
+                            if (raw === "") return; // untouched indeterminate field — no-op
+                            const value = Number(raw);
+                            if (!Number.isFinite(value)) return;
+                            if (offsetValue !== undefined && value === offsetValue) return; // unchanged
+                            void setFingerHoleOffset(value);
+                          }}
+                        />
+                        <span className="text-knockout">mm</span>
+                      </div>
                     </div>
                     <input
                       aria-label="Finger-hole position offset"
-                      className="w-full accent-teal"
+                      className="mt-1 w-full accent-teal"
                       type="range"
                       min={-offsetMax}
                       max={offsetMax}

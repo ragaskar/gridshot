@@ -354,6 +354,9 @@ Features added on top of the original public release, newest last:
 - Distribute 3+ selected tools evenly (horizontally/vertically) in the
   multi-tool combine editor (see
   [docs/combine-editor-distribute.md](docs/combine-editor-distribute.md))
+- Numeric field for finger-hole position, alongside the slider — 1mm
+  step, but typeable to 0.01mm resolution (see
+  [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
 
 ## License
 

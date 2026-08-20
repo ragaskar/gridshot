@@ -12,13 +12,16 @@ Select a tool with finger access on. Below the Finger access toggle:
 
 - **Switch sides** — mirrors the hole to the opposite edge of the pocket
   (bottom ↔ top, left ↔ right).
-- **Position** — a slider (and its live mm readout) that slides the hole
-  along whichever edge it's on. `0` is that edge's exact midpoint — the
+- **Position** — a number field and a slider, kept in sync, that slide the
+  hole along whichever edge it's on. `0` is that edge's exact midpoint — the
   default placement. Negative values move it toward the edge's low end,
   positive toward its high end (for a tall tool whose hole sits on its
   top/bottom edge, that's left/right, matching how the slider reads). The
   hole always stays snapped exactly onto the tool's real boundary — moving
   it along one axis follows whatever the contour does on the other.
+  The number field's arrow-key/spinner step is 1mm, but you can type any
+  value down to 0.01mm for finer placement than the slider or stepper alone
+  can reach.
 
 Both settings only apply to this bin — the library entry is unchanged.
 
@@ -33,12 +36,13 @@ flips every selected tool to the same side first, then alternates on
 subsequent clicks, the same tri-state pattern as bulk finger access.
 
 Position uses the same eligibility rule. When every selected tool's offset
-agrees, the slider shows that shared value; when mixed, the readout shows
-"– mm" and the slider's thumb sits at its center (0) until you move it.
-Dragging it sets every selected tool's offset to the same millimetre value.
-The slider's range is bounded to the *smallest* of the selected tools'
-individual position limits, so every tool in the group stays within its own
-valid range.
+agrees, the number field and slider both show that shared value; when
+mixed, the number field shows a "–" placeholder and the slider's thumb sits
+at its center (0) until you move it. Editing either one (typing a value and
+clicking away, or dragging the slider) sets every selected tool's offset to
+the same millimetre value. Both controls' range is bounded to the
+*smallest* of the selected tools' individual position limits, so every tool
+in the group stays within its own valid range.
 
 ## Constraints
 
