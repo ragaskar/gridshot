@@ -578,14 +578,14 @@ export function CombineEditor({
     <div className="mt-3 border-t border-line pt-3">
       <span className="font-mono text-[10px] uppercase text-muted">Align</span>
       <div className="mt-1 grid grid-cols-3 gap-1">
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
       </div>
       <div className="mt-1 grid grid-cols-3 gap-1">
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
       </div>
     </div>
   );
@@ -594,8 +594,8 @@ export function CombineEditor({
     <div className="mt-3 border-t border-line pt-3">
       <span className="font-mono text-[10px] uppercase text-muted">Distribute</span>
       <div className="mt-1 grid grid-cols-2 gap-1">
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("horizontal")}>↔ Horizontally</button>
-        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("vertical")}>↕ Vertically</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("horizontal")}>↔ Horizontally</button>
+        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("vertical")}>↕ Vertically</button>
       </div>
     </div>
   );
@@ -1013,7 +1013,7 @@ export function CombineEditor({
                 </div>
                 <button
                   aria-pressed={fingerAllOn}
-                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost"}`}
+                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
                   disabled={busy}
                   onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
                 >
@@ -1035,7 +1035,7 @@ export function CombineEditor({
                     <span className="text-knockout">Switch sides</span>
                     <button
                       aria-pressed={sideFlipAllOn}
-                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${sideFlipAllOn ? "border-teal text-teal" : "btn-ghost"}`}
+                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${sideFlipAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
                       disabled={busy}
                       onClick={() => void setFingerHoleSideFlip(sideFlipMixed ? true : sideFlipAllOn ? null : true)}
                     >
