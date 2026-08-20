@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteBin,
   exportSavedBin,
@@ -8,6 +8,7 @@ import {
   type SavedBin,
 } from "../api";
 import { CombineEditor, type CombineEditorInitial } from "../components/CombineEditor";
+import { getUrlParam, setUrlParam } from "../urlState";
 
 /** Saved multi-tool combine-editor arrangements — a recipe (tools, placements,
  *  overrides, bin-wide settings), not a frozen geometry snapshot. Export and
@@ -20,6 +21,28 @@ export function BinLibrary() {
 
   const refresh = () => listBins().then(setBins).catch(() => setBins([]));
   useEffect(() => { refresh(); }, []);
+
+  // Deep-link: ?bin=<id> reopens that saved bin's editor once the list has
+  // loaded. Only ever restored once — later refreshes() (rename, delete, ...)
+  // mustn't reopen it.
+  const restoredBin = useRef(false);
+  useEffect(() => {
+    if (restoredBin.current || !bins.length) return;
+    restoredBin.current = true;
+    const id = getUrlParam("bin");
+    const found = id ? bins.find((b) => b.id === id) : undefined;
+    if (found) openReopen(found);
+  }, [bins]);
+
+  function openReopen(b: SavedBin) {
+    setUrlParam("bin", b.id, { push: true });
+    setReopening(b);
+  }
+
+  function closeReopen() {
+    setUrlParam("bin", null, { push: true });
+    setReopening(null);
+  }
 
   async function rename(id: string, label: string) {
     try {
@@ -142,7 +165,7 @@ export function BinLibrary() {
                     <button
                       className="btn btn-ghost text-[10px] !px-2 !py-2"
                       disabled={busyId === b.id}
-                      onClick={() => setReopening(b)}
+                      onClick={() => openReopen(b)}
                     >
                       ↻ Reopen
                     </button>
@@ -183,7 +206,7 @@ export function BinLibrary() {
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
           style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={() => setReopening(null)}
+          onClick={closeReopen}
         >
           <div className="w-full max-w-[1180px]" onClick={(e) => e.stopPropagation()}>
             <CombineEditor
@@ -191,7 +214,7 @@ export function BinLibrary() {
               overallHeight={reopening.overall_height}
               lip={reopening.lip}
               initial={reopenInitial(reopening)}
-              onClose={() => setReopening(null)}
+              onClose={closeReopen}
             />
           </div>
         </div>

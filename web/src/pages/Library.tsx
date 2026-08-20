@@ -30,6 +30,7 @@ import { CombineEditor } from "../components/CombineEditor";
 import { DrawerViewer } from "../components/DrawerViewer";
 import { PhotoLightbox } from "../components/PhotoLightbox";
 import { ReadinessBadge } from "../components/ReadinessPanel";
+import { getUrlParam, setUrlParam } from "../urlState";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 
@@ -178,6 +179,27 @@ export function Library() {
   useEffect(() => () => {
     if (drawerPreviewUrlRef.current) URL.revokeObjectURL(drawerPreviewUrlRef.current);
   }, []);
+
+  // Deep-link: ?combine=id1,id2,... reopens the multi-combine editor with
+  // that tool selection once the library has loaded. Only ever restored
+  // once — subsequent refreshes() (delete, clone, ...) mustn't reopen it.
+  const restoredCombine = useRef(false);
+  useEffect(() => {
+    if (restoredCombine.current || !tools.length) return;
+    restoredCombine.current = true;
+    const raw = getUrlParam("combine");
+    if (!raw) return;
+    const ids = raw.split(",").filter((id) => tools.some((t) => t.id === id));
+    if (ids.length >= 2) {
+      setSel(new Set(ids));
+      setCombining(true);
+    }
+  }, [tools]);
+
+  function closeCombining() {
+    setUrlParam("combine", null, { push: true });
+    setCombining(false);
+  }
 
   const toggle = (id: string) => {
     if (tools.find((tool) => tool.id === id)?.readiness.status === "block") return;
@@ -585,7 +607,13 @@ export function Library() {
                 {busy ? "…" : `Compose ${sel.size} tool${sel.size === 1 ? "" : "s"} (separate bins)`}
               </button>
               {sel.size >= 2 && (
-                <button className="btn w-full" onClick={() => setCombining(true)}>
+                <button
+                  className="btn w-full"
+                  onClick={() => {
+                    setUrlParam("combine", [...sel].join(","), { push: true });
+                    setCombining(true);
+                  }}
+                >
                   ⧉ Combine into ONE bin…
                 </button>
               )}
@@ -729,14 +757,14 @@ export function Library() {
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
           style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={() => setCombining(false)}
+          onClick={closeCombining}
         >
           <div className="w-full max-w-[1180px]" onClick={(e) => e.stopPropagation()}>
             <CombineEditor
               ids={[...sel]}
               overallHeight={overallHeight === "" ? null : overallHeight}
               lip={true}
-              onClose={() => setCombining(false)}
+              onClose={closeCombining}
             />
           </div>
         </div>

@@ -360,6 +360,9 @@ Features added on top of the original public release, newest last:
 - Bin Library: save a multi-tool combine-editor arrangement as a named,
   renameable entry — reopen it for further arranging, or export bin/slice
   directly, without redoing the layout (see [docs/bin-library.md](docs/bin-library.md))
+- Deep-link URLs: every page, and the multi-tool combine editor, has a URL
+  that reopens the same content on reload — including browser back/forward
+  (see [docs/deep-link-urls.md](docs/deep-link-urls.md))
 
 ## License
 

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { forgetActiveSession, loadActiveSession, useApp } from "./state";
+import { forgetActiveSession, loadActiveSession, useApp, type View } from "./state";
 import { Upload } from "./pages/Upload";
 import { Editor } from "./pages/SharedEditorPage";
 import { Result } from "./pages/Result";
@@ -9,7 +9,8 @@ import { Batch } from "./pages/Batch";
 import { Calibration } from "./pages/Calibration";
 import { MatReference } from "./pages/MatReference";
 import { AppNavigation } from "./components/AppNavigation";
-import { getSession, type Session, type TraceResult } from "./api";
+import { getSession, type GenerateParams, type Session, type TraceResult } from "./api";
+import { decodeUrlState, encodeViewParams } from "./urlState";
 
 const DEFAULT_PARAMS = {
   thickness: 4,
@@ -22,31 +23,93 @@ const DEFAULT_PARAMS = {
   lip: true,
 };
 
+/** The URL-addressable identity of the current view — used to tell "the
+ *  store just changed" from "the store just changed to match the URL we're
+ *  already on" (e.g. after a popstate), so pushUrl below never double-pushes. */
+function urlKeyFor(state: { view: View; session: Session | null; result: TraceResult | null }): string {
+  if (state.view === "editor") return `editor:${state.session?.session ?? ""}`;
+  if (state.view === "result") return `result:${state.result?.project ?? ""}`;
+  return `view:${state.view}`;
+}
+
+function urlKeyFromLocation(): string {
+  const d = decodeUrlState(location.search);
+  if (d.session) return `editor:${d.session}`;
+  if (d.project) return `result:${d.project}`;
+  return `view:${d.view ?? "upload"}`;
+}
+
+function hydrateFromUrl(
+  setResult: (r: TraceResult) => void,
+  setEditor: (s: Session, p: GenerateParams) => void,
+  navigate: (v: Exclude<View, "tracing">) => void,
+) {
+  const decoded = decodeUrlState(location.search);
+  const stored = loadActiveSession();
+  const sess = decoded.session ?? stored?.session;
+  if (decoded.project) {
+    fetch(`/api/result/${decoded.project}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((r: TraceResult) => setResult(r))
+      .catch(() => {});
+  } else if (sess) {
+    getSession(sess)
+      .then((s: Session) => setEditor(
+        s,
+        stored?.session === sess ? stored.params : DEFAULT_PARAMS,
+      ))
+      .catch(() => forgetActiveSession());
+  } else if (decoded.view) {
+    navigate(decoded.view);
+  }
+}
+
 export function App() {
   const view = useApp((s) => s.view);
   const setResult = useApp((s) => s.setResult);
   const setEditor = useApp((s) => s.setEditor);
+  const navigate = useApp((s) => s.navigate);
 
-  // deep-links: ?project=<id> reopens a stored result; ?session=<id> the editor
+  // Deep-links: ?project=<id> reopens a stored result, ?session=<id> the
+  // editor, ?view=<view> everything else. Hydrate once on mount, then keep
+  // the URL and the store in sync in both directions.
   useEffect(() => {
-    const q = new URLSearchParams(location.search);
-    const proj = q.get("project");
-    const stored = loadActiveSession();
-    const sess = q.get("session") ?? stored?.session;
-    if (proj) {
-      fetch(`/api/result/${proj}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then((r: TraceResult) => setResult(r))
-        .catch(() => {});
-    } else if (sess) {
-      getSession(sess)
-        .then((s: Session) => setEditor(
-          s,
-          stored?.session === sess ? stored.params : DEFAULT_PARAMS,
-        ))
-        .catch(() => forgetActiveSession());
+    hydrateFromUrl(setResult, setEditor, navigate);
+  }, []); // eslint-disable-line
+
+  useEffect(() => {
+    const unsubscribe = useApp.subscribe((state) => {
+      const key = urlKeyFor(state);
+      if (key === urlKeyFromLocation()) return; // already reflects this state (e.g. via popstate)
+      const qs = encodeViewParams(state.view, {
+        session: state.session?.session,
+        project: state.result?.project,
+      });
+      if (!qs) return; // tracing, or editor/result without an id yet — leave the URL alone
+      history.pushState(null, "", `${location.pathname}?${qs}${location.hash}`);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    function onPopState() {
+      const decoded = decodeUrlState(location.search);
+      if (decoded.project) {
+        fetch(`/api/result/${decoded.project}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((r: TraceResult) => setResult(r))
+          .catch(() => {});
+      } else if (decoded.session) {
+        getSession(decoded.session)
+          .then((s: Session) => setEditor(s, DEFAULT_PARAMS))
+          .catch(() => forgetActiveSession());
+      } else {
+        navigate(decoded.view ?? "upload");
+      }
     }
-  }, [setResult, setEditor]);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [setResult, setEditor, navigate]);
 
   let page;
   if (view === "result") page = <Result />;
