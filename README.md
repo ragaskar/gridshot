@@ -357,6 +357,9 @@ Features added on top of the original public release, newest last:
 - Numeric field for finger-hole position, alongside the slider — 1mm
   step, but typeable to 0.01mm resolution (see
   [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
+- Bin Library: save a multi-tool combine-editor arrangement as a named,
+  renameable entry — reopen it for further arranging, or export bin/slice
+  directly, without redoing the layout (see [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 

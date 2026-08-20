@@ -1127,6 +1127,105 @@ export async function combineLibrarySlice(
   URL.revokeObjectURL(url);
 }
 
+export interface SavedBin {
+  id: string;
+  label: string;
+  created_ts: number;
+  tool_ids: string[];
+  tool_labels: (string | null)[]; // null = that tool has since been deleted
+  placements: Placement[];
+  overrides: CombineToolOverride[];
+  overall_height: number | null;
+  lip: boolean;
+  bin_style: BinStyle;
+  magnet_holes: boolean;
+  magnet_hole_diameter_mm: number;
+  magnet_hole_depth_mm: number;
+  force_gx: number | null;
+  force_gy: number | null;
+}
+
+export async function saveBin(
+  label: string,
+  ids: string[],
+  placements: Placement[] | null,
+  overrides: CombineToolOverride[] | null,
+  overallHeight?: number | null,
+  lip = true,
+  binStyle: BinStyle = "pocket",
+  magnetHoles = false,
+  magnetHoleDiameterMm?: number | null,
+  magnetHoleDepthMm?: number | null,
+  forceGx?: number | null,
+  forceGy?: number | null,
+): Promise<SavedBin> {
+  const r = await fetch("/api/bins", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, label, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "save bin failed");
+  }
+  return r.json();
+}
+
+export async function listBins(): Promise<SavedBin[]> {
+  const r = await fetch("/api/bins");
+  if (!r.ok) throw new Error("bin list failed");
+  return (await r.json()).bins;
+}
+
+export async function renameBin(id: string, label: string): Promise<SavedBin> {
+  const r = await fetch(`/api/bins/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "rename failed");
+  }
+  return r.json();
+}
+
+export async function deleteBin(id: string): Promise<void> {
+  await fetch(`/api/bins/${id}`, { method: "DELETE" });
+}
+
+export async function exportSavedBin(id: string): Promise<void> {
+  const r = await fetch(`/api/bins/${id}/export`, { method: "POST" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "export failed");
+  }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "multitool-bin.3mf";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function exportSavedBinSlice(id: string, sliceThicknessMm?: number | null): Promise<void> {
+  const r = await fetch(`/api/bins/${id}/export/slice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slice_thickness_mm: sliceThicknessMm ?? undefined }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "slice export failed");
+  }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "multitool-bin-slice.3mf";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function exportDrawer(
   ids: string[],
   cols: number,

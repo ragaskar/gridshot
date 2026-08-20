@@ -42,6 +42,7 @@ export type View =
   | "tracing"
   | "result"
   | "library"
+  | "bins"
   | "batch"
   | "calibration"
   | "reference";

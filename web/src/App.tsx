@@ -4,6 +4,7 @@ import { Upload } from "./pages/Upload";
 import { Editor } from "./pages/SharedEditorPage";
 import { Result } from "./pages/Result";
 import { Library } from "./pages/Library";
+import { BinLibrary } from "./pages/BinLibrary";
 import { Batch } from "./pages/Batch";
 import { Calibration } from "./pages/Calibration";
 import { MatReference } from "./pages/MatReference";
@@ -50,6 +51,7 @@ export function App() {
   let page;
   if (view === "result") page = <Result />;
   else if (view === "library") page = <Library />;
+  else if (view === "bins") page = <BinLibrary />;
   else if (view === "batch") page = <Batch />;
   else if (view === "calibration") page = <Calibration />;
   else if (view === "reference") page = <MatReference />;

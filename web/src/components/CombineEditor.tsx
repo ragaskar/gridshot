@@ -4,6 +4,7 @@ import {
   combineLibrarySlice,
   combinePreview,
   combinePreviewGlb,
+  saveBin,
   type CombinePreview,
   type CombineTool,
   type CombineToolOverride,
@@ -47,17 +48,43 @@ function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot }) => ({ id, tx, ty, rot }));
 }
 
+/** "Combined Bin YYYY-MM-DD" using the browser's local date (not UTC). */
+function defaultBinName(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `Combined Bin ${y}-${m}-${day}`;
+}
+
+/** Seed state for reopening a saved Bin Library entry, instead of the usual
+ *  fresh auto-pack. Mirrors a combine request's recipe fields. */
+export interface CombineEditorInitial {
+  placements: Placement[];
+  overrides: CombineToolOverride[];
+  binStyle: BinStyle;
+  magnetHoles: boolean;
+  magnetHoleDiameterMm: number;
+  magnetHoleDepthMm: number;
+  forceGx: number | null;
+  forceGy: number | null;
+}
+
 /** Interactive multi-tool-bin editor: auto-packed layout you can drag + rotate,
  *  inspect as the exact generated solid, then export the arrangement as one 3MF. */
 export function CombineEditor({
   ids,
   overallHeight,
   lip,
+  initial,
   onClose,
 }: {
   ids: string[];
   overallHeight: number | null;
   lip: boolean;
+  /** When set, the editor opens seeded from this saved arrangement instead
+   *  of auto-packing fresh — see `initial`-aware mount effect below. */
+  initial?: CombineEditorInitial;
   onClose: () => void;
 }) {
   const [meta, setMeta] = useState<CombinePreview | null>(null);
@@ -70,17 +97,22 @@ export function CombineEditor({
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
-  const [binStyle, setBinStyle] = useState<BinStyle>("pocket");
-  const [magnetHoles, setMagnetHoles] = useState(false);
-  const [magnetHoleDiameter, setMagnetHoleDiameter] = useState("6.5");
-  const [magnetHoleDepth, setMagnetHoleDepth] = useState("2");
+  const [binStyle, setBinStyle] = useState<BinStyle>(initial?.binStyle ?? "pocket");
+  const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
+  const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
+  const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
   const [nudge, setNudge] = useState("0.1");
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
   const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
-  const [forceSize, setForceSize] = useState(false);
-  const [forceGx, setForceGx] = useState("");
-  const [forceGy, setForceGy] = useState("");
+  const [forceSize, setForceSize] = useState(Boolean(initial?.forceGx && initial?.forceGy));
+  const [forceGx, setForceGx] = useState(initial?.forceGx ? String(initial.forceGx) : "");
+  const [forceGy, setForceGy] = useState(initial?.forceGy ? String(initial.forceGy) : "");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const [saveDone, setSaveDone] = useState(false);
   // Multi-select-only local draft for the pocket-depth override checkbox —
   // null means "no pending edit"; checking the box (when not on a single
   // tool) never commits by itself, only setting a depth or unchecking does.
@@ -189,7 +221,18 @@ export function CombineEditor({
       setBusy(false);
     }
   }
-  useEffect(() => { load(); /* auto-pack on open */ }, []); // eslint-disable-line
+  useEffect(() => {
+    if (initial) {
+      // Reopening a saved bin: honour its placements as a manual arrangement,
+      // not a fresh auto-pack.
+      void load(
+        initial.placements, initial.overrides, initial.binStyle,
+        initial.forceGx && initial.forceGy ? [initial.forceGx, initial.forceGy] : null,
+      );
+    } else {
+      load(); // auto-pack on open
+    }
+  }, []); // eslint-disable-line
 
   const idsKey = ids.join("|");
   const geometryKey = useMemo(
@@ -564,6 +607,35 @@ export function CombineEditor({
       setErr((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveToBinLibrary() {
+    setSaveBusy(true);
+    setSaveErr(null);
+    try {
+      const force = forceSize && forceGx && forceGy;
+      await saveBin(
+        saveName.trim() || defaultBinName(),
+        ids,
+        placementsFor(tools),
+        overridesFor(tools),
+        overallHeight,
+        lip,
+        binStyle,
+        magnetHoles,
+        Number(magnetHoleDiameter),
+        Number(magnetHoleDepth),
+        force ? Number(forceGx) : null,
+        force ? Number(forceGy) : null,
+      );
+      setSaveDialogOpen(false);
+      setSaveDone(true);
+      window.setTimeout(() => setSaveDone(false), 3000);
+    } catch (e) {
+      setSaveErr((e as Error).message);
+    } finally {
+      setSaveBusy(false);
     }
   }
 
@@ -1223,6 +1295,50 @@ export function CombineEditor({
                   }}
                 >
                   Export
+                </button>
+              </div>
+            </div>
+          )}
+          <button
+            className="btn w-full text-xs"
+            disabled={busy || !tools.length || Boolean(err) || hasOverflow}
+            onClick={() => {
+              setSaveName(defaultBinName());
+              setSaveErr(null);
+              setSaveDialogOpen(true);
+            }}
+          >
+            💾 Save to Bin Library
+          </button>
+          {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
+          {saveDialogOpen && (
+            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+              <label className="block">
+                <span className="block uppercase text-muted">Name</span>
+                <input
+                  aria-label="Bin Library entry name"
+                  className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                  type="text"
+                  value={saveName}
+                  onChange={(event) => setSaveName(event.target.value)}
+                  autoFocus
+                />
+              </label>
+              {saveErr && <p className="mt-2 text-orange">{saveErr}</p>}
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <button
+                  className="btn text-xs"
+                  disabled={saveBusy}
+                  onClick={() => setSaveDialogOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary text-xs"
+                  disabled={saveBusy}
+                  onClick={() => void saveToBinLibrary()}
+                >
+                  Save
                 </button>
               </div>
             </div>

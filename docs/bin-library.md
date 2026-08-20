@@ -1,0 +1,44 @@
+# Bin Library
+
+The multi-tool combine editor (Library → *Arrange multi-tool bin*) lets you arrange several
+tools into one bin, but until now the arrangement only existed for that session. **Bin Library**
+(its own page in the top nav) saves a finished arrangement as a named entry you can come back to
+later, independent of the Tool Library.
+
+## Saving
+
+In the combine editor, click **"💾 Save to Bin Library"** (near the export buttons). It opens a
+small dialog with a name field, pre-filled with `"Combined Bin YYYY-MM-DD"` (today's date, in
+your browser's local time) — edit it to whatever you like, or leave it as-is. Naming works like
+tool-library entries: fully editable afterward, no uniqueness requirement.
+
+## What gets saved
+
+A saved bin stores its **recipe**, not a frozen 3D snapshot: which tools, each tool's actual
+placed position/rotation, every per-tool override (clearance, finger access, side/position,
+pocket-depth), and the bin-wide settings (style, overall height, lip, magnet holes, forced size).
+Exporting or reopening a saved bin always regenerates geometry from the tools' *current* library
+state — so if you edit a tool's outline or clearance later, a saved bin using that tool reflects
+the change next time you export or reopen it. If a tool is deleted entirely, the bin still lists
+(showing "(deleted tool)" in its place) and exports with whatever tools remain, degrading exactly
+the way the live combine editor already does when a tool disappears mid-session.
+
+## The Bin Library page
+
+Each saved bin is a card: its name (editable in place, same as the Tool Library), the save date,
+bin style, and the tools it contains. Four actions:
+
+- **↻ Reopen** — opens the combine editor seeded with this bin's exact saved arrangement (not a
+  fresh auto-pack) so you can keep arranging it. Saving again from there always creates a **new**
+  Bin Library entry — there's no "save changes back to the same entry" yet.
+- **↓ Export bin** / **↓ Export slice** — regenerate and download the 3MF directly from the list,
+  without opening the editor.
+- **× Delete** — removes the saved bin (asks for confirmation first). This never touches the
+  tools it references, only the saved arrangement itself.
+
+## Constraints
+
+- This pass only covers *combined* bins (arrangements from the multi-tool combine editor) — not
+  single-tool bins or drawer compositions.
+- No thumbnail image (a combined bin doesn't have one obvious shape to render, unlike a single
+  tool); the tool list stands in for it.

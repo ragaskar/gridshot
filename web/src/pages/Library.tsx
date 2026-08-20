@@ -731,7 +731,7 @@ export function Library() {
           style={{ background: "rgba(0,0,0,0.6)" }}
           onClick={() => setCombining(false)}
         >
-          <div className="w-full max-w-[980px]" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-[1180px]" onClick={(e) => e.stopPropagation()}>
             <CombineEditor
               ids={[...sel]}
               overallHeight={overallHeight === "" ? null : overallHeight}
