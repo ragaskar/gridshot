@@ -34,6 +34,15 @@ function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: n
   return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
 }
 
+/** The shared value across every item, or undefined if any of them differ —
+ *  the one primitive every "show '–' when the selection is mixed" bulk
+ *  control in the combine editor's Inspector reduces to. */
+function allEqual<T, V>(items: T[], key: (item: T) => V): V | undefined {
+  if (!items.length) return undefined;
+  const first = key(items[0]);
+  return items.every((item) => key(item) === first) ? first : undefined;
+}
+
 function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot }) => ({ id, tx, ty, rot }));
 }
@@ -79,7 +88,6 @@ export function CombineEditor({
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
   const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
-  const isMulti = selectedTools.length > 1;
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -375,9 +383,8 @@ export function CombineEditor({
   }
 
   async function setClearance(mm: number | null) {
-    if (!selectedTool) return;
-    const id = selectedTool.id;
-    const updated = tools.map((tool) => tool.id === id ? {
+    if (!selectedIds.size) return;
+    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       clearance_mm: mm ?? tool.clearance_mm_inherited,
       clearance_mm_override: mm === tool.clearance_mm_inherited ? null : mm,
@@ -462,6 +469,11 @@ export function CombineEditor({
   const displayedRotation = selectedTool
     ? ((((selectedTool.rot + 180) % 360) + 360) % 360) - 180
     : 0;
+  const selectionKey = [...selectedIds].sort().join(",");
+  const clearanceValue = allEqual(selectedTools, (t) => t.clearance_mm);
+  const clearanceAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override === null);
+  const clearanceAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override !== null);
+  const clearanceInherited = allEqual(selectedTools, (t) => t.clearance_mm_inherited);
   const m = 8; // viewport margin (mm)
   const vb = layout
     ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
@@ -789,22 +801,24 @@ export function CombineEditor({
               Select a tool, arrow keys to nudge · Shift+arrow for 10×.
             </p>
           </label>
-          {selectedTool ? (
+          {selectedTools.length >= 1 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
               <div className="mb-2 truncate text-xs text-knockout">
-                {selectedTool.label || selectedTool.id.slice(0, 8)}
+                {selectedTool ? (selectedTool.label || selectedTool.id.slice(0, 8)) : `${selectedTools.length} tools selected`}
               </div>
-              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
-                <dd className="text-knockout">{selectedTool.depth_mm} mm</dd>
-                <dt>Depth source</dt>
-                <dd className="text-right text-knockout">{selectedTool.depth_mode}</dd>
-              </dl>
+              {selectedTool && (
+                <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
+                  <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
+                  <dd className="text-knockout">{selectedTool.depth_mm} mm</dd>
+                  <dt>Depth source</dt>
+                  <dd className="text-right text-knockout">{selectedTool.depth_mode}</dd>
+                </dl>
+              )}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
                 <div className="min-w-0">
                   <div className="text-knockout">Clearance</div>
                   <div className="truncate text-muted">
-                    {selectedTool.clearance_mm_override === null ? "Inherited from library" : "Override for this bin"}
+                    {clearanceAllInherited ? "Inherited from library" : clearanceAllOverridden ? "Override for this bin" : "Mixed"}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -813,107 +827,106 @@ export function CombineEditor({
                     className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0}
                     disabled={busy}
-                    defaultValue={selectedTool.clearance_mm}
-                    key={`${selectedTool.id}-clearance-${selectedTool.clearance_mm}`}
+                    defaultValue={clearanceValue ?? ""}
+                    placeholder={clearanceValue === undefined ? "–" : undefined}
+                    key={`${selectionKey}-clearance-${clearanceValue ?? "mixed"}`}
                     onBlur={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isFinite(value) && value !== selectedTool.clearance_mm) void setClearance(value);
+                      const raw = event.target.value;
+                      if (raw === "") return; // untouched indeterminate field — no-op
+                      const value = Number(raw);
+                      if (!Number.isFinite(value)) return;
+                      if (clearanceValue !== undefined && value === clearanceValue) return; // unchanged
+                      void setClearance(value);
                     }}
                   />
                   <span className="text-muted">mm</span>
                 </div>
               </div>
-              {selectedTool.clearance_mm_override !== null && (
+              {clearanceAllOverridden && (
                 <button
                   className="mt-2 w-full text-left text-teal hover:text-knockout"
                   disabled={busy}
                   onClick={() => void setClearance(null)}
                 >
-                  ↩ Use library setting ({selectedTool.clearance_mm_inherited} mm)
+                  ↩ Use library setting{clearanceInherited !== undefined ? ` (${clearanceInherited} mm)` : ""}
                 </button>
               )}
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                <div className="min-w-0">
-                  <div className="text-knockout">Finger access</div>
-                  <div className="truncate text-muted">
-                    {selectedTool.finger_hole_override === null ? "Inherited from library" : "Override for this bin"}
-                  </div>
-                </div>
-                <button
-                  aria-pressed={selectedTool.finger_hole}
-                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole ? "border-teal text-teal" : "btn-ghost"}`}
-                  disabled={busy}
-                  onClick={() => void setFingerHole(!selectedTool.finger_hole)}
-                >
-                  {selectedTool.finger_hole ? "On" : "Off"}
-                </button>
-              </div>
-              {selectedTool.finger_hole_override !== null && (
-                <button
-                  className="mt-2 w-full text-left text-teal hover:text-knockout"
-                  disabled={busy}
-                  onClick={() => void setFingerHole(selectedTool.finger_hole_inherited)}
-                >
-                  ↩ Use library setting ({selectedTool.finger_hole_inherited ? "on" : "off"})
-                </button>
-              )}
-              {selectedTool.finger_hole && selectedTool.finger_hole_side !== "center" && (
-                <div className="mt-3 space-y-2 border-t border-line pt-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-knockout">Switch sides</span>
+              {selectedTool && (
+                <>
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                    <div className="min-w-0">
+                      <div className="text-knockout">Finger access</div>
+                      <div className="truncate text-muted">
+                        {selectedTool.finger_hole_override === null ? "Inherited from library" : "Override for this bin"}
+                      </div>
+                    </div>
                     <button
-                      aria-pressed={selectedTool.finger_hole_side_flip}
-                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole_side_flip ? "border-teal text-teal" : "btn-ghost"}`}
+                      aria-pressed={selectedTool.finger_hole}
+                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole ? "border-teal text-teal" : "btn-ghost"}`}
                       disabled={busy}
-                      onClick={() => void setFingerHoleSideFlip(selectedTool.finger_hole_side_flip ? null : true)}
+                      onClick={() => void setFingerHole(!selectedTool.finger_hole)}
                     >
-                      {selectedTool.finger_hole_side_flip ? "Flipped" : "Default"}
+                      {selectedTool.finger_hole ? "On" : "Off"}
                     </button>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between text-muted">
-                      <span>Position</span>
-                      <span className="text-knockout">{selectedTool.finger_hole_offset_mm} mm</span>
-                    </div>
-                    <input
-                      aria-label="Finger-hole position offset"
-                      className="w-full accent-teal"
-                      type="range"
-                      min={-selectedTool.finger_hole_offset_mm_max}
-                      max={selectedTool.finger_hole_offset_mm_max}
-                      step={0.5}
-                      disabled={busy}
-                      value={selectedTool.finger_hole_offset_mm}
-                      onChange={(event) => void setFingerHoleOffset(Number(event.target.value))}
-                    />
-                  </div>
-                  {selectedTool.finger_hole_offset_mm_override !== null && (
+                  {selectedTool.finger_hole_override !== null && (
                     <button
-                      className="w-full text-left text-teal hover:text-knockout"
+                      className="mt-2 w-full text-left text-teal hover:text-knockout"
                       disabled={busy}
-                      onClick={() => void setFingerHoleOffset(null)}
+                      onClick={() => void setFingerHole(selectedTool.finger_hole_inherited)}
                     >
-                      ↩ Reset position (0 mm)
+                      ↩ Use library setting ({selectedTool.finger_hole_inherited ? "on" : "off"})
                     </button>
                   )}
-                </div>
+                  {selectedTool.finger_hole && selectedTool.finger_hole_side !== "center" && (
+                    <div className="mt-3 space-y-2 border-t border-line pt-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-knockout">Switch sides</span>
+                        <button
+                          aria-pressed={selectedTool.finger_hole_side_flip}
+                          className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole_side_flip ? "border-teal text-teal" : "btn-ghost"}`}
+                          disabled={busy}
+                          onClick={() => void setFingerHoleSideFlip(selectedTool.finger_hole_side_flip ? null : true)}
+                        >
+                          {selectedTool.finger_hole_side_flip ? "Flipped" : "Default"}
+                        </button>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between text-muted">
+                          <span>Position</span>
+                          <span className="text-knockout">{selectedTool.finger_hole_offset_mm} mm</span>
+                        </div>
+                        <input
+                          aria-label="Finger-hole position offset"
+                          className="w-full accent-teal"
+                          type="range"
+                          min={-selectedTool.finger_hole_offset_mm_max}
+                          max={selectedTool.finger_hole_offset_mm_max}
+                          step={0.5}
+                          disabled={busy}
+                          value={selectedTool.finger_hole_offset_mm}
+                          onChange={(event) => void setFingerHoleOffset(Number(event.target.value))}
+                        />
+                      </div>
+                      {selectedTool.finger_hole_offset_mm_override !== null && (
+                        <button
+                          className="w-full text-left text-teal hover:text-knockout"
+                          disabled={busy}
+                          onClick={() => void setFingerHoleOffset(null)}
+                        >
+                          ↩ Reset position (0 mm)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {selectedTool.finger_hole && selectedTool.finger_hole_side === "center" && (
+                    <p className="mt-3 border-t border-line pt-3 text-muted">
+                      This tool's shape doesn't sit on a single side — switch-sides/position
+                      controls aren't available.
+                    </p>
+                  )}
+                </>
               )}
-              {selectedTool.finger_hole && selectedTool.finger_hole_side === "center" && (
-                <p className="mt-3 border-t border-line pt-3 text-muted">
-                  This tool's shape doesn't sit on a single side — switch-sides/position
-                  controls aren't available.
-                </p>
-              )}
-              {alignButtons}
-            </div>
-          ) : isMulti ? (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <div className="mb-2 truncate text-xs text-knockout">
-                {selectedTools.length} tools selected
-              </div>
-              <p className="text-muted">
-                {selectedTools.map((t) => t.label || t.id.slice(0, 6)).join(", ")}
-              </p>
               {alignButtons}
             </div>
           ) : (

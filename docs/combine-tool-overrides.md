@@ -21,6 +21,19 @@ Select a tool in the arrange view, then in the inspector panel on the right:
 Both overrides only apply to this bin's export/preview — the library entry
 itself is never modified.
 
+## Multi-select
+
+With [multiple tools selected](combine-editor-multi-select.md), the clearance
+field works the same way across the whole group: if every selected tool
+currently has the same effective clearance, that value shows; otherwise the
+field shows a "–" placeholder (mixed). Leaving the field untouched and
+clicking away changes nothing. Typing a new value and clicking away sets
+every selected tool's clearance to that value — each tool's own override is
+resolved independently against its own library value, exactly as if you'd
+set it one tool at a time. The "↩ Use library setting" revert link appears
+only once every selected tool has an active override, and reverts all of
+them.
+
 ## Constraints
 
 Clearance overrides must be `>= 0`, same as the library-level setting.
