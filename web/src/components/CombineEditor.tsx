@@ -370,14 +370,13 @@ export function CombineEditor({
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: deg } : t)));
   }
 
-  async function setFingerHole(enabled: boolean) {
-    if (!selectedTool) return;
-    const id = selectedTool.id;
-    const updated = tools.map((tool) => tool.id === id ? {
+  async function setFingerHole(enabled: boolean | null) {
+    if (!selectedIds.size) return;
+    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
-      finger: enabled,
-      finger_hole: enabled,
-      finger_hole_override: enabled === tool.finger_hole_inherited ? null : enabled,
+      finger: enabled ?? tool.finger_hole_inherited,
+      finger_hole: enabled ?? tool.finger_hole_inherited,
+      finger_hole_override: enabled === null || enabled === tool.finger_hole_inherited ? null : enabled,
     } : tool);
     await load(placementsFor(updated), overridesFor(updated));
   }
@@ -474,6 +473,12 @@ export function CombineEditor({
   const clearanceAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override === null);
   const clearanceAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override !== null);
   const clearanceInherited = allEqual(selectedTools, (t) => t.clearance_mm_inherited);
+  const fingerAllOn = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole);
+  const fingerAllOff = selectedTools.length > 0 && selectedTools.every((t) => !t.finger_hole);
+  const fingerMixed = selectedTools.length > 0 && !fingerAllOn && !fingerAllOff;
+  const fingerOverrideAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override === null);
+  const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
+  const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
   const m = 8; // viewport margin (mm)
   const vb = layout
     ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
@@ -851,33 +856,33 @@ export function CombineEditor({
                   ↩ Use library setting{clearanceInherited !== undefined ? ` (${clearanceInherited} mm)` : ""}
                 </button>
               )}
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                <div className="min-w-0">
+                  <div className="text-knockout">Finger access</div>
+                  <div className="truncate text-muted">
+                    {fingerOverrideAllInherited ? "Inherited from library" : fingerOverrideAllOverridden ? "Override for this bin" : "Mixed"}
+                  </div>
+                </div>
+                <button
+                  aria-pressed={fingerAllOn}
+                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost"}`}
+                  disabled={busy}
+                  onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
+                >
+                  {fingerMixed ? "–" : fingerAllOn ? "On" : "Off"}
+                </button>
+              </div>
+              {fingerOverrideAllOverridden && (
+                <button
+                  className="mt-2 w-full text-left text-teal hover:text-knockout"
+                  disabled={busy}
+                  onClick={() => void setFingerHole(null)}
+                >
+                  ↩ Use library setting{fingerInheritedShared !== undefined ? ` (${fingerInheritedShared ? "on" : "off"})` : ""}
+                </button>
+              )}
               {selectedTool && (
                 <>
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                    <div className="min-w-0">
-                      <div className="text-knockout">Finger access</div>
-                      <div className="truncate text-muted">
-                        {selectedTool.finger_hole_override === null ? "Inherited from library" : "Override for this bin"}
-                      </div>
-                    </div>
-                    <button
-                      aria-pressed={selectedTool.finger_hole}
-                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole ? "border-teal text-teal" : "btn-ghost"}`}
-                      disabled={busy}
-                      onClick={() => void setFingerHole(!selectedTool.finger_hole)}
-                    >
-                      {selectedTool.finger_hole ? "On" : "Off"}
-                    </button>
-                  </div>
-                  {selectedTool.finger_hole_override !== null && (
-                    <button
-                      className="mt-2 w-full text-left text-teal hover:text-knockout"
-                      disabled={busy}
-                      onClick={() => void setFingerHole(selectedTool.finger_hole_inherited)}
-                    >
-                      ↩ Use library setting ({selectedTool.finger_hole_inherited ? "on" : "off"})
-                    </button>
-                  )}
                   {selectedTool.finger_hole && selectedTool.finger_hole_side !== "center" && (
                     <div className="mt-3 space-y-2 border-t border-line pt-3">
                       <div className="flex items-center justify-between gap-2">

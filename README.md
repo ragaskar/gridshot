@@ -343,8 +343,8 @@ Features added on top of the original public release, newest last:
   [docs/combine-editor-multi-select.md](docs/combine-editor-multi-select.md))
 - Align selected tools (left/center/right, top/middle/bottom) in the multi-tool
   combine editor (see [docs/combine-editor-align.md](docs/combine-editor-align.md))
-- Bulk clearance editing across a multi-tool-combine-editor selection (see
-  [docs/combine-tool-overrides.md](docs/combine-tool-overrides.md))
+- Bulk clearance and finger-access editing across a multi-tool-combine-editor
+  selection (see [docs/combine-tool-overrides.md](docs/combine-tool-overrides.md))
 
 ## License
 
