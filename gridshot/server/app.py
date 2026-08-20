@@ -2415,6 +2415,10 @@ class CombineToolOverride(BaseModel):
     finger_hole_offset_mm: Optional[float] = None
     # Auto-pack only: restrict this tool's rotation search to this one angle.
     locked_rotation_deg: Optional[float] = None
+    # Bin-time pocket-depth override — independent of the library's own
+    # persisted pocket_depth_mm. Null/omitted means inherit (library value,
+    # or automatic if that's also unset).
+    pocket_depth_mm: Optional[float] = Field(None, gt=0)
 
 
 class CombineRequest(BaseModel):
@@ -2467,6 +2471,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     tools, specs, pack_stamps, pocket_stamps = [], [], [], []
     depths, fingers, inherited_fingers = [], [], []
     clearances, inherited_clearances = [], []
+    inherited_depths = []
     for tid in req.ids:
         try:
             t = library_mod.load(tid)
@@ -2496,12 +2501,18 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.finger_hole_offset_mm is not None
             else 0.0
         )
+        depth_override = (
+            override.pocket_depth_mm
+            if override is not None and override.pocket_depth_mm is not None
+            else None
+        )
         effective_tool = t.model_copy(update={
             "finger_hole": finger,
             "bin_style": req.bin_style,
             "clearance_mm": clearance,
             "finger_hole_side_flip": finger_hole_side_flip,
             "finger_hole_offset_mm": finger_hole_offset_mm,
+            "pocket_depth_mm": depth_override if depth_override is not None else t.pocket_depth_mm,
         })
         spec = library_mod.derive_tool_spec(
             effective_tool, printer_profile=printer, lip=effective_lip
@@ -2516,6 +2527,16 @@ def _combine_layout(req: "CombineRequest") -> dict:
             stranslate(pocket_shape, -origin.x, -origin.y)
         ))
         depths.append(spec.pocket_depth_mm)
+        if depth_override is not None:
+            # What the depth would be without this bin-time override, for the
+            # revert-button label and the multi-select seed value.
+            inherited_spec = library_mod.derive_tool_spec(
+                effective_tool.model_copy(update={"pocket_depth_mm": t.pocket_depth_mm}),
+                printer_profile=printer, lip=effective_lip,
+            )
+            inherited_depths.append(inherited_spec.pocket_depth_mm)
+        else:
+            inherited_depths.append(spec.pocket_depth_mm)
         fingers.append([
             (float(x - origin.x), float(y - origin.y), float(diameter))
             for x, y, diameter in spec.finger_holes
@@ -2641,7 +2662,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "tools": tools, "specs": specs,
         "pack_stamps": pack_stamps, "pocket_stamps": pocket_stamps,
         "centered": centered, "tfs": ctfs,
-        "depths": depths, "fingers": centered_fingers,
+        "depths": depths, "inherited_depths": inherited_depths, "fingers": centered_fingers,
         "local_fingers": fingers, "inherited_fingers": inherited_fingers,
         "clearances": clearances, "inherited_clearances": inherited_clearances,
         "gx": gx, "gy": gy,
@@ -2678,12 +2699,22 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.finger_hole_offset_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_depth_override = next(
+            (item.pocket_depth_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         retention_override = t.pocket_depth_mm is not None
         spec = lay["specs"][i]
         tools_json.append({
             "id": t.id, "label": t.label, "bin_style": req.bin_style,
-            "depth_mm": round(lay["depths"][i], 1),
-            "depth_mode": "library override" if retention_override else "automatic",
+            "depth_mm": round(lay["depths"][i], 2),
+            "depth_mm_inherited": round(lay["inherited_depths"][i], 2),
+            "depth_mm_override": requested_depth_override,
+            "depth_mode": (
+                "override" if requested_depth_override is not None
+                else "library override" if retention_override
+                else "automatic"
+            ),
             "clearance_mm": round(lay["clearances"][i], 2),
             "clearance_mm_inherited": round(lay["inherited_clearances"][i], 2),
             "clearance_mm_override": requested_clearance_override,

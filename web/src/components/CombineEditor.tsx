@@ -80,14 +80,24 @@ export function CombineEditor({
   const [forceSize, setForceSize] = useState(false);
   const [forceGx, setForceGx] = useState("");
   const [forceGy, setForceGy] = useState("");
+  // Multi-select-only local draft for the pocket-depth override checkbox —
+  // null means "no pending edit"; checking the box (when not on a single
+  // tool) never commits by itself, only setting a depth or unchecking does.
+  const [depthOverrideDraft, setDepthOverrideDraft] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ ids: string[]; offsets: Map<string, { ox: number; oy: number }> } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
+  const depthCheckboxRef = useRef<HTMLInputElement>(null);
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
   const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
+  const selectionKey = [...selectedIds].sort().join(",");
+
+  useEffect(() => {
+    setDepthOverrideDraft(null);
+  }, [selectionKey]);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -107,6 +117,7 @@ export function CombineEditor({
     return tools.map(({
       id, rot, finger_hole_override, clearance_mm_override,
       finger_hole_side_flip_override, finger_hole_offset_mm_override,
+      depth_mm_override,
     }) => ({
       id,
       finger_hole: finger_hole_override,
@@ -114,6 +125,7 @@ export function CombineEditor({
       finger_hole_side_flip: finger_hole_side_flip_override,
       finger_hole_offset_mm: finger_hole_offset_mm_override,
       locked_rotation_deg: lockedRotations.has(id) ? rot : null,
+      pocket_depth_mm: depth_mm_override,
     }));
   }
 
@@ -163,6 +175,7 @@ export function CombineEditor({
       tool.clearance_mm_override,
       tool.finger_hole_side_flip_override,
       tool.finger_hole_offset_mm_override,
+      tool.depth_mm_override,
     ])),
     [tools],
   );
@@ -391,6 +404,40 @@ export function CombineEditor({
     await load(placementsFor(updated), overridesFor(updated));
   }
 
+  async function setDepthOverride(mm: number | null) {
+    if (!selectedIds.size) return;
+    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
+      ...tool,
+      depth_mm: mm ?? tool.depth_mm_inherited,
+      depth_mm_override: mm,
+    } : tool);
+    await load(placementsFor(updated), overridesFor(updated));
+  }
+
+  /** Checking the box on a single tool commits immediately (there's only
+   *  ever one unambiguous value to seed). On a multi-selection it starts a
+   *  local, non-committing draft instead — per spec, nothing is saved for
+   *  the group until either a depth is actually typed in, or the box is
+   *  unchecked from a fully-overridden selection. */
+  function handleDepthCheckboxClick(event: React.MouseEvent<HTMLInputElement>) {
+    event.preventDefault();
+    if (selectedTools.length === 1) {
+      const tool = selectedTools[0];
+      void setDepthOverride(tool.depth_mm_override !== null ? null : tool.depth_mm);
+      return;
+    }
+    if (depthOverrideDraft !== null) {
+      setDepthOverrideDraft(null); // discard an uncommitted draft
+      return;
+    }
+    if (depthAllOn) {
+      void setDepthOverride(null); // commit: clear every selected tool's override
+      return;
+    }
+    const shared = allEqual(selectedTools, (t) => t.depth_mm);
+    setDepthOverrideDraft(shared !== undefined ? String(shared) : "");
+  }
+
   async function setFingerHoleSideFlip(flip: boolean | null) {
     if (!selectedIds.size) return;
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
@@ -466,7 +513,6 @@ export function CombineEditor({
   const displayedRotation = selectedTool
     ? ((((selectedTool.rot + 180) % 360) + 360) % 360) - 180
     : 0;
-  const selectionKey = [...selectedIds].sort().join(",");
   const clearanceValue = allEqual(selectedTools, (t) => t.clearance_mm);
   const clearanceAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override === null);
   const clearanceAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override !== null);
@@ -484,6 +530,22 @@ export function CombineEditor({
   const offsetValue = allEqual(selectedTools, (t) => t.finger_hole_offset_mm);
   const offsetMax = sideFlipEligible ? Math.min(...selectedTools.map((t) => t.finger_hole_offset_mm_max)) : 0;
   const offsetAllOverridden = sideFlipEligible && selectedTools.every((t) => t.finger_hole_offset_mm_override !== null);
+  const depthAllOn = selectedTools.length > 0 && selectedTools.every((t) => t.depth_mm_override !== null);
+  const depthAllOff = selectedTools.length > 0 && selectedTools.every((t) => t.depth_mm_override === null);
+  const depthMixed = selectedTools.length > 0 && !depthAllOn && !depthAllOff;
+  const depthEffectiveShared = allEqual(selectedTools, (t) => t.depth_mm);
+  const depthModeShared = allEqual(selectedTools, (t) => t.depth_mode);
+  const depthChecked = selectedTool
+    ? selectedTool.depth_mm_override !== null
+    : depthOverrideDraft !== null || depthAllOn;
+  const showDepthNumber = selectedTool ? selectedTool.depth_mm_override !== null : depthOverrideDraft !== null;
+  const depthMmLabel = selectedTool ? `${selectedTool.depth_mm} mm` : depthEffectiveShared !== undefined ? `${depthEffectiveShared} mm` : "– mm";
+  const depthModeLabel = selectedTool ? selectedTool.depth_mode : depthModeShared ?? "Mixed";
+  useEffect(() => {
+    if (depthCheckboxRef.current) {
+      depthCheckboxRef.current.indeterminate = !selectedTool && depthOverrideDraft === null && depthMixed;
+    }
+  });
   const m = 8; // viewport margin (mm)
   const vb = layout
     ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
@@ -816,13 +878,61 @@ export function CombineEditor({
               <div className="mb-2 truncate text-xs text-knockout">
                 {selectedTool ? (selectedTool.label || selectedTool.id.slice(0, 8)) : `${selectedTools.length} tools selected`}
               </div>
-              {selectedTool && (
-                <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                  <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
-                  <dd className="text-knockout">{selectedTool.depth_mm} mm</dd>
-                  <dt>Depth source</dt>
-                  <dd className="text-right text-knockout">{selectedTool.depth_mode}</dd>
-                </dl>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
+                <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
+                <dd className="text-knockout">{depthMmLabel}</dd>
+                <dt>Depth source</dt>
+                <dd className="text-right text-knockout">{depthModeLabel}</dd>
+              </dl>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    ref={depthCheckboxRef}
+                    type="checkbox"
+                    checked={depthChecked}
+                    disabled={busy}
+                    onClick={handleDepthCheckboxClick}
+                    onChange={() => {}}
+                  />
+                  <span className="text-muted">Override pocket depth</span>
+                </label>
+              </div>
+              {showDepthNumber && (
+                <div className="mt-2 flex items-center gap-1">
+                  {selectedTool ? (
+                    <input
+                      aria-label="Pocket depth override in millimetres"
+                      className="mono-input min-w-0 w-20 !px-2 !py-1 !text-sm"
+                      type="number" step={0.01} min={0.01}
+                      disabled={busy}
+                      defaultValue={selectedTool.depth_mm}
+                      key={`${selectedTool.id}-depth-${selectedTool.depth_mm}`}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value) && value > 0 && value !== selectedTool.depth_mm) void setDepthOverride(value);
+                      }}
+                    />
+                  ) : (
+                    <input
+                      aria-label="Pocket depth override in millimetres"
+                      className="mono-input min-w-0 w-20 !px-2 !py-1 !text-sm"
+                      type="number" step={0.01} min={0.01}
+                      disabled={busy}
+                      value={depthOverrideDraft ?? ""}
+                      placeholder={depthOverrideDraft === "" ? "–" : undefined}
+                      onChange={(event) => setDepthOverrideDraft(event.target.value)}
+                      onBlur={(event) => {
+                        const raw = event.target.value;
+                        if (raw === "") return; // stays pending, inert
+                        const value = Number(raw);
+                        if (!Number.isFinite(value) || value <= 0) return;
+                        setDepthOverrideDraft(null);
+                        void setDepthOverride(value);
+                      }}
+                    />
+                  )}
+                  <span className="text-muted">mm</span>
+                </div>
               )}
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
                 <div className="min-w-0">

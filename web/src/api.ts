@@ -970,6 +970,7 @@ export interface CombineToolOverride {
   finger_hole_side_flip: boolean | null;
   finger_hole_offset_mm: number | null;
   locked_rotation_deg: number | null;
+  pocket_depth_mm: number | null;
 }
 
 export type FingerHoleSide = "top" | "bottom" | "left" | "right" | "center";
@@ -978,7 +979,9 @@ export interface CombineTool extends Placement {
   label: string;
   bin_style: BinStyle;
   depth_mm: number;
-  depth_mode: "automatic" | "library override";
+  depth_mm_inherited: number;
+  depth_mm_override: number | null;
+  depth_mode: "automatic" | "library override" | "override";
   clearance_mm: number;
   clearance_mm_inherited: number;
   clearance_mm_override: number | null;

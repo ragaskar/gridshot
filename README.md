@@ -348,6 +348,9 @@ Features added on top of the original public release, newest last:
 - Bulk "Switch sides" and finger-hole position editing across a
   multi-tool-combine-editor selection (see
   [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
+- Per-tool (and multi-select) pocket-depth override in the multi-tool
+  combine editor, at 0.01mm resolution (see
+  [docs/combine-pocket-depth-override.md](docs/combine-pocket-depth-override.md))
 
 ## License
 
