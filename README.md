@@ -337,6 +337,10 @@ Features added on top of the original public release, newest last:
 - "⧉ Clone" button on each library card, to duplicate a tool under a new id
   so two of the same tool can go in one combine/compose bin (see
   [docs/library-clone-tool.md](docs/library-clone-tool.md))
+- Multi-select (shift-click) in the multi-tool combine editor's 2D arrange view,
+  with group drag/nudge — the foundation for align/distribute and bulk per-tool
+  overrides (see
+  [docs/combine-editor-multi-select.md](docs/combine-editor-multi-select.md))
 
 ## License
 

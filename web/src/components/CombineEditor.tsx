@@ -48,7 +48,7 @@ export function CombineEditor({
 }) {
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
-  const [sel, setSel] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<"arrange" | "preview">("arrange");
@@ -68,9 +68,27 @@ export function CombineEditor({
   const [forceGy, setForceGy] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; ox: number; oy: number } | null>(null);
+  const drag = useRef<{ ids: string[]; offsets: Map<string, { ox: number; oy: number }> } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
+
+  const selectedTools = tools.filter((t) => selectedIds.has(t.id));
+  const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
+  const isMulti = selectedTools.length > 1;
+
+  /** Plain click replaces the selection with just this tool (unless it's
+   *  already part of the current multi-selection, in which case the whole
+   *  group stays selected so a drag can move it together); shift-click
+   *  toggles membership. Shared by the SVG polygons and the tool-list rows
+   *  so the two entry points can't drift apart. */
+  function nextSelection(id: string, shiftKey: boolean): Set<string> {
+    if (shiftKey) {
+      const next = new Set(selectedIds);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    }
+    return selectedIds.has(id) ? selectedIds : new Set([id]);
+  }
 
   function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
     return tools.map(({
@@ -112,7 +130,7 @@ export function CombineEditor({
       );
       setMeta(p);
       setTools(p.tools);
-      setSel((current) => current && p.tools.some((tool) => tool.id === current) ? current : null);
+      setSelectedIds((current) => new Set([...current].filter((id) => p.tools.some((tool) => tool.id === id))));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -259,29 +277,37 @@ export function CombineEditor({
   }
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
-    setSel(id);
     arrangeRef.current?.focus();
-    const t = tools.find((x) => x.id === id)!;
+    const nextIds = nextSelection(id, e.shiftKey);
+    setSelectedIds(nextIds);
     const [mx, my] = toData(e);
-    drag.current = { id, ox: mx - t.tx, oy: my - t.ty };
+    const offsets = new Map<string, { ox: number; oy: number }>();
+    tools.forEach((t) => {
+      if (nextIds.has(t.id)) offsets.set(t.id, { ox: mx - t.tx, oy: my - t.ty });
+    });
+    drag.current = { ids: [...nextIds], offsets };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
   function move(e: React.PointerEvent) {
     if (!drag.current) return;
     const [mx, my] = toData(e);
-    const { id, ox, oy } = drag.current;
-    setTools((ts) => ts.map((t) => (t.id === id ? { ...t, tx: mx - ox, ty: my - oy } : t)));
+    const { offsets } = drag.current;
+    setTools((ts) => ts.map((t) => {
+      const o = offsets.get(t.id);
+      return o ? { ...t, tx: mx - o.ox, ty: my - o.oy } : t;
+    }));
   }
   function rotate(deg: number) {
-    if (!sel) return;
-    setTools((ts) => ts.map((t) => (t.id === sel ? { ...t, rot: t.rot + deg } : t)));
+    if (!selectedTool) return;
+    const id = selectedTool.id;
+    setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: t.rot + deg } : t)));
   }
   function nudgeSelected(dx: number, dy: number) {
-    if (!sel) return;
-    setTools((ts) => ts.map((t) => (t.id === sel ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
+    if (!selectedIds.size) return;
+    setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
-    if (!sel) return;
+    if (!selectedIds.size) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
     const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
@@ -297,13 +323,15 @@ export function CombineEditor({
     nudgeSelected(d[0], d[1]);
   }
   function setRotation(deg: number) {
-    if (!sel || !Number.isFinite(deg)) return;
-    setTools((ts) => ts.map((t) => (t.id === sel ? { ...t, rot: deg } : t)));
+    if (!selectedTool || !Number.isFinite(deg)) return;
+    const id = selectedTool.id;
+    setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: deg } : t)));
   }
 
   async function setFingerHole(enabled: boolean) {
-    if (!sel) return;
-    const updated = tools.map((tool) => tool.id === sel ? {
+    if (!selectedTool) return;
+    const id = selectedTool.id;
+    const updated = tools.map((tool) => tool.id === id ? {
       ...tool,
       finger: enabled,
       finger_hole: enabled,
@@ -313,8 +341,9 @@ export function CombineEditor({
   }
 
   async function setClearance(mm: number | null) {
-    if (!sel) return;
-    const updated = tools.map((tool) => tool.id === sel ? {
+    if (!selectedTool) return;
+    const id = selectedTool.id;
+    const updated = tools.map((tool) => tool.id === id ? {
       ...tool,
       clearance_mm: mm ?? tool.clearance_mm_inherited,
       clearance_mm_override: mm === tool.clearance_mm_inherited ? null : mm,
@@ -323,8 +352,9 @@ export function CombineEditor({
   }
 
   async function setFingerHoleSideFlip(flip: boolean | null) {
-    if (!sel) return;
-    const updated = tools.map((tool) => tool.id === sel ? {
+    if (!selectedTool) return;
+    const id = selectedTool.id;
+    const updated = tools.map((tool) => tool.id === id ? {
       ...tool,
       finger_hole_side_flip: flip ?? false,
       finger_hole_side_flip_override: flip,
@@ -333,8 +363,9 @@ export function CombineEditor({
   }
 
   async function setFingerHoleOffset(mm: number | null) {
-    if (!sel) return;
-    const updated = tools.map((tool) => tool.id === sel ? {
+    if (!selectedTool) return;
+    const id = selectedTool.id;
+    const updated = tools.map((tool) => tool.id === id ? {
       ...tool,
       finger_hole_offset_mm: mm ?? 0,
       finger_hole_offset_mm_override: mm,
@@ -394,7 +425,6 @@ export function CombineEditor({
   }
 
   const color = (i: number) => PAL[i % PAL.length];
-  const selectedTool = tools.find((tool) => tool.id === sel) ?? null;
   const displayedRotation = selectedTool
     ? ((((selectedTool.rot + 180) % 360) + 360) % 360) - 180
     : 0;
@@ -449,7 +479,7 @@ export function CombineEditor({
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={move}
             onPointerUp={() => (drag.current = null)}
-            onPointerDown={() => setSel(null)}
+            onPointerDown={() => setSelectedIds(new Set())}
           >
             {layout && (
               <>
@@ -501,8 +531,8 @@ export function CombineEditor({
                   return <polygon
                     key={t.id}
                     points={layout.polys[i].map((p) => `${p[0]},${p[1]}`).join(" ")}
-                    fill={toolColor + (sel === t.id ? "88" : "55")}
-                    stroke={toolColor} strokeWidth={sel === t.id ? 1.2 : 0.7}
+                    fill={toolColor + (selectedIds.has(t.id) ? "88" : "55")}
+                    stroke={toolColor} strokeWidth={selectedIds.has(t.id) ? 1.2 : 0.7}
                     style={{ cursor: "grab" }}
                     onPointerDown={(e) => down(t.id, e)}
                   />;
@@ -661,13 +691,14 @@ export function CombineEditor({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              disabled={!sel}
-              checked={sel !== null && lockedRotations.has(sel)}
+              disabled={!selectedTool}
+              checked={selectedTool !== null && lockedRotations.has(selectedTool.id)}
               onChange={(event) => {
-                if (!sel) return;
+                if (!selectedTool) return;
+                const id = selectedTool.id;
                 setLockedRotations((current) => {
                   const next = new Set(current);
-                  event.target.checked ? next.add(sel) : next.delete(sel);
+                  event.target.checked ? next.add(id) : next.delete(id);
                   return next;
                 });
               }}
@@ -686,10 +717,10 @@ export function CombineEditor({
             onChange={(event) => setRotation(Number(event.target.value))}
           />
           <div className="grid grid-cols-4 gap-1">
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(-15)}>−15°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(-1)}>−1°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(1)}>+1°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!sel} onClick={() => rotate(15)}>+15°</button>
+            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-15)}>−15°</button>
+            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-1)}>−1°</button>
+            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(1)}>+1°</button>
+            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(15)}>+15°</button>
           </div>
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
@@ -824,16 +855,28 @@ export function CombineEditor({
                 </p>
               )}
             </div>
+          ) : isMulti ? (
+            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+              <div className="mb-2 truncate text-xs text-knockout">
+                {selectedTools.length} tools selected
+              </div>
+              <p className="text-muted">
+                {selectedTools.map((t) => t.label || t.id.slice(0, 6)).join(", ")}
+              </p>
+            </div>
           ) : (
-            <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool to inspect its effective settings.</div>
+            <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
           )}
           <div className="max-h-[38vh] overflow-auto space-y-1">
             {tools.map((t, i) => (
               <button
                 key={t.id}
                 className="w-full border px-2 py-1 text-left font-mono text-[10px]"
-                style={{ borderRadius: 2, borderColor: sel === t.id ? color(i) : "var(--c-line)" }}
-                onClick={() => { setSel(t.id); arrangeRef.current?.focus(); }}
+                style={{ borderRadius: 2, borderColor: selectedIds.has(t.id) ? color(i) : "var(--c-line)" }}
+                onClick={(e) => {
+                  setSelectedIds(nextSelection(t.id, e.shiftKey));
+                  arrangeRef.current?.focus();
+                }}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />
