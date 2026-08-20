@@ -12,6 +12,7 @@ import {
   type Placement,
 } from "../api";
 import { BinViewer } from "./BinViewer";
+import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 const OVERFLOW_COLOR = "#ff4d4d";
@@ -559,6 +560,22 @@ export function CombineEditor({
     await load(placementsFor(updated), overridesFor(updated));
   }
 
+  /** Snap every selected tool's finger hole onto the bottom-most one's world
+   *  X (or, for a left/right-side group, the left-most one's world Y) — see
+   *  `computeFingerAlignPlan` for the eligibility/legality rules. Each tool
+   *  gets its own distinct offset, unlike the shared-value bulk Position
+   *  control above. */
+  async function alignFingerHoles() {
+    if (!fingerAlignPlan) return;
+    const { updates } = fingerAlignPlan;
+    const updated = tools.map((tool) => {
+      const next = updates.get(tool.id);
+      if (next === undefined) return tool;
+      return { ...tool, finger_hole_offset_mm: next, finger_hole_offset_mm_override: next };
+    });
+    await load(placementsFor(updated), overridesFor(updated));
+  }
+
   async function exportBin() {
     setBusy(true);
     setErr(null);
@@ -653,6 +670,17 @@ export function CombineEditor({
   const fingerOverrideAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override === null);
   const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
   const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
+  const fingerAlignPlan = layout ? computeFingerAlignPlan(
+    selectedTools
+      .filter((t) => t.finger_hole)
+      .flatMap((t): FingerAlignCandidate[] => {
+        const hole = layout.fingerCircles.find((h) => h.toolId === t.id);
+        return hole ? [{
+          id: t.id, cx: hole.cx, cy: hole.cy, side: t.finger_hole_side,
+          rot: t.rot, offset: t.finger_hole_offset_mm, offsetMax: t.finger_hole_offset_mm_max,
+        }] : [];
+      }),
+  ) : null;
   const sideFlipEligible = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole && t.finger_hole_side !== "center");
   const sideFlipAllOn = sideFlipEligible && selectedTools.every((t) => t.finger_hole_side_flip);
   const sideFlipAllOff = sideFlipEligible && selectedTools.every((t) => !t.finger_hole_side_flip);
@@ -1153,6 +1181,14 @@ export function CombineEditor({
                   ↩ Use library setting{fingerInheritedShared !== undefined ? ` (${fingerInheritedShared ? "on" : "off"})` : ""}
                 </button>
               )}
+              <button
+                className="mt-2 w-full btn btn-ghost text-[10px] !py-1"
+                disabled={busy || selectedTools.length < 2 || !fingerAlignPlan}
+                title="Align every selected tool's finger hole onto one line — needs at least 2 finger holes on the same edge (top/bottom or left/right), each within reach of the bottom-most (or left-most) one"
+                onClick={() => void alignFingerHoles()}
+              >
+                ⟷ Align finger holes
+              </button>
               {sideFlipEligible && (
                 <div className="mt-3 space-y-2 border-t border-line pt-3">
                   <div className="flex items-center justify-between gap-2">

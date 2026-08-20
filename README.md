@@ -363,6 +363,10 @@ Features added on top of the original public release, newest last:
 - Deep-link URLs: every page, and the multi-tool combine editor, has a URL
   that reopens the same content on reload — including browser back/forward
   (see [docs/deep-link-urls.md](docs/deep-link-urls.md))
+- Align finger holes: snap 2+ selected tools' finger-access holes onto one
+  line in the multi-tool combine editor, the same way the existing
+  bounding-box align buttons snap edges (see
+  [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
 
 ## License
 
