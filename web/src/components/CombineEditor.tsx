@@ -13,6 +13,7 @@ import {
 import { BinViewer } from "./BinViewer";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
+const OVERFLOW_COLOR = "#ff4d4d";
 
 type Pt = [number, number];
 
@@ -135,11 +136,84 @@ export function CombineEditor({
     [tools],
   );
 
+  // live footprint from the current arrangement (mirrors the server's auto_grid) —
+  // unless "force bin size" is on, in which case the footprint is LOCKED to the
+  // forced gx/gy and never re-fit to wherever tools currently sit (drag included).
+  const layout = useMemo(() => {
+    if (!meta || !tools.length) return null;
+    const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot));
+    const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter]) => {
+      const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot);
+      return { toolId: tool.id, cx, cy, radius: diameter / 2 };
+    }));
+    const xs = [
+      ...polys.flat().map((p) => p[0]),
+      ...fingerCircles.flatMap((hole) => [hole.cx - hole.radius, hole.cx + hole.radius]),
+    ];
+    const ys = [
+      ...polys.flat().map((p) => p[1]),
+      ...fingerCircles.flatMap((hole) => [hole.cy - hole.radius, hole.cy + hole.radius]),
+    ];
+    const minx = Math.min(...xs), maxx = Math.max(...xs);
+    const miny = Math.min(...ys), maxy = Math.max(...ys);
+    const { pitch, bin_size, wall } = meta;
+
+    const locked = forceSize && Number(forceGx) > 0 && Number(forceGy) > 0;
+    let gx: number, gy: number, cx: number, cy: number;
+    if (locked) {
+      // Fixed footprint — the server always re-centres the tool group's own
+      // bbox to world origin (0,0) on every load(), so that's the bin's
+      // stable centre between round-trips, independent of local drags.
+      gx = Math.max(1, Math.round(Number(forceGx)));
+      gy = Math.max(1, Math.round(Number(forceGy)));
+      cx = 0;
+      cy = 0;
+    } else {
+      gx = Math.max(1, Math.ceil((maxx - minx + 2 * wall + (pitch - bin_size)) / pitch));
+      gy = Math.max(1, Math.ceil((maxy - miny + 2 * wall + (pitch - bin_size)) / pitch));
+      cx = (minx + maxx) / 2;
+      cy = (miny + maxy) / 2;
+    }
+    const ow = pitch * gx - (pitch - bin_size), od = pitch * gy - (pitch - bin_size);
+
+    const overflowIds = new Set<string>();
+    if (locked) {
+      const EPS = 1e-6;
+      const boundMinX = cx - ow / 2, boundMaxX = cx + ow / 2;
+      const boundMinY = cy - od / 2, boundMaxY = cy + od / 2;
+      tools.forEach((t, i) => {
+        const outPoly = polys[i].some(([x, y]) =>
+          x < boundMinX - EPS || x > boundMaxX + EPS || y < boundMinY - EPS || y > boundMaxY + EPS);
+        const outFinger = fingerCircles.some((hole) => hole.toolId === t.id && (
+          hole.cx - hole.radius < boundMinX - EPS || hole.cx + hole.radius > boundMaxX + EPS ||
+          hole.cy - hole.radius < boundMinY - EPS || hole.cy + hole.radius > boundMaxY + EPS
+        ));
+        if (outPoly || outFinger) overflowIds.add(t.id);
+      });
+    }
+
+    // The viewport must show overflowing geometry too, not just the locked
+    // footprint, so a tool that's crossed the edge stays visible.
+    const boxMinX = Math.min(cx - ow / 2, minx), boxMaxX = Math.max(cx + ow / 2, maxx);
+    const boxMinY = Math.min(cy - od / 2, miny), boxMaxY = Math.max(cy + od / 2, maxy);
+    const viewCx = (boxMinX + boxMaxX) / 2, viewCy = (boxMinY + boxMaxY) / 2;
+    const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
+
+    return { polys, fingerCircles, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
+  }, [tools, meta, forceSize, forceGx, forceGy]);
+
+  const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
+
   // Generate after the arrangement settles. This endpoint calls the same solid
   // builder as 3MF export; no browser-side mesh approximation is involved.
   useEffect(() => {
     if (!meta || tools.length < 2) return;
     const sequence = ++previewSequence.current;
+    if (hasOverflow) {
+      setPreviewBusy(false);
+      setPreviewErr("A tool extends past the locked bin size — move it back inside, or adjust the forced dimensions, before rendering.");
+      return;
+    }
     const placements = placementsFor(tools);
     const overrides = overridesFor(tools);
     setPreviewBusy(true);
@@ -169,38 +243,12 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
     if (glbUrlRef.current) URL.revokeObjectURL(glbUrlRef.current);
   }, []);
-
-  // live footprint from the current arrangement (mirrors the server's auto_grid)
-  const layout = useMemo(() => {
-    if (!meta || !tools.length) return null;
-    const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot));
-    const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter]) => {
-      const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot);
-      return { toolId: tool.id, cx, cy, radius: diameter / 2 };
-    }));
-    const xs = [
-      ...polys.flat().map((p) => p[0]),
-      ...fingerCircles.flatMap((hole) => [hole.cx - hole.radius, hole.cx + hole.radius]),
-    ];
-    const ys = [
-      ...polys.flat().map((p) => p[1]),
-      ...fingerCircles.flatMap((hole) => [hole.cy - hole.radius, hole.cy + hole.radius]),
-    ];
-    const minx = Math.min(...xs), maxx = Math.max(...xs);
-    const miny = Math.min(...ys), maxy = Math.max(...ys);
-    const { pitch, bin_size, wall } = meta;
-    const gx = Math.max(1, Math.ceil((maxx - minx + 2 * wall + (pitch - bin_size)) / pitch));
-    const gy = Math.max(1, Math.ceil((maxy - miny + 2 * wall + (pitch - bin_size)) / pitch));
-    const ow = pitch * gx - (pitch - bin_size), od = pitch * gy - (pitch - bin_size);
-    const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
-    return { polys, fingerCircles, gx, gy, ow, od, cx, cy };
-  }, [tools, meta]);
 
   function toData(e: React.PointerEvent): Pt {
     const svg = svgRef.current!;
@@ -352,7 +400,7 @@ export function CombineEditor({
     : 0;
   const m = 8; // viewport margin (mm)
   const vb = layout
-    ? `${layout.cx - layout.ow / 2 - m} ${layout.cy - layout.od / 2 - m} ${layout.ow + 2 * m} ${layout.od + 2 * m}`
+    ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
     : "0 0 100 100";
 
   return (
@@ -361,7 +409,7 @@ export function CombineEditor({
         <span>Arrange multi-tool bin</span>
         {layout && (
           <span className="text-muted">
-            {layout.gx}×{layout.gy}u · {meta!.overall_height_mm}mm tall · {binStyle}
+            {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · {binStyle}
             {binStyle === "grid" ? ` · ${meta!.available_cells.length} live sockets` : ""}
           </span>
         )}
@@ -435,28 +483,30 @@ export function CombineEditor({
                 {/* finger-access scallops are part of the exact cut envelope */}
                 {layout.fingerCircles.map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
+                  const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   return <circle
                     key={`${hole.toolId}-finger-${index}`}
                     cx={hole.cx}
                     cy={hole.cy}
                     r={hole.radius}
-                    fill={color(toolIndex) + "2f"}
-                    stroke={color(toolIndex)}
+                    fill={holeColor + "2f"}
+                    stroke={holeColor}
                     strokeWidth={0.6}
                     strokeDasharray="2 1"
                   />;
                 })}
-                {/* cleared pockets */}
-                {tools.map((t, i) => (
-                  <polygon
+                {/* cleared pockets — turn red once locked and past the locked footprint */}
+                {tools.map((t, i) => {
+                  const toolColor = layout.overflowIds.has(t.id) ? OVERFLOW_COLOR : color(i);
+                  return <polygon
                     key={t.id}
                     points={layout.polys[i].map((p) => `${p[0]},${p[1]}`).join(" ")}
-                    fill={color(i) + (sel === t.id ? "88" : "55")}
-                    stroke={color(i)} strokeWidth={sel === t.id ? 1.2 : 0.7}
+                    fill={toolColor + (sel === t.id ? "88" : "55")}
+                    stroke={toolColor} strokeWidth={sel === t.id ? 1.2 : 0.7}
                     style={{ cursor: "grab" }}
                     onPointerDown={(e) => down(t.id, e)}
-                  />
-                ))}
+                  />;
+                })}
               </>
             )}
             </svg> : (
@@ -799,13 +849,18 @@ export function CombineEditor({
             ))}
           </div>
           {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
+          {hasOverflow && (
+            <p className="font-mono text-[10px] text-orange">
+              A tool crosses the locked bin edge — move it back inside, or adjust the forced size, to export or render.
+            </p>
+          )}
           <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>
-          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
+          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err) || hasOverflow} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>
           <button
             className="btn w-full text-xs"
-            disabled={busy || !tools.length || Boolean(err)}
+            disabled={busy || !tools.length || Boolean(err) || hasOverflow}
             onClick={() => setSliceDialogOpen(true)}
             title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
           >
@@ -832,7 +887,7 @@ export function CombineEditor({
                 </button>
                 <button
                   className="btn btn-primary text-xs"
-                  disabled={busy}
+                  disabled={busy || hasOverflow}
                   onClick={() => {
                     setSliceDialogOpen(false);
                     void exportSlice(Number(sliceThickness));

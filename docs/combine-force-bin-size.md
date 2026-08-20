@@ -20,6 +20,24 @@ the request fails with a clear error naming the tool that didn't fit, and
 both export buttons disable until you either grow the forced size or turn
 it off.
 
+## The 2D view is locked, not re-fit
+
+With "Force bin size" checked, the bin footprint shown in **Arrange 2D** is
+fixed to the width/depth you set — it does not grow or shrink as tools move,
+whether they got there via auto-pack or your own dragging. This applies
+equally to manual placement: drag a tool around and the bin rectangle stays
+put.
+
+If a tool's pocket or finger-access cutout crosses the locked bin's edge, it
+switches to a warning color (red) so it's obvious at a glance. While any
+tool is outside the locked footprint, **Export bin**, **Export slice**, and
+**Preview 3D** are disabled — drag the tool back inside, click **Auto-pack**
+to re-solve within the bound, or grow the forced size to fit it.
+
+Unchecking "Force bin size" hands the footprint back to auto-fit: the bin
+immediately re-renders to the smallest size that contains the current
+arrangement, same as before the box was checked.
+
 ## Constraints
 
 - Width and height must both be set together — there's no such thing as
