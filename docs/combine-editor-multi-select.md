@@ -11,7 +11,15 @@ later updates on top of this).
   one, replacing whatever was selected before.
 - **Shift-click** a tool to add it to the current selection, or remove it if it's already
   selected.
-- **Click empty space** in the 2D view to clear the selection entirely.
+- **Click empty space** in the 2D view to clear the selection entirely (the
+  view is sized generously so there's plenty of empty space to click).
+- **Esc** clears the selection from anywhere in the modal — a reminder
+  ("Esc to clear") shows next to the tool name / "N tools selected" header
+  whenever something is selected. It's ignored while a text field is
+  focused, so it won't surprise you mid-edit.
+
+Hovering an unselected tool in the 2D view shades it slightly so it's clear
+you can click it.
 
 The Inspector panel on the right shows a single tool's full settings when exactly one is
 selected, or a summary list of names when more than one is selected. Controls that only make

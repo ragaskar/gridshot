@@ -63,6 +63,7 @@ export function CombineEditor({
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<"arrange" | "preview">("arrange");
@@ -98,6 +99,20 @@ export function CombineEditor({
   useEffect(() => {
     setDepthOverrideDraft(null);
   }, [selectionKey]);
+
+  // Esc clears the selection from anywhere in the modal — except while
+  // typing in a field, where it has no obvious meaning and could surprise
+  // someone mid-edit.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+      setSelectedIds(new Set());
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -601,7 +616,7 @@ export function CombineEditor({
   );
 
   return (
-    <div className="panel !p-4 sm:!p-6 w-full max-w-[980px] max-h-[calc(100dvh-2rem)] overflow-auto">
+    <div className="panel !p-4 sm:!p-6 w-full max-w-[1180px] max-h-[calc(100dvh-2rem)] overflow-auto">
       <div className="grp-label mb-2 flex flex-wrap justify-between gap-2">
         <span>Arrange multi-tool bin</span>
         {layout && (
@@ -642,7 +657,7 @@ export function CombineEditor({
             ref={svgRef}
             viewBox={vb}
             className="w-full touch-none"
-            style={{ minHeight: 280, maxHeight: "60vh", cursor: drag.current ? "grabbing" : "default" }}
+            style={{ minHeight: 360, maxHeight: "68vh", cursor: drag.current ? "grabbing" : "default" }}
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={move}
             onPointerUp={() => (drag.current = null)}
@@ -692,22 +707,27 @@ export function CombineEditor({
                     strokeDasharray="2 1"
                   />;
                 })}
-                {/* cleared pockets — turn red once locked and past the locked footprint */}
+                {/* cleared pockets — turn red once locked and past the locked footprint;
+                    hovering an unselected tool shades it to hint it's clickable */}
                 {tools.map((t, i) => {
                   const toolColor = layout.overflowIds.has(t.id) ? OVERFLOW_COLOR : color(i);
+                  const isSelected = selectedIds.has(t.id);
+                  const isHovered = hoverId === t.id && !isSelected;
                   return <polygon
                     key={t.id}
                     points={layout.polys[i].map((p) => `${p[0]},${p[1]}`).join(" ")}
-                    fill={toolColor + (selectedIds.has(t.id) ? "88" : "55")}
-                    stroke={toolColor} strokeWidth={selectedIds.has(t.id) ? 1.2 : 0.7}
+                    fill={toolColor + (isSelected ? "88" : isHovered ? "70" : "55")}
+                    stroke={toolColor} strokeWidth={isSelected ? 1.2 : isHovered ? 1 : 0.7}
                     style={{ cursor: "grab" }}
                     onPointerDown={(e) => down(t.id, e)}
+                    onPointerEnter={() => setHoverId(t.id)}
+                    onPointerLeave={() => setHoverId((current) => (current === t.id ? null : current))}
                   />;
                 })}
               </>
             )}
             </svg> : (
-              <div className="relative h-[clamp(280px,55vh,520px)] w-full">
+              <div className="relative h-[clamp(360px,62vh,620px)] w-full">
                 {glbUrl && <BinViewer url={glbUrl} />}
                 {!glbUrl && !previewErr && (
                   <div className="absolute inset-0 grid place-items-center font-mono text-xs text-muted">
@@ -908,8 +928,11 @@ export function CombineEditor({
           </label>
           {selectedTools.length >= 1 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <div className="mb-2 truncate text-xs text-knockout">
-                {selectedTool ? (selectedTool.label || selectedTool.id.slice(0, 8)) : `${selectedTools.length} tools selected`}
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-knockout">
+                  {selectedTool ? (selectedTool.label || selectedTool.id.slice(0, 8)) : `${selectedTools.length} tools selected`}
+                </span>
+                <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
               </div>
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
                 <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
