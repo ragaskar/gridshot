@@ -97,6 +97,7 @@ export function BinLibrary() {
       magnetHoleDepthMm: b.magnet_hole_depth_mm,
       forceGx: b.force_gx,
       forceGy: b.force_gy,
+      removedCells: b.removed_cells,
     };
   }
 

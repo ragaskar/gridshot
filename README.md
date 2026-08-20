@@ -367,6 +367,10 @@ Features added on top of the original public release, newest last:
   line in the multi-tool combine editor, the same way the existing
   bounding-box align buttons snap edges (see
   [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
+- Custom bin shape: cut individual gridfinity units out of a forced-size
+  pocket-style bin (L-shapes, notches, rings), with rounded outer/notch
+  corners and drag-over-a-removed-cell prevention (see
+  [docs/combine-custom-bin-shape.md](docs/combine-custom-bin-shape.md))
 
 ## License
 

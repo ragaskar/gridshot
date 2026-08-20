@@ -13,9 +13,14 @@ import {
 } from "../api";
 import { BinViewer } from "./BinViewer";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
+import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 const OVERFLOW_COLOR = "#ff4d4d";
+// Mirrors gridshot/core/gridfinity.py's CORNER_R — the 2D preview's rounding
+// only needs to look right, not be manufacturing-exact (the server builds
+// the real geometry), so this is a plain constant rather than fetched data.
+const BIN_CORNER_R = 3.75;
 
 type Pt = [number, number];
 
@@ -69,6 +74,52 @@ export interface CombineEditorInitial {
   magnetHoleDepthMm: number;
   forceGx: number | null;
   forceGy: number | null;
+  removedCells: [number, number][] | null;
+}
+
+/** A gx×gy grid of small toggle squares, one per gridfinity unit, for
+ *  "custom bin shape" — checking a cell removes it from the bin. Rows run
+ *  top-to-bottom in increasing iy and columns left-to-right in increasing
+ *  ix, matching the Arrange 2D view's own orientation (iy grows downward,
+ *  same as the SVG's y axis). */
+function CustomShapeGrid({
+  gx, gy, removedCells, disabled, onToggle,
+}: {
+  gx: number;
+  gy: number;
+  removedCells: Set<CellKey>;
+  disabled: boolean;
+  onToggle: (ix: number, iy: number) => void;
+}) {
+  return (
+    <div
+      className="mt-2 inline-grid gap-[2px] border border-line bg-field p-1"
+      style={{ gridTemplateColumns: `repeat(${gx}, 16px)`, borderRadius: 2 }}
+    >
+      {Array.from({ length: gy }, (_, iy) => (
+        Array.from({ length: gx }, (_, ix) => {
+          const removed = removedCells.has(cellKey(ix, iy));
+          return (
+            <button
+              key={cellKey(ix, iy)}
+              type="button"
+              aria-pressed={removed}
+              aria-label={`Grid cell column ${ix + 1}, row ${iy + 1}${removed ? " (removed)" : ""}`}
+              title={removed ? "Removed — click to restore" : "Click to remove this cell"}
+              disabled={disabled}
+              className="h-4 w-4 border"
+              style={{
+                borderRadius: 1,
+                borderColor: "var(--c-line)",
+                background: removed ? "transparent" : "var(--c-teal, #2f8f95)",
+              }}
+              onClick={() => onToggle(ix, iy)}
+            />
+          );
+        })
+      ))}
+    </div>
+  );
 }
 
 /** Interactive multi-tool-bin editor: auto-packed layout you can drag + rotate,
@@ -109,6 +160,10 @@ export function CombineEditor({
   const [forceSize, setForceSize] = useState(Boolean(initial?.forceGx && initial?.forceGy));
   const [forceGx, setForceGx] = useState(initial?.forceGx ? String(initial.forceGx) : "");
   const [forceGy, setForceGy] = useState(initial?.forceGy ? String(initial.forceGy) : "");
+  const [customShape, setCustomShape] = useState(Boolean(initial?.removedCells?.length));
+  const [removedCells, setRemovedCells] = useState<Set<CellKey>>(
+    () => new Set((initial?.removedCells ?? []).map(([ix, iy]) => cellKey(ix, iy))),
+  );
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -189,12 +244,19 @@ export function CombineEditor({
     }));
   }
 
+  function removedCellsArray(cells: Set<CellKey>): [number, number][] {
+    return [...cells].map((k) => k.split(",").map(Number) as [number, number]);
+  }
+
   async function load(
     placements?: Placement[],
     overrides: CombineToolOverride[] = overridesFor(tools),
     style: BinStyle = binStyle,
     force: [number, number] | null = forceSize && forceGx && forceGy
       ? [Number(forceGx), Number(forceGy)]
+      : null,
+    removed: [number, number][] | null = customShape && removedCells.size > 0
+      ? removedCellsArray(removedCells)
       : null,
   ) {
     setBusy(true);
@@ -212,6 +274,7 @@ export function CombineEditor({
         Number(magnetHoleDepth),
         force ? force[0] : null,
         force ? force[1] : null,
+        removed,
       );
       setMeta(p);
       setTools(p.tools);
@@ -229,6 +292,7 @@ export function CombineEditor({
       void load(
         initial.placements, initial.overrides, initial.binStyle,
         initial.forceGx && initial.forceGy ? [initial.forceGx, initial.forceGy] : null,
+        initial.removedCells,
       );
     } else {
       load(); // auto-pack on open
@@ -307,6 +371,36 @@ export function CombineEditor({
       });
     }
 
+    // Custom bin shape: a tool crossing into a removed cell is exactly as
+    // invalid as crossing the locked bin's outer edge — same warning colour,
+    // same export/preview gate.
+    if (locked && customShape && removedCells.size > 0) {
+      const half = bin_size / 2;
+      const removedRects = [...removedCells].map((k) => {
+        const [ix, iy] = k.split(",").map(Number);
+        const rcx = cx + (ix - (gx - 1) / 2) * pitch;
+        const rcy = cy + (iy - (gy - 1) / 2) * pitch;
+        return { minX: rcx - half, maxX: rcx + half, minY: rcy - half, maxY: rcy + half };
+      });
+      const rectsOverlap = (
+        aMinX: number, aMaxX: number, aMinY: number, aMaxY: number,
+        r: { minX: number; maxX: number; minY: number; maxY: number },
+      ) => aMinX < r.maxX && aMaxX > r.minX && aMinY < r.maxY && aMaxY > r.minY;
+      tools.forEach((t, i) => {
+        const poly = polys[i];
+        const polyMinX = Math.min(...poly.map((p) => p[0])), polyMaxX = Math.max(...poly.map((p) => p[0]));
+        const polyMinY = Math.min(...poly.map((p) => p[1])), polyMaxY = Math.max(...poly.map((p) => p[1]));
+        const holes = fingerCircles.filter((hole) => hole.toolId === t.id);
+        const hitsRemoved = removedRects.some((r) => (
+          rectsOverlap(polyMinX, polyMaxX, polyMinY, polyMaxY, r) ||
+          holes.some((hole) => rectsOverlap(
+            hole.cx - hole.radius, hole.cx + hole.radius, hole.cy - hole.radius, hole.cy + hole.radius, r,
+          ))
+        ));
+        if (hitsRemoved) overflowIds.add(t.id);
+      });
+    }
+
     // The viewport must show overflowing geometry too, not just the locked
     // footprint, so a tool that's crossed the edge stays visible.
     const boxMinX = Math.min(cx - ow / 2, minx), boxMaxX = Math.max(cx + ow / 2, maxx);
@@ -315,7 +409,7 @@ export function CombineEditor({
     const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
 
     return { polys, fingerCircles, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
-  }, [tools, meta, forceSize, forceGx, forceGy]);
+  }, [tools, meta, forceSize, forceGx, forceGy, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
 
@@ -326,7 +420,7 @@ export function CombineEditor({
     const sequence = ++previewSequence.current;
     if (hasOverflow) {
       setPreviewBusy(false);
-      setPreviewErr("A tool extends past the locked bin size — move it back inside, or adjust the forced dimensions, before rendering.");
+      setPreviewErr("A tool extends past the locked bin size (or over a removed grid cell) — move it back inside, or adjust the forced shape, before rendering.");
       return;
     }
     const placements = placementsFor(tools);
@@ -335,11 +429,12 @@ export function CombineEditor({
     setPreviewErr(null);
     const forceGxVal = forceSize && forceGx && forceGy ? Number(forceGx) : null;
     const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
+    const removedVal = customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null;
     const timer = window.setTimeout(() => {
       combinePreviewGlb(
         ids, placements, overallHeight, lip, overrides, binStyle,
         magnetHoles, Number(magnetHoleDiameter), Number(magnetHoleDepth),
-        forceGxVal, forceGyVal,
+        forceGxVal, forceGyVal, removedVal,
       )
         .then((blob) => {
           if (sequence !== previewSequence.current) return;
@@ -358,7 +453,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -593,6 +688,7 @@ export function CombineEditor({
         Number(magnetHoleDepth),
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
+        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -619,6 +715,7 @@ export function CombineEditor({
         thicknessMm,
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
+        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -645,6 +742,7 @@ export function CombineEditor({
         Number(magnetHoleDepth),
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
+        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
       );
       setSaveDialogOpen(false);
       setSaveDone(true);
@@ -795,9 +893,30 @@ export function CombineEditor({
             {layout && (
               <>
                 {/* bin footprint + gridfinity cells */}
-                <rect x={layout.cx - layout.ow / 2} y={layout.cy - layout.od / 2}
-                  width={layout.ow} height={layout.od} fill="#00000022"
-                  stroke="#6b7280" strokeWidth={0.6} rx={2} />
+                {customShape && removedCells.size > 0 ? (
+                  <path
+                    d={binOutlinePath(
+                      { gx: layout.gx, gy: layout.gy, pitch: meta!.pitch, cornerR: BIN_CORNER_R, centerX: layout.cx, centerY: layout.cy },
+                      removedCells,
+                    )}
+                    fill="#00000022" stroke="#6b7280" strokeWidth={0.6} fillRule="evenodd"
+                  />
+                ) : (
+                  <rect x={layout.cx - layout.ow / 2} y={layout.cy - layout.od / 2}
+                    width={layout.ow} height={layout.od} fill="#00000022"
+                    stroke="#6b7280" strokeWidth={0.6} rx={2} />
+                )}
+                {customShape && [...removedCells].map((k) => {
+                  const [ix, iy] = k.split(",").map(Number);
+                  const x = layout.cx + (ix - (layout.gx - 1) / 2) * meta!.pitch;
+                  const y = layout.cy + (iy - (layout.gy - 1) / 2) * meta!.pitch;
+                  return <rect
+                    key={`removed-${k}`}
+                    x={x - meta!.bin_size / 2} y={y - meta!.bin_size / 2}
+                    width={meta!.bin_size} height={meta!.bin_size}
+                    fill="#ff4d4d18" stroke="#ff4d4d55" strokeWidth={0.5} strokeDasharray="2 1"
+                  />;
+                })}
                 {Array.from({ length: layout.gx - 1 }, (_, i) => {
                   const x = layout.cx - layout.ow / 2 + (i + 1) * meta!.pitch;
                   return <line key={"v" + i} x1={x} y1={layout.cy - layout.od / 2} x2={x} y2={layout.cy + layout.od / 2} stroke="#3a4046" strokeWidth={0.4} />;
@@ -890,7 +1009,15 @@ export function CombineEditor({
                   disabled={busy}
                   onClick={() => {
                     setBinStyle(style);
-                    void load(placementsFor(tools), overridesFor(tools), style);
+                    // Custom bin shape is pocket-only — leaving pocket clears it
+                    // rather than carrying an invalid combination forward.
+                    if (style !== "pocket" && customShape) {
+                      setCustomShape(false);
+                      setRemovedCells(new Set());
+                      void load(placementsFor(tools), overridesFor(tools), style, undefined, null);
+                    } else {
+                      void load(placementsFor(tools), overridesFor(tools), style);
+                    }
                   }}
                 >
                   {style === "pocket" ? "Pocket" : style === "corral" ? "Corral" : "Live grid"}
@@ -907,6 +1034,10 @@ export function CombineEditor({
                 onChange={(event) => {
                   const checked = event.target.checked;
                   setForceSize(checked);
+                  if (!checked) {
+                    setCustomShape(false);
+                    setRemovedCells(new Set());
+                  }
                   let gx = forceGx, gy = forceGy;
                   if (checked && !gx && !gy && layout) {
                     gx = String(layout.gx);
@@ -917,6 +1048,7 @@ export function CombineEditor({
                   void load(
                     placementsFor(tools), overridesFor(tools), binStyle,
                     checked && gx && gy ? [Number(gx), Number(gy)] : null,
+                    checked ? undefined : null,
                   );
                 }}
               />
@@ -946,6 +1078,48 @@ export function CombineEditor({
                     onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
                   />
                 </label>
+              </div>
+            )}
+            {forceSize && binStyle === "pocket" && (
+              <div className="mt-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={customShape}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setCustomShape(checked);
+                      if (!checked) {
+                        setRemovedCells(new Set());
+                        void load(placementsFor(tools), overridesFor(tools), binStyle, undefined, null);
+                      }
+                    }}
+                  />
+                  <span className="font-mono text-[10px] uppercase text-muted">Custom bin shape</span>
+                </label>
+                {customShape && Number(forceGx) > 0 && Number(forceGy) > 0 && (
+                  <CustomShapeGrid
+                    gx={Math.round(Number(forceGx))}
+                    gy={Math.round(Number(forceGy))}
+                    removedCells={removedCells}
+                    disabled={busy}
+                    onToggle={(ix, iy) => {
+                      const key = cellKey(ix, iy);
+                      const next = new Set(removedCells);
+                      next.has(key) ? next.delete(key) : next.add(key);
+                      setRemovedCells(next);
+                      void load(placementsFor(tools), overridesFor(tools));
+                    }}
+                  />
+                )}
+                {customShape && removedCells.size > 0 && !isShapeConnected(
+                  Math.round(Number(forceGx)), Math.round(Number(forceGy)), removedCells,
+                ) && (
+                  <p className="mt-1 font-mono text-[9px] text-orange">
+                    Custom bin shape must be a single connected piece — some cells are cut off from the rest.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1288,7 +1462,7 @@ export function CombineEditor({
           {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
           {hasOverflow && (
             <p className="font-mono text-[10px] text-orange">
-              A tool crosses the locked bin edge — move it back inside, or adjust the forced size, to export or render.
+              A tool crosses the locked bin edge (or a removed grid cell) — move it back inside, or adjust the forced shape, to export or render.
             </p>
           )}
           <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>

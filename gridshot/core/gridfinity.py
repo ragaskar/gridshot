@@ -93,6 +93,72 @@ def _plate(w: float, d: float, r: float, z: float) -> Manifold:
     return Manifold.extrude(_rounded_rect(w, d, r), EPS).translate((0, 0, z))
 
 
+def _cell_center(ix: int, iy: int, gx: int, gy: int) -> tuple[float, float]:
+    """World XY of grid cell (ix, iy)'s centre, matching the feet/socket loops."""
+    return (ix - (gx - 1) / 2) * PITCH, (iy - (gy - 1) / 2) * PITCH
+
+
+def _rounded_polyomino_outline(
+    gx: int, gy: int, included: frozenset[tuple[int, int]] | None
+) -> CrossSection:
+    """The bin's outer footprint: a plain rounded rect (today's shape) when
+    every cell is included, or the rounded outline of just the included
+    cells' union otherwise — a "custom bin shape".
+
+    Corners are rounded to CORNER_R at both convex (outer) and concave
+    (notch) corners via two morphological passes: an opening
+    (erode-then-dilate) rounds convex corners, then a closing
+    (dilate-then-erode) rounds concave ones. Cell pitch (42mm) is far larger
+    than 2×CORNER_R (7.5mm), so the two passes can't interact.
+    """
+    outer_w = PITCH * gx - (PITCH - BIN_SIZE)
+    outer_d = PITCH * gy - (PITCH - BIN_SIZE)
+    if included is None or len(included) == gx * gy:
+        return _rounded_rect(outer_w, outer_d, CORNER_R)
+    raw = CrossSection()
+    for ix, iy in included:
+        cx, cy = _cell_center(ix, iy, gx, gy)
+        raw = raw + CrossSection.square((BIN_SIZE, BIN_SIZE), center=True).translate((cx, cy))
+    opened = raw.offset(-CORNER_R, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS).offset(
+        CORNER_R, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
+    )
+    return opened.offset(CORNER_R, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS).offset(
+        -CORNER_R, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
+    )
+
+
+class DisconnectedBinShapeError(ValueError):
+    pass
+
+
+def validate_connected_shape(gx: int, gy: int, included: frozenset[tuple[int, int]]) -> None:
+    """Every included cell must be within the gx×gy grid and 4-connected to
+    every other one — a custom bin shape is one printable piece, not several
+    disjoint islands (a hole in the middle, e.g. a ring, is still one piece
+    and is allowed)."""
+    if not included:
+        raise DisconnectedBinShapeError("custom bin shape must include at least one grid cell")
+    for ix, iy in included:
+        if not (0 <= ix < gx and 0 <= iy < gy):
+            raise DisconnectedBinShapeError(
+                f"custom bin shape cell ({ix},{iy}) is outside the {gx}x{gy} forced grid"
+            )
+    start = next(iter(included))
+    seen = {start}
+    stack = [start]
+    while stack:
+        x, y = stack.pop()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if (nx, ny) in included and (nx, ny) not in seen:
+                seen.add((nx, ny))
+                stack.append((nx, ny))
+    if seen != included:
+        raise DisconnectedBinShapeError(
+            "custom bin shape must be a single connected piece — some cells are "
+            "cut off from the rest"
+        )
+
+
 def _foot() -> Manifold:
     """One gridfinity foot, centred, sitting on z=0, top at BASE_H.
 
@@ -189,13 +255,19 @@ LIP_RIM_FLAT = 0.4  # top rim flat: the spec draws a knife edge, which is both
 # engagement and clean geometry (foot seats 0.4mm shallower, laterally solid)
 
 
-def _lip_ring(outer_w: float, outer_d: float, z_top: float) -> Manifold:
+def _lip_ring(outline: CrossSection, z_top: float) -> Manifold:
     """Spec stacking lip: a 4.4mm rim whose inner cavity accepts the foot of
     the bin above (45° faces mate flush).  Sits on the solid body, so the
-    spec's thin-wall support section isn't needed."""
-    ring = Manifold.extrude(
-        _rounded_rect(outer_w, outer_d, CORNER_R), LIP_H
-    ).translate((0, 0, z_top))
+    spec's thin-wall support section isn't needed.
+
+    `outline` is the bin's outer footprint — a plain rounded rect, or, for a
+    [[custom bin shape]], the rounded polyomino outline from
+    `_rounded_polyomino_outline`. Every inset below is a uniform erosion of
+    that same outline, so the lip follows whatever shape the body has —
+    for a plain rect this reduces to exactly the old dimension math (eroding
+    a rounded rect by `t` shrinks each side by `2t` and the corner radius by
+    `t`), it's just expressed as a generic offset instead."""
+    ring = Manifold.extrude(outline, LIP_H).translate((0, 0, z_top))
 
     z_hi = z_top + LIP_H
     f = LIP_RIM_FLAT
@@ -203,10 +275,10 @@ def _lip_ring(outer_w: float, outer_d: float, z_top: float) -> Manifold:
     # seams at EPS thickness tessellate into sub-float32 sliver faces
 
     def rr(inset: float) -> CrossSection:
-        return _rounded_rect(outer_w - 2 * inset, outer_d - 2 * inset, CORNER_R - inset)
+        return outline.offset(-inset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
 
     def plate(inset: float, z: float) -> Manifold:
-        return _plate(outer_w - 2 * inset, outer_d - 2 * inset, CORNER_R - inset, z)
+        return Manifold.extrude(rr(inset), EPS).translate((0, 0, z))
 
     # opening band: vertical at the rim-flat inset, over-tall for a clean cut
     opening = Manifold.extrude(rr(f), 1.0 + f + ov).translate((0, 0, z_hi - f - ov))
@@ -411,14 +483,22 @@ def bin_solid(
     magnet_holes: bool = False,
     magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
+    included_cells: frozenset[tuple[int, int]] | None = None,
 ) -> Manifold:
     """A Gridfinity pocket, corral, or live-grid tool holder.
 
     Grid keeps the complete corral and adds only fully fitting sockets to its
     unused floor. Recess depth is measured below the stacking plane.
+
+    `included_cells`, when given, restricts the bin's footprint to a subset
+    of the gx×gy grid — a "custom bin shape" (see
+    `_rounded_polyomino_outline`/`validate_connected_shape`). Only supported
+    for `style == "pocket"`.
     """
     if style not in ("pocket", "corral", "grid"):
         raise ValueError(f"unknown bin style: {style}")
+    if included_cells is not None and len(included_cells) < gx * gy and style != "pocket":
+        raise ValueError("custom bin shape is only supported for pocket-style bins")
     cuts = list(pockets) if pockets else (
         [(pocket, pocket_depth, finger_holes if style != "pocket" else ())]
         if pocket is not None and pocket_depth > 0 else []
@@ -429,9 +509,10 @@ def bin_solid(
     total_h = height_u * UNIT_H
     outer_w = PITCH * gx - (PITCH - BIN_SIZE)
     outer_d = PITCH * gy - (PITCH - BIN_SIZE)
+    outline = _rounded_polyomino_outline(gx, gy, included_cells)
     if style == "pocket":
         body = Manifold.extrude(
-            _rounded_rect(outer_w, outer_d, CORNER_R), total_h - BASE_H
+            outline, total_h - BASE_H
         ).translate((0, 0, BASE_H))
     else:
         deck_top = BASE_H + CORRAL_FLOOR
@@ -457,15 +538,16 @@ def bin_solid(
             for cx, cy in grid_available_cells(gx, gy, cuts, lip=lip):
                 body = body + socket.translate((cx, cy, 0))
     if lip:
-        body = body + _lip_ring(outer_w, outer_d, total_h)
+        body = body + _lip_ring(outline, total_h)
 
     foot = _foot()
     feet = []
     foot_centers = []
     for ix in range(gx):
         for iy in range(gy):
-            cx = (ix - (gx - 1) / 2) * PITCH
-            cy = (iy - (gy - 1) / 2) * PITCH
+            if included_cells is not None and (ix, iy) not in included_cells:
+                continue
+            cx, cy = _cell_center(ix, iy, gx, gy)
             feet.append(foot.translate((cx, cy, 0)))
             foot_centers.append((cx, cy))
     solid = Manifold.batch_boolean([body, *feet], OpType.Add)

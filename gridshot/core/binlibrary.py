@@ -59,6 +59,7 @@ class SavedBin(BaseModel):
     magnet_hole_depth_mm: float = 2.0
     force_gx: Optional[int] = None
     force_gy: Optional[int] = None
+    removed_cells: Optional[list[tuple[int, int]]] = None
 
 
 def bins_dir() -> Path:

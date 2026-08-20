@@ -2439,11 +2439,18 @@ class CombineRequest(BaseModel):
     # instead of the smallest one that fits. Both or neither; auto-pack only.
     force_gx: Optional[int] = Field(default=None, ge=1)
     force_gy: Optional[int] = Field(default=None, ge=1)
+    # "Custom bin shape": gridfinity-unit (ix, iy) cells to cut out of the
+    # forced gx x gy footprint. Pocket-style bins only; requires force_gx/gy.
+    removed_cells: Optional[list[tuple[int, int]]] = None
 
     @model_validator(mode="after")
     def _force_size_is_both_or_neither(self):
         if (self.force_gx is None) != (self.force_gy is None):
             raise ValueError("force_gx and force_gy must be set together")
+        if self.removed_cells and self.force_gx is None:
+            raise ValueError("removed_cells needs force_gx/force_gy to be set")
+        if self.removed_cells and self.bin_style != "pocket":
+            raise ValueError("custom bin shape is only supported for pocket-style bins")
         return self
 
 
@@ -2454,6 +2461,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     request for manual arrange), all centred in the sized gridfinity footprint."""
     from shapely.affinity import rotate as srotate
     from shapely.affinity import translate as stranslate
+    from shapely.geometry import Point, box
     from shapely.ops import unary_union
 
     from gridshot.core import binpack as binpack_mod
@@ -2626,6 +2634,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
         # export honours what was asked for even if the packed result is
         # tighter than the forced footprint.
         gx, gy = req.force_gx, req.force_gy
+
+    included_cells = None
+    if req.removed_cells:
+        full = {(ix, iy) for ix in range(gx) for iy in range(gy)}
+        removed = {(int(x), int(y)) for x, y in req.removed_cells}
+        included_cells = frozenset(full - removed)
+        try:
+            grid_mod.validate_connected_shape(gx, gy, included_cells)
+        except grid_mod.DisconnectedBinShapeError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
     dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin
 
     centered, centered_fingers, ctfs = [], [], []
@@ -2636,6 +2655,32 @@ def _combine_layout(req: "CombineRequest") -> dict:
             for x, y, diameter in placed_fingers[i]
         ])
         ctfs.append({"tx": tfs[i]["tx"] + dx, "ty": tfs[i]["ty"] + dy, "rot": tfs[i]["rot"]})
+
+    if included_cells is not None:
+        # Authoritative server-side check behind the client's interactive
+        # drag-prevention: no tool's pocket or finger access may cross into a
+        # removed cell.
+        half = grid_mod.BIN_SIZE / 2
+        removed_rects = [
+            box(
+                (ix - (gx - 1) / 2) * grid_mod.PITCH - half,
+                (iy - (gy - 1) / 2) * grid_mod.PITCH - half,
+                (ix - (gx - 1) / 2) * grid_mod.PITCH + half,
+                (iy - (gy - 1) / 2) * grid_mod.PITCH + half,
+            )
+            for ix in range(gx) for iy in range(gy) if (ix, iy) not in included_cells
+        ]
+        if removed_rects:
+            removed_union = unary_union(removed_rects)
+            for i, poly in enumerate(centered):
+                shapes = [contour_mod.to_shapely(poly)]
+                shapes += [Point(fx, fy).buffer(dia / 2) for fx, fy, dia in centered_fingers[i]]
+                if unary_union(shapes).intersects(removed_union):
+                    label = tools[i].label or tools[i].id
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"{label} overlaps a removed grid cell — move it or restore that cell",
+                    )
 
     need_u = max(spec.height_u for spec in specs)
     height_u = (
@@ -2669,6 +2714,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "gx": gx, "gy": gy,
         "wall": wall,
         "lip": effective_lip,
+        "included_cells": included_cells,
         "reserved_cells": reserved_cells,
         "available_cells": available_cells,
         "outer_w": grid_mod.PITCH * gx - (grid_mod.PITCH - grid_mod.BIN_SIZE),
@@ -2770,6 +2816,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             magnet_holes=req.magnet_holes,
             magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
+            included_cells=lay.get("included_cells"),
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -2863,6 +2910,7 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         magnet_hole_depth_mm=saved.magnet_hole_depth_mm,
         force_gx=saved.force_gx,
         force_gy=saved.force_gy,
+        removed_cells=saved.removed_cells,
     )
 
 
@@ -2889,6 +2937,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
         "force_gx": saved.force_gx,
         "force_gy": saved.force_gy,
+        "removed_cells": saved.removed_cells,
     }
 
 
@@ -2924,6 +2973,7 @@ def bins_save(req: SaveBinRequest) -> dict:
         magnet_hole_depth_mm=req.magnet_hole_depth_mm,
         force_gx=req.force_gx,
         force_gy=req.force_gy,
+        removed_cells=req.removed_cells,
     )
     binlibrary_mod.save_bin(saved)
     return _bin_json(saved)
