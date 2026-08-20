@@ -22,6 +22,17 @@ Select a tool with finger access on. Below the Finger access toggle:
 
 Both settings only apply to this bin — the library entry is unchanged.
 
+## Multi-select
+
+With [multiple tools selected](combine-editor-multi-select.md), "Switch
+sides" appears only if **every** selected tool has finger access on and a
+flippable side (none of them fall back to the no-single-side case) — one
+ineligible tool hides the control for the whole group. When it's shown and
+the selection's flip state is mixed, the button reads "–"; clicking it
+flips every selected tool to the same side first, then alternates on
+subsequent clicks, the same tri-state pattern as bulk finger access. Position
+stays a single-tool-only control for now.
+
 ## Constraints
 
 Some tool shapes (concave outlines especially) don't have their default

@@ -392,9 +392,8 @@ export function CombineEditor({
   }
 
   async function setFingerHoleSideFlip(flip: boolean | null) {
-    if (!selectedTool) return;
-    const id = selectedTool.id;
-    const updated = tools.map((tool) => tool.id === id ? {
+    if (!selectedIds.size) return;
+    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       finger_hole_side_flip: flip ?? false,
       finger_hole_side_flip_override: flip,
@@ -479,6 +478,10 @@ export function CombineEditor({
   const fingerOverrideAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override === null);
   const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
   const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
+  const sideFlipEligible = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole && t.finger_hole_side !== "center");
+  const sideFlipAllOn = sideFlipEligible && selectedTools.every((t) => t.finger_hole_side_flip);
+  const sideFlipAllOff = sideFlipEligible && selectedTools.every((t) => !t.finger_hole_side_flip);
+  const sideFlipMixed = sideFlipEligible && !sideFlipAllOn && !sideFlipAllOff;
   const m = 8; // viewport margin (mm)
   const vb = layout
     ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
@@ -881,21 +884,23 @@ export function CombineEditor({
                   ↩ Use library setting{fingerInheritedShared !== undefined ? ` (${fingerInheritedShared ? "on" : "off"})` : ""}
                 </button>
               )}
+              {sideFlipEligible && (
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                  <span className="text-knockout">Switch sides</span>
+                  <button
+                    aria-pressed={sideFlipAllOn}
+                    className={`btn shrink-0 !px-3 !py-1 text-[10px] ${sideFlipAllOn ? "border-teal text-teal" : "btn-ghost"}`}
+                    disabled={busy}
+                    onClick={() => void setFingerHoleSideFlip(sideFlipMixed ? true : sideFlipAllOn ? null : true)}
+                  >
+                    {sideFlipMixed ? "–" : sideFlipAllOn ? "Flipped" : "Default"}
+                  </button>
+                </div>
+              )}
               {selectedTool && (
                 <>
                   {selectedTool.finger_hole && selectedTool.finger_hole_side !== "center" && (
-                    <div className="mt-3 space-y-2 border-t border-line pt-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-knockout">Switch sides</span>
-                        <button
-                          aria-pressed={selectedTool.finger_hole_side_flip}
-                          className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedTool.finger_hole_side_flip ? "border-teal text-teal" : "btn-ghost"}`}
-                          disabled={busy}
-                          onClick={() => void setFingerHoleSideFlip(selectedTool.finger_hole_side_flip ? null : true)}
-                        >
-                          {selectedTool.finger_hole_side_flip ? "Flipped" : "Default"}
-                        </button>
-                      </div>
+                    <div className="mt-3 space-y-2">
                       <div>
                         <div className="flex items-center justify-between text-muted">
                           <span>Position</span>

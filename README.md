@@ -345,6 +345,8 @@ Features added on top of the original public release, newest last:
   combine editor (see [docs/combine-editor-align.md](docs/combine-editor-align.md))
 - Bulk clearance and finger-access editing across a multi-tool-combine-editor
   selection (see [docs/combine-tool-overrides.md](docs/combine-tool-overrides.md))
+- Bulk "Switch sides" editing across a multi-tool-combine-editor selection
+  (see [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
 
 ## License
 
