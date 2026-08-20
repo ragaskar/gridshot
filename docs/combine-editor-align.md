@@ -1,8 +1,8 @@
 # Align tools in the combine editor
 
 With [multiple tools selected](combine-editor-multi-select.md) in the "Arrange multi-tool bin"
-modal's 2D view, an "Align" section appears at the bottom of the Inspector panel: two rows of
-three buttons — **Left / Center / Right** and **Top / Middle / Bottom**. They're greyed out until
+modal's 2D view, two sections appear at the bottom of the Inspector panel: **Horizontal align**
+(Left / Center / Right) and **Vertical align** (Top / Middle / Bottom). They're greyed out until
 at least 2 tools are selected.
 
 ## What each button does

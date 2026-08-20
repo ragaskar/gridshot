@@ -87,7 +87,15 @@ export function CombineEditor({
   const [depthOverrideDraft, setDepthOverrideDraft] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const arrangeRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ ids: string[]; offsets: Map<string, { ox: number; oy: number }> } | null>(null);
+  const drag = useRef<{
+    ids: string[];
+    offsets: Map<string, { ox: number; oy: number }>;
+    /** A plain click (no shift) on a tool that was already part of a bigger
+     *  selection defers the decision: drag the whole group if the pointer
+     *  moves, or narrow the selection down to just this tool if it doesn't. */
+    clickNarrowsTo: string | null;
+    moved: boolean;
+  } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
   const depthCheckboxRef = useRef<HTMLInputElement>(null);
@@ -125,7 +133,11 @@ export function CombineEditor({
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     }
-    return selectedIds.has(id) ? selectedIds : new Set([id]);
+    // A plain click always narrows to just this tool — including when it's
+    // already part of a bigger selection. (The SVG's drag handler special-cases
+    // this itself, since there a plain click on an already-selected tool must
+    // still drag the whole group if the pointer moves before it comes back up.)
+    return new Set([id]);
   }
 
   function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
@@ -319,20 +331,28 @@ export function CombineEditor({
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
     arrangeRef.current?.focus();
-    const nextIds = nextSelection(id, e.shiftKey);
-    setSelectedIds(nextIds);
+    const alreadySelected = selectedIds.has(id);
+    // A plain click on a tool that's already part of a bigger selection is
+    // ambiguous at pointerdown time: it might become a group-drag, or it
+    // might turn out to be a plain click meant to narrow the selection down
+    // to just this tool. Keep dragging the current group either way; decide
+    // which it was once the pointer comes back up (see onPointerUp below).
+    const clickNarrowsTo = !e.shiftKey && alreadySelected && selectedIds.size > 1 ? id : null;
+    const nextIds = clickNarrowsTo ? selectedIds : nextSelection(id, e.shiftKey);
+    if (!clickNarrowsTo) setSelectedIds(nextIds);
     const [mx, my] = toData(e);
     const offsets = new Map<string, { ox: number; oy: number }>();
     tools.forEach((t) => {
       if (nextIds.has(t.id)) offsets.set(t.id, { ox: mx - t.tx, oy: my - t.ty });
     });
-    drag.current = { ids: [...nextIds], offsets };
+    drag.current = { ids: [...nextIds], offsets, clickNarrowsTo, moved: false };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
   function move(e: React.PointerEvent) {
     if (!drag.current) return;
     const [mx, my] = toData(e);
     const { offsets } = drag.current;
+    drag.current.moved = true;
     setTools((ts) => ts.map((t) => {
       const o = offsets.get(t.id);
       return o ? { ...t, tx: mx - o.ox, ty: my - o.oy } : t;
@@ -590,19 +610,24 @@ export function CombineEditor({
     : "0 0 100 100";
 
   const alignButtons = (
-    <div className="mt-3 border-t border-line pt-3">
-      <span className="font-mono text-[10px] uppercase text-muted">Align</span>
-      <div className="mt-1 grid grid-cols-3 gap-1">
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
+    <>
+      <div className="mt-3 border-t border-line pt-3">
+        <span className="font-mono text-[10px] uppercase text-muted">Horizontal align</span>
+        <div className="mt-1 grid grid-cols-3 gap-1">
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
+        </div>
       </div>
-      <div className="mt-1 grid grid-cols-3 gap-1">
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+      <div className="mt-3 border-t border-line pt-3">
+        <span className="font-mono text-[10px] uppercase text-muted">Vertical align</span>
+        <div className="mt-1 grid grid-cols-3 gap-1">
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
+          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 
   const distributeButtons = (
@@ -660,7 +685,11 @@ export function CombineEditor({
             style={{ minHeight: 360, maxHeight: "68vh", cursor: drag.current ? "grabbing" : "default" }}
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={move}
-            onPointerUp={() => (drag.current = null)}
+            onPointerUp={() => {
+              const d = drag.current;
+              if (d && d.clickNarrowsTo && !d.moved) setSelectedIds(new Set([d.clickNarrowsTo]));
+              drag.current = null;
+            }}
             onPointerDown={() => setSelectedIds(new Set())}
           >
             {layout && (
@@ -1118,7 +1147,7 @@ export function CombineEditor({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />
-                  <span className="truncate text-knockout">{t.label || t.id.slice(0, 6)}</span>
+                  <span className="truncate font-bold" style={{ color: color(i) }}>{t.label || t.id.slice(0, 6)}</span>
                   {lockedRotations.has(t.id) && <span title="Rotation locked for auto-pack">🔒</span>}
                 </span>
                 <span className="mt-1 flex flex-wrap gap-x-2 pl-4 text-muted">

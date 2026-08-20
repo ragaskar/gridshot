@@ -30,9 +30,15 @@ grey out whenever the selection isn't exactly one tool.
 
 Once more than one tool is selected, dragging any one of them — or nudging with the arrow keys
 — moves the **whole selection together**, preserving each tool's position relative to the
-others. Clicking (without Shift) on a tool that's already part of the current multi-selection
-keeps the whole group selected so you can drag it as a unit; clicking a tool that *isn't*
-currently selected replaces the selection with just that one, as usual.
+others.
+
+Clicking (without Shift) on a tool that's already part of the current multi-selection is
+ambiguous until the gesture finishes: if you drag it (the pointer moves), the whole group moves
+together, same as any other drag. If you just click it (the pointer comes back up without
+moving), the selection narrows down to that one tool instead — a plain click on an
+already-selected tool always ends up selecting just that tool once you let go, whether or not a
+drag happened in between. Clicking a tool that *isn't* currently selected always replaces the
+selection with just that one, immediately.
 
 ## Constraints
 
