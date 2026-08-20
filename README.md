@@ -341,6 +341,8 @@ Features added on top of the original public release, newest last:
   with group drag/nudge — the foundation for align/distribute and bulk per-tool
   overrides (see
   [docs/combine-editor-multi-select.md](docs/combine-editor-multi-select.md))
+- Align selected tools (left/center/right, top/middle/bottom) in the multi-tool
+  combine editor (see [docs/combine-editor-align.md](docs/combine-editor-align.md))
 
 ## License
 

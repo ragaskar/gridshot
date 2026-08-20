@@ -29,6 +29,11 @@ function placedPoint(point: Pt, tx: number, ty: number, rot: number): Pt {
   return placed([point], tx, ty, rot)[0];
 }
 
+function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: number } {
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+  return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+}
+
 function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot }) => ({ id, tx, ty, rot }));
 }
@@ -302,6 +307,35 @@ export function CombineEditor({
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: t.rot + deg } : t)));
   }
+  /** Align every selected tool to a common edge/center of the selection's own
+   *  bounding boxes (each tool's placed `stamp` outline, not its finger-hole
+   *  scallop). Horizontal alignment only ever changes tx; vertical only ty. */
+  function alignSelected(edge: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") {
+    if (selectedTools.length < 2) return;
+    const boxes = new Map(selectedTools.map((t) => [t.id, bboxOf(placed(t.stamp, t.tx, t.ty, t.rot))]));
+    const all = [...boxes.values()];
+    if (edge === "left" || edge === "right" || edge === "hcenter") {
+      const target = edge === "left" ? Math.min(...all.map((b) => b.minx))
+        : edge === "right" ? Math.max(...all.map((b) => b.maxx))
+        : (Math.min(...all.map((b) => b.minx)) + Math.max(...all.map((b) => b.maxx))) / 2;
+      setTools((ts) => ts.map((t) => {
+        const b = boxes.get(t.id);
+        if (!b) return t;
+        const from = edge === "left" ? b.minx : edge === "right" ? b.maxx : (b.minx + b.maxx) / 2;
+        return { ...t, tx: t.tx + (target - from) };
+      }));
+    } else {
+      const target = edge === "top" ? Math.min(...all.map((b) => b.miny))
+        : edge === "bottom" ? Math.max(...all.map((b) => b.maxy))
+        : (Math.min(...all.map((b) => b.miny)) + Math.max(...all.map((b) => b.maxy))) / 2;
+      setTools((ts) => ts.map((t) => {
+        const b = boxes.get(t.id);
+        if (!b) return t;
+        const from = edge === "top" ? b.miny : edge === "bottom" ? b.maxy : (b.miny + b.maxy) / 2;
+        return { ...t, ty: t.ty + (target - from) };
+      }));
+    }
+  }
   function nudgeSelected(dx: number, dy: number) {
     if (!selectedIds.size) return;
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
@@ -432,6 +466,22 @@ export function CombineEditor({
   const vb = layout
     ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
     : "0 0 100 100";
+
+  const alignButtons = (
+    <div className="mt-3 border-t border-line pt-3">
+      <span className="font-mono text-[10px] uppercase text-muted">Align</span>
+      <div className="mt-1 grid grid-cols-3 gap-1">
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
+      </div>
+      <div className="mt-1 grid grid-cols-3 gap-1">
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="panel !p-4 sm:!p-6 w-full max-w-[980px] max-h-[calc(100dvh-2rem)] overflow-auto">
@@ -854,6 +904,7 @@ export function CombineEditor({
                   controls aren't available.
                 </p>
               )}
+              {alignButtons}
             </div>
           ) : isMulti ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
@@ -863,6 +914,7 @@ export function CombineEditor({
               <p className="text-muted">
                 {selectedTools.map((t) => t.label || t.id.slice(0, 6)).join(", ")}
               </p>
+              {alignButtons}
             </div>
           ) : (
             <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
