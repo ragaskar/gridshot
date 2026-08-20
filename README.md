@@ -351,6 +351,9 @@ Features added on top of the original public release, newest last:
 - Per-tool (and multi-select) pocket-depth override in the multi-tool
   combine editor, at 0.01mm resolution (see
   [docs/combine-pocket-depth-override.md](docs/combine-pocket-depth-override.md))
+- Distribute 3+ selected tools evenly (horizontally/vertically) in the
+  multi-tool combine editor (see
+  [docs/combine-editor-distribute.md](docs/combine-editor-distribute.md))
 
 ## License
 

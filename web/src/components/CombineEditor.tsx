@@ -357,6 +357,29 @@ export function CombineEditor({
       }));
     }
   }
+  /** Distribute 3+ selected tools' bounding-box centers evenly along one
+   *  axis between the two extreme members, without reordering them. The
+   *  first and last (by center) stay put; everything else is retargeted to
+   *  an equal-gap position between them. */
+  function distributeSelected(axis: "horizontal" | "vertical") {
+    if (selectedTools.length < 3) return;
+    const entries = selectedTools
+      .map((t) => {
+        const b = bboxOf(placed(t.stamp, t.tx, t.ty, t.rot));
+        return { id: t.id, center: axis === "horizontal" ? (b.minx + b.maxx) / 2 : (b.miny + b.maxy) / 2 };
+      })
+      .sort((a, b) => a.center - b.center);
+    const first = entries[0], last = entries[entries.length - 1];
+    const n = entries.length;
+    const deltas = new Map(entries.map((e, i) => [
+      e.id, first.center + (i * (last.center - first.center)) / (n - 1) - e.center,
+    ]));
+    setTools((ts) => ts.map((t) => {
+      const delta = deltas.get(t.id);
+      if (delta === undefined) return t;
+      return axis === "horizontal" ? { ...t, tx: t.tx + delta } : { ...t, ty: t.ty + delta };
+    }));
+  }
   function nudgeSelected(dx: number, dy: number) {
     if (!selectedIds.size) return;
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
@@ -563,6 +586,16 @@ export function CombineEditor({
         <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
         <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
         <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+      </div>
+    </div>
+  );
+
+  const distributeButtons = (
+    <div className="mt-3 border-t border-line pt-3">
+      <span className="font-mono text-[10px] uppercase text-muted">Distribute</span>
+      <div className="mt-1 grid grid-cols-2 gap-1">
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("horizontal")}>↔ Horizontally</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("vertical")}>↕ Vertically</button>
       </div>
     </div>
   );
@@ -1044,6 +1077,7 @@ export function CombineEditor({
                 </p>
               )}
               {alignButtons}
+              {distributeButtons}
             </div>
           ) : (
             <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
