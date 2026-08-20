@@ -30,8 +30,15 @@ flippable side (none of them fall back to the no-single-side case) — one
 ineligible tool hides the control for the whole group. When it's shown and
 the selection's flip state is mixed, the button reads "–"; clicking it
 flips every selected tool to the same side first, then alternates on
-subsequent clicks, the same tri-state pattern as bulk finger access. Position
-stays a single-tool-only control for now.
+subsequent clicks, the same tri-state pattern as bulk finger access.
+
+Position uses the same eligibility rule. When every selected tool's offset
+agrees, the slider shows that shared value; when mixed, the readout shows
+"– mm" and the slider's thumb sits at its center (0) until you move it.
+Dragging it sets every selected tool's offset to the same millimetre value.
+The slider's range is bounded to the *smallest* of the selected tools'
+individual position limits, so every tool in the group stays within its own
+valid range.
 
 ## Constraints
 
