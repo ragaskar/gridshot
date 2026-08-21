@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, model_validator
 from gridshot.core import batch as batch_mod
 from gridshot.core import bench as bench_mod
 from gridshot.core import binlibrary as binlibrary_mod
+from gridshot.core import binprofiles as binprofiles_mod
 from gridshot.core import calibrate as calibrate_mod
 from gridshot.core import contour as contour_mod
 from gridshot.core import devices as devices_mod
@@ -3133,6 +3134,192 @@ def bins_export_slice(bin_id: str, req: BinSliceRequest) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Bin Profiles: named, reusable presets of bin *style* parameters (lip, base
+# geometry mode, magnet-hole defaults, allow-custom-shape, and advanced
+# structural constants). Applying one is a one-time copy into whichever
+# picker set it, not a live reference — see gridshot/core/binprofiles.py.
+
+_BIN_PROFILE_STRUCTURAL_FIELDS = (
+    "lip_height_mm", "lip_chamfer_top_mm", "lip_straight_mm", "lip_chamfer_bottom_mm",
+    "min_wall_mm", "min_floor_mm", "corral_floor_mm", "corral_wall_mm",
+    "corral_base_flare_mm", "corral_base_reinforcement_h_mm", "magnet_hole_inset_from_edge_mm",
+)
+
+
+class BinProfileCreate(BaseModel):
+    name: str
+    base_style: Literal["pocket", "corral", "grid"] = "pocket"
+    lip: bool = True
+    allow_custom_shape: bool = True
+    magnet_holes_default: bool = False
+    magnet_hole_diameter_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
+    magnet_hole_depth_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
+    lip_height_mm: Optional[float] = None
+    lip_chamfer_top_mm: Optional[float] = None
+    lip_straight_mm: Optional[float] = None
+    lip_chamfer_bottom_mm: Optional[float] = None
+    min_wall_mm: Optional[float] = None
+    min_floor_mm: Optional[float] = None
+    corral_floor_mm: Optional[float] = None
+    corral_wall_mm: Optional[float] = None
+    corral_base_flare_mm: Optional[float] = None
+    corral_base_reinforcement_h_mm: Optional[float] = None
+    magnet_hole_inset_from_edge_mm: Optional[float] = None
+
+
+class BinProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    base_style: Optional[Literal["pocket", "corral", "grid"]] = None
+    lip: Optional[bool] = None
+    allow_custom_shape: Optional[bool] = None
+    magnet_holes_default: Optional[bool] = None
+    magnet_hole_diameter_mm_default: Optional[float] = Field(gt=0, default=None)
+    magnet_hole_depth_mm_default: Optional[float] = Field(gt=0, default=None)
+    lip_height_mm: Optional[float] = None
+    lip_chamfer_top_mm: Optional[float] = None
+    lip_straight_mm: Optional[float] = None
+    lip_chamfer_bottom_mm: Optional[float] = None
+    min_wall_mm: Optional[float] = None
+    min_floor_mm: Optional[float] = None
+    corral_floor_mm: Optional[float] = None
+    corral_wall_mm: Optional[float] = None
+    corral_base_flare_mm: Optional[float] = None
+    corral_base_reinforcement_h_mm: Optional[float] = None
+    magnet_hole_inset_from_edge_mm: Optional[float] = None
+
+
+class BinProfilePreviewRequest(BaseModel):
+    """Live in-progress profile-editor state, for the synthetic preview GLB —
+    no id/name, since it previews a not-yet-saved profile too."""
+
+    base_style: Literal["pocket", "corral", "grid"] = "pocket"
+    lip: bool = True
+    magnet_holes_default: bool = False
+    magnet_hole_diameter_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
+    magnet_hole_depth_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
+    lip_height_mm: Optional[float] = None
+    lip_chamfer_top_mm: Optional[float] = None
+    lip_straight_mm: Optional[float] = None
+    lip_chamfer_bottom_mm: Optional[float] = None
+    min_wall_mm: Optional[float] = None
+    min_floor_mm: Optional[float] = None
+    corral_floor_mm: Optional[float] = None
+    corral_wall_mm: Optional[float] = None
+    corral_base_flare_mm: Optional[float] = None
+    corral_base_reinforcement_h_mm: Optional[float] = None
+    magnet_hole_inset_from_edge_mm: Optional[float] = None
+
+
+def _bin_profile_json(p: binprofiles_mod.BinProfile) -> dict:
+    data = p.model_dump()
+    data["has_preview_image"] = binprofiles_mod.has_preview(p.id)
+    return data
+
+
+def _check_bin_profile_name_unique(name: str, *, exclude_id: Optional[str] = None) -> None:
+    for p in binprofiles_mod.list_profiles():
+        if p.name == name and p.id != exclude_id:
+            raise HTTPException(status_code=422, detail=f"bin profile name already in use: {name!r}")
+
+
+def bin_profiles_list() -> dict:
+    return {"profiles": [_bin_profile_json(p) for p in binprofiles_mod.list_profiles()]}
+
+
+def bin_profiles_get(profile_id: str) -> dict:
+    try:
+        return _bin_profile_json(binprofiles_mod.load_profile(profile_id))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin profile")
+
+
+def bin_profiles_create(req: BinProfileCreate) -> dict:
+    _check_bin_profile_name_unique(req.name)
+    profile = binprofiles_mod.BinProfile(
+        id=binprofiles_mod.new_profile_id(),
+        created_ts=int(time.time()),
+        **req.model_dump(),
+    )
+    binprofiles_mod.save_profile(profile)
+    return _bin_profile_json(profile)
+
+
+def bin_profiles_update(profile_id: str, req: BinProfileUpdate) -> dict:
+    try:
+        profile = binprofiles_mod.load_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin profile")
+    changes = req.model_dump(exclude_unset=True)
+    if "name" in changes:
+        _check_bin_profile_name_unique(changes["name"], exclude_id=profile_id)
+    if changes:
+        profile = profile.model_copy(update=changes)
+        binprofiles_mod.save_profile(profile)
+    return _bin_profile_json(profile)
+
+
+def bin_profiles_delete(profile_id: str) -> dict:
+    return {"deleted": binprofiles_mod.delete_profile(profile_id)}
+
+
+async def bin_profiles_preview_upload(profile_id: str, photo: UploadFile = File(...)) -> dict:
+    try:
+        binprofiles_mod.load_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin profile")
+    binprofiles_mod.save_preview(profile_id, await photo.read())
+    return {"ok": True}
+
+
+def bin_profiles_preview_photo(profile_id: str) -> FileResponse:
+    if not binprofiles_mod.has_preview(profile_id):
+        raise HTTPException(status_code=404, detail="no preview image stored for this bin profile")
+    return FileResponse(binprofiles_mod.preview_path(profile_id))
+
+
+def bin_profiles_preview_glb(req: BinProfilePreviewRequest) -> Response:
+    """A synthetic 4x4-gridfinity-unit bin with one ~2x2-unit square pocket
+    centered in it, for the Bin Profile editor's live 3D preview — built
+    directly via bin_solid, bypassing the tool-library/derive/placement
+    pipeline entirely (there's no real tool involved, just this profile's
+    own style settings)."""
+    from gridshot.core import export as export_mod
+
+    side = 2 * grid_mod.PITCH - 20.0  # ~2x2 units, centered, with wall clearance
+    half = side / 2
+    square = Poly(exterior=[(-half, -half), (half, -half), (half, half), (-half, half)])
+    pocket_depth = 12.0
+    min_floor_mm = req.min_floor_mm if req.min_floor_mm is not None else grid_mod.MIN_FLOOR
+    height_u = max(2, grid_mod.auto_height_u(pocket_depth, min_floor_mm=min_floor_mm))
+
+    kwargs: dict = dict(
+        gx=4, gy=4, height_u=height_u, pocket=square, pocket_depth=pocket_depth,
+        style=req.base_style, lip=req.lip,
+        magnet_holes=req.magnet_holes_default,
+        magnet_hole_diameter_mm=req.magnet_hole_diameter_mm_default,
+        magnet_hole_depth_mm=req.magnet_hole_depth_mm_default,
+        min_floor_mm=min_floor_mm,
+    )
+    for field in _BIN_PROFILE_STRUCTURAL_FIELDS:
+        if field == "min_floor_mm":
+            continue
+        value = getattr(req, field)
+        if value is not None:
+            kwargs[field] = value
+
+    try:
+        solid = grid_mod.bin_solid(**kwargs)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    mesh = grid_mod.to_trimesh(solid)
+    return Response(
+        export_mod.glb_bytes(mesh),
+        media_type="model/gltf-binary",
+        headers={"Content-Disposition": "inline; filename=bin-profile-preview.glb"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # batch zip: many tools, two shots each → auto-pair → add all to the library
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp"}
@@ -4836,6 +5023,7 @@ def get_file(project: str, name: str) -> FileResponse:
 # Route topology is organized by domain; handlers remain import-compatible from
 # this module while service extraction can proceed independently of HTTP wiring.
 from gridshot.server.routes import batch as batch_routes
+from gridshot.server.routes import bin_profiles as bin_profiles_routes
 from gridshot.server.routes import bins as bins_routes
 from gridshot.server.routes import capture as capture_routes
 from gridshot.server.routes import export as export_routes
@@ -4868,6 +5056,7 @@ for _router_factory in (
     capture_routes.build_router,
     library_routes.build_router,
     bins_routes.build_router,
+    bin_profiles_routes.build_router,
     export_routes.build_router,
     batch_routes.build_router,
 ):

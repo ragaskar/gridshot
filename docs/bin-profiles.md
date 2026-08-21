@@ -12,9 +12,28 @@ Applying a profile is a **one-time copy** into whatever's picking a bin style, n
 live reference: editing or deleting a profile later never changes a bin already built
 from it.
 
-This is landing in phases; this doc grows with each one. **Currently shipped: the
-storage layer, CLI, and geometry layer only** — there's no UI or REST API yet, so
-nothing changes for existing bins or the combine editor until those later phases land.
+This is landing in phases; this doc grows with each one. **Currently shipped: storage,
+CLI, geometry, and the REST API only** — there's no UI yet, so nothing changes for
+existing bins or the combine editor until that lands.
+
+## REST API
+
+```
+GET    /api/bin-profiles                        list every profile
+POST   /api/bin-profiles                         create one (name must be unique)
+GET    /api/bin-profiles/{id}                    get one
+PATCH  /api/bin-profiles/{id}                     update fields (partial)
+DELETE /api/bin-profiles/{id}                     delete (and its preview image)
+GET    /api/bin-profiles/{id}/preview             download the preview thumbnail
+POST   /api/bin-profiles/{id}/preview             upload a preview thumbnail (multipart)
+POST   /api/bin-profiles/preview.glb              synthetic-bin GLB preview for live editing
+```
+
+`preview.glb` doesn't touch the tool library or require a saved profile at all — it
+takes the in-progress editor form state directly and returns a GLB of a synthetic
+4×4-gridfinity-unit bin with one ~2×2-unit square pocket centered in it, built by
+calling `bin_solid` directly. This is what a future profile editor page renders live
+as you adjust fields, before you've saved anything.
 
 ## Structural parameters (advanced)
 
