@@ -60,3 +60,13 @@ URL either.
 
 The "working" screen shown while a trace/generate is in flight has nothing to resume after
 a reload, so it's deliberately never written to the URL.
+
+## Bare root with a previously active session
+
+Loading the bare root `/` used to fall straight back into the editor if `localStorage`
+had a remembered single-tool session (from a previous visit) even though the URL itself
+named no view — a bookmark to `/` behaved like a bookmark to `/editor/<id>`. It now lands
+on the Tool Library instead: the session is still restored quietly in the background (so
+the "Current tool" nav button works), but the visible page is the library, not the
+editor. An explicit path — `/bins`, `/editor/<id>`, etc. — is unaffected either way and
+always wins over the remembered session.

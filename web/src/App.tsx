@@ -41,28 +41,39 @@ function urlKeyFromPath(pathname: string): string {
   return `view:${d.view ?? "upload"}`;
 }
 
-function hydrateFromUrl(
+export function hydrateFromUrl(
   setResult: (r: TraceResult) => void,
   setEditor: (s: Session, p: GenerateParams) => void,
   navigate: (v: Exclude<View, "tracing">) => void,
 ) {
   const decoded = decodeUrlState(location.pathname);
   const stored = loadActiveSession();
-  const sess = decoded.session ?? stored?.session;
   if (decoded.project) {
     fetch(`/api/result/${decoded.project}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((r: TraceResult) => setResult(r))
       .catch(() => {});
-  } else if (sess) {
-    getSession(sess)
+  } else if (decoded.session) {
+    getSession(decoded.session)
       .then((s: Session) => setEditor(
         s,
-        stored?.session === sess ? stored.params : DEFAULT_PARAMS,
+        stored?.session === decoded.session ? stored.params : DEFAULT_PARAMS,
       ))
       .catch(() => forgetActiveSession());
   } else if (decoded.view) {
+    // An explicit view path (e.g. a bookmark) wins even with a stored
+    // session — only the bare root falls through to restoring it below.
     navigate(decoded.view);
+  } else if (stored?.session) {
+    // Bare root with a previously active session: restore it quietly (so
+    // the "Current tool" nav button works) but land on the Tool Library
+    // rather than jumping straight back into the editor.
+    getSession(stored.session)
+      .then((s: Session) => {
+        setEditor(s, stored.params);
+        navigate("library");
+      })
+      .catch(() => forgetActiveSession());
   }
 }
 
