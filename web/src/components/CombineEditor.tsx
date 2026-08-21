@@ -1463,16 +1463,16 @@ export function CombineEditor({
           {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
           {hasOverflow && (
             <p className="font-mono text-[10px] text-orange">
-              A tool crosses the locked bin edge (or a removed grid cell) — move it back inside, or adjust the forced shape, to export or render.
+              A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
             </p>
           )}
           <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>
-          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err) || hasOverflow} onClick={exportBin}>
+          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>
           <button
             className="btn w-full text-xs"
-            disabled={busy || !tools.length || Boolean(err) || hasOverflow}
+            disabled={busy || !tools.length || Boolean(err)}
             onClick={() => setSliceDialogOpen(true)}
             title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
           >
@@ -1499,7 +1499,7 @@ export function CombineEditor({
                 </button>
                 <button
                   className="btn btn-primary text-xs"
-                  disabled={busy || hasOverflow}
+                  disabled={busy}
                   onClick={() => {
                     setSliceDialogOpen(false);
                     void exportSlice(Number(sliceThickness));
@@ -1512,7 +1512,7 @@ export function CombineEditor({
           )}
           <button
             className="btn w-full text-xs"
-            disabled={busy || !tools.length || Boolean(err) || hasOverflow}
+            disabled={busy || !tools.length || Boolean(err)}
             onClick={() => {
               setSaveName(defaultBinName());
               setSaveErr(null);
