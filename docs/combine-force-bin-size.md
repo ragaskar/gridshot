@@ -29,10 +29,16 @@ equally to manual placement: drag a tool around and the bin rectangle stays
 put.
 
 If a tool's pocket or finger-access cutout crosses the locked bin's edge, it
-switches to a warning color (red) so it's obvious at a glance. While any
-tool is outside the locked footprint, **Export bin**, **Export slice**, and
-**Preview 3D** are disabled — drag the tool back inside, click **Auto-pack**
+switches to a warning color (red) so it's obvious at a glance. **Preview 3D**
+is disabled while any tool is outside the locked footprint (it needs valid
+geometry to build a solid) — drag the tool back inside, click **Auto-pack**
 to re-solve within the bound, or grow the forced size to fit it.
+
+**Export bin**, **Export slice**, and **Save to Bin Library** stay available
+even with a tool outside the footprint — you can still capture the
+arrangement (a tool's location may come out wrong in the export until you
+fix the overlap), which matters if you need to save your progress and
+resolve the boundary problem after reloading.
 
 Unchecking "Force bin size" hands the footprint back to auto-fit: the bin
 immediately re-renders to the smallest size that contains the current

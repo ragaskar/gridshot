@@ -371,6 +371,9 @@ Features added on top of the original public release, newest last:
   pocket-style bin (L-shapes, notches, rings), with rounded outer/notch
   corners and drag-over-a-removed-cell prevention (see
   [docs/combine-custom-bin-shape.md](docs/combine-custom-bin-shape.md))
+- Tool Library: a compact List view alongside the original Tile view, plus
+  select-all and shift-click range selection in both (see
+  [docs/library-list-view.md](docs/library-list-view.md))
 
 ## License
 

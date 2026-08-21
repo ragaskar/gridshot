@@ -29,8 +29,9 @@ import { PhysicalCutoutEditor } from "../components/PhysicalCutoutEditor";
 import { CombineEditor } from "../components/CombineEditor";
 import { DrawerViewer } from "../components/DrawerViewer";
 import { PhotoLightbox } from "../components/PhotoLightbox";
-import { ReadinessBadge } from "../components/ReadinessPanel";
+import { ReadinessBadge, READINESS_LABEL, READINESS_TEXT_TONE } from "../components/ReadinessPanel";
 import { getUrlParam, setUrlParam } from "../urlState";
+import { applySelectionClick } from "../selection";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 
@@ -59,8 +60,12 @@ export function Library() {
   const [drawerPreviewBusy, setDrawerPreviewBusy] = useState(false);
   const [drawerPreviewError, setDrawerPreviewError] = useState<string | null>(null);
   const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"tile" | "list">("tile");
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [composeDialogOpen, setComposeDialogOpen] = useState(false);
   const drawerPreviewUrlRef = useRef<string | null>(null);
   const drawerPreviewSequence = useRef(0);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   function clearDrawerPreview() {
     drawerPreviewSequence.current += 1;
@@ -201,15 +206,36 @@ export function Library() {
     setCombining(false);
   }
 
-  const toggle = (id: string) => {
+  /** Plain click toggles one tool (and becomes the shift-click anchor);
+   *  shift-click selects the contiguous range between the anchor and this
+   *  tool (or, with nothing selected yet, just this one) — see
+   *  applySelectionClick. Blocked tools can't be clicked, and don't count
+   *  toward range positions for tools that can. */
+  const toggle = (id: string, shiftKey = false) => {
     if (tools.find((tool) => tool.id === id)?.readiness.status === "block") return;
     invalidateComposition();
-    setSel((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+    const selectableIds = tools.filter((t) => t.readiness.status !== "block").map((t) => t.id);
+    const result = applySelectionClick(selectableIds, sel, anchorId, id, shiftKey);
+    setSel(result.selection);
+    setAnchorId(result.anchor);
   };
+
+  const selectableIds = tools.filter((t) => t.readiness.status !== "block").map((t) => t.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => sel.has(id));
+  const someSelected = selectableIds.some((id) => sel.has(id));
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected;
+  });
+  function toggleSelectAll() {
+    invalidateComposition();
+    if (allSelected) {
+      setSel(new Set());
+      setAnchorId(null);
+    } else {
+      setSel(new Set(selectableIds));
+      setAnchorId(selectableIds[selectableIds.length - 1] ?? null);
+    }
+  }
 
   async function remove(id: string) {
     await deleteLibraryTool(id);
@@ -314,6 +340,85 @@ export function Library() {
     [composed, sel],
   );
 
+  /** Composed-drawer layout preview + 3D preview + export — shared by the
+   *  tile view's sidebar and the list view's standalone panel below it. */
+  function renderComposedResult() {
+    if (!composed) return null;
+    return (
+      <>
+        <div className="grp-label mb-2">
+          Layout · uses {composed.layout.used_cols}×{composed.layout.used_rows}u
+        </div>
+        <div className="border border-line bg-field p-2" style={{ borderRadius: 2 }}>
+          <svg viewBox={`-0.2 -0.2 ${cols + 0.4} ${rows + 0.4}`} className="w-full">
+            {Array.from({ length: cols + 1 }, (_, c) => (
+              <line key={"c" + c} x1={c} y1={0} x2={c} y2={rows} stroke="#3a4046" strokeWidth={0.03} />
+            ))}
+            {Array.from({ length: rows + 1 }, (_, r) => (
+              <line key={"r" + r} x1={0} y1={r} x2={cols} y2={r} stroke="#3a4046" strokeWidth={0.03} />
+            ))}
+            {composed.layout.placed.map((p) => (
+              <rect key={p.bin_id} x={p.col + 0.04} y={p.row + 0.04}
+                width={p.grid_x - 0.08} height={p.grid_y - 0.08}
+                fill={idColor(p.bin_id) + "55"} stroke={idColor(p.bin_id)} strokeWidth={0.05} rx={0.08} />
+            ))}
+          </svg>
+        </div>
+        {composed.layout.overflow.length > 0 && (
+          <p className="font-mono text-xs text-muted mt-2">
+            {composed.layout.overflow.length} didn't fit — enlarge the drawer.
+          </p>
+        )}
+        <button
+          className="btn w-full mt-4"
+          disabled={drawerPreviewBusy || composed.layout.placed.length === 0}
+          onClick={generateDrawerPreview}
+        >
+          {drawerPreviewBusy
+            ? "Generating 3D…"
+            : drawerPreviewUrl
+              ? "Regenerate 3D preview"
+              : "Generate 3D preview"}
+        </button>
+        {drawerPreviewError && (
+          <p className="mt-2 font-mono text-xs text-orange" role="alert">
+            {drawerPreviewError}
+          </p>
+        )}
+        {drawerPreviewUrl && (
+          <div className="mt-3">
+            <div
+              className="aspect-square w-full overflow-hidden border border-line bg-field"
+              style={{ borderRadius: 2 }}
+            >
+              <DrawerViewer url={drawerPreviewUrl} binColors={drawerColors} />
+            </div>
+            <p className="mt-2 font-mono text-[10px] text-muted">
+              Exact bins seated in the full {cols}×{rows} Gridfinity socket grid · drag to orbit · scroll to zoom
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {composed.layout.placed.map((placement) => {
+                const tool = composed.tools.find((item) => item.id === placement.bin_id);
+                return (
+                  <span key={placement.bin_id} className="inline-flex items-center gap-1 font-mono text-[10px] text-muted">
+                    <span className="h-2 w-2" style={{ background: drawerColors[placement.bin_id] }} />
+                    {tool?.label || placement.bin_id}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <button
+          className="btn btn-primary w-full mt-4"
+          onClick={() => exportDrawer([...sel], cols, rows, overallHeight === "" ? null : overallHeight).catch(() => {})}
+        >
+          ↓ Export drawer (3MF + layout)
+        </button>
+      </>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-container px-4 py-8 sm:px-6 sm:py-12">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -349,6 +454,37 @@ export function Library() {
       )}
 
       {tools.length > 0 && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 font-mono text-xs text-muted">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allSelected}
+                disabled={selectableIds.length === 0}
+                onChange={toggleSelectAll}
+              />
+              {sel.size > 0 ? `${sel.size} selected` : "Select all"}
+            </label>
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                className={`btn !px-3 !py-1 text-xs ${viewMode === "tile" ? "border-teal text-teal" : "btn-ghost"}`}
+                onClick={() => setViewMode("tile")}
+              >
+                Tile
+              </button>
+              <button
+                type="button"
+                className={`btn !px-3 !py-1 text-xs ${viewMode === "list" ? "border-teal text-teal" : "btn-ghost"}`}
+                onClick={() => setViewMode("list")}
+              >
+                List
+              </button>
+            </div>
+          </div>
+
+          {viewMode === "tile" ? (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           {/* tool grid */}
           <div className="panel min-w-0 p-4 sm:p-6">
@@ -380,7 +516,7 @@ export function Library() {
                           color: on ? "#50c8c8" : "var(--c-knockout)",
                         }}
                         disabled={blocked}
-                        onClick={(e) => { e.stopPropagation(); toggle(t.id); }}
+                        onClick={(e) => { e.stopPropagation(); toggle(t.id, e.shiftKey); }}
                         title={
                           blocked
                             ? t.readiness.checks
@@ -619,81 +755,161 @@ export function Library() {
               )}
             </div>
 
-            {composed && (
-              <div className="mt-6">
-                <div className="grp-label mb-2">
-                  Layout · uses {composed.layout.used_cols}×{composed.layout.used_rows}u
-                </div>
-                <div className="border border-line bg-field p-2" style={{ borderRadius: 2 }}>
-                  <svg viewBox={`-0.2 -0.2 ${cols + 0.4} ${rows + 0.4}`} className="w-full">
-                    {Array.from({ length: cols + 1 }, (_, c) => (
-                      <line key={"c" + c} x1={c} y1={0} x2={c} y2={rows} stroke="#3a4046" strokeWidth={0.03} />
-                    ))}
-                    {Array.from({ length: rows + 1 }, (_, r) => (
-                      <line key={"r" + r} x1={0} y1={r} x2={cols} y2={r} stroke="#3a4046" strokeWidth={0.03} />
-                    ))}
-                    {composed.layout.placed.map((p) => (
-                      <rect key={p.bin_id} x={p.col + 0.04} y={p.row + 0.04}
-                        width={p.grid_x - 0.08} height={p.grid_y - 0.08}
-                        fill={idColor(p.bin_id) + "55"} stroke={idColor(p.bin_id)} strokeWidth={0.05} rx={0.08} />
-                    ))}
-                  </svg>
-                </div>
-                {composed.layout.overflow.length > 0 && (
-                  <p className="font-mono text-xs text-muted mt-2">
-                    {composed.layout.overflow.length} didn't fit — enlarge the drawer.
-                  </p>
-                )}
-                <button
-                  className="btn w-full mt-4"
-                  disabled={drawerPreviewBusy || composed.layout.placed.length === 0}
-                  onClick={generateDrawerPreview}
-                >
-                  {drawerPreviewBusy
-                    ? "Generating 3D…"
-                    : drawerPreviewUrl
-                      ? "Regenerate 3D preview"
-                      : "Generate 3D preview"}
-                </button>
-                {drawerPreviewError && (
-                  <p className="mt-2 font-mono text-xs text-orange" role="alert">
-                    {drawerPreviewError}
-                  </p>
-                )}
-                {drawerPreviewUrl && (
-                  <div className="mt-3">
-                    <div
-                      className="aspect-square w-full overflow-hidden border border-line bg-field"
-                      style={{ borderRadius: 2 }}
+            {composed && <div className="mt-6">{renderComposedResult()}</div>}
+          </div>
+        </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="panel p-4 sm:p-6">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn btn-primary"
+                    disabled={!sel.size || busy}
+                    onClick={() => setComposeDialogOpen(true)}
+                  >
+                    {busy ? "…" : `Compose ${sel.size} Tool${sel.size === 1 ? "" : "s"}`}
+                  </button>
+                  {sel.size >= 2 && (
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setUrlParam("combine", [...sel].join(","), { push: true });
+                        setCombining(true);
+                      }}
                     >
-                      <DrawerViewer url={drawerPreviewUrl} binColors={drawerColors} />
+                      Combine {sel.size} Tool{sel.size === 1 ? "" : "s"}
+                    </button>
+                  )}
+                </div>
+                {composeDialogOpen && (
+                  <div className="mt-3 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="block">
+                        <span className="block uppercase text-muted">Width (cells)</span>
+                        <input
+                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                          type="number" min={1} value={cols}
+                          onChange={(e) => {
+                            const next = Math.max(1, Math.round(Number(e.target.value)));
+                            if (next !== cols) invalidateComposition();
+                            setCols(next);
+                          }}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block uppercase text-muted">Depth (cells)</span>
+                        <input
+                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                          type="number" min={1} value={rows}
+                          onChange={(e) => {
+                            const next = Math.max(1, Math.round(Number(e.target.value)));
+                            if (next !== rows) invalidateComposition();
+                            setRows(next);
+                          }}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block uppercase text-muted">Height (mm)</span>
+                        <input
+                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                          type="number" min={0} step={1} value={overallHeight}
+                          placeholder="auto"
+                          onChange={(e) => {
+                            clearDrawerPreview();
+                            setOverallHeight(e.target.value === "" ? "" : Number(e.target.value));
+                          }}
+                        />
+                      </label>
                     </div>
-                    <p className="mt-2 font-mono text-[10px] text-muted">
-                      Exact bins seated in the full {cols}×{rows} Gridfinity socket grid · drag to orbit · scroll to zoom
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                      {composed.layout.placed.map((placement) => {
-                        const tool = composed.tools.find((item) => item.id === placement.bin_id);
-                        return (
-                          <span key={placement.bin_id} className="inline-flex items-center gap-1 font-mono text-[10px] text-muted">
-                            <span className="h-2 w-2" style={{ background: drawerColors[placement.bin_id] }} />
-                            {tool?.label || placement.bin_id}
-                          </span>
-                        );
-                      })}
+                    <p className="mt-2 text-muted">blank height = each bin its own; set for level tops</p>
+                    <div className="mt-2 grid grid-cols-2 gap-1">
+                      <button className="btn text-xs" onClick={() => setComposeDialogOpen(false)}>
+                        Cancel
+                      </button>
+                      <button
+                        className="btn btn-primary text-xs"
+                        disabled={busy}
+                        onClick={() => {
+                          setComposeDialogOpen(false);
+                          void compose();
+                        }}
+                      >
+                        Compose
+                      </button>
                     </div>
                   </div>
                 )}
-                <button
-                  className="btn btn-primary w-full mt-4"
-                  onClick={() => exportDrawer([...sel], cols, rows, overallHeight === "" ? null : overallHeight).catch(() => {})}
-                >
-                  ↓ Export drawer (3MF + layout)
-                </button>
               </div>
-            )}
-          </div>
-        </div>
+
+              <div className="panel !p-0 overflow-hidden">
+                {tools.map((t) => {
+                  const on = sel.has(t.id);
+                  const blocked = t.readiness.status === "block";
+                  return (
+                    <div key={t.id} className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        disabled={blocked}
+                        title={
+                          blocked
+                            ? t.readiness.checks
+                              .filter((check) => check.status === "block")
+                              .map((check) => check.message)
+                              .join("\n")
+                            : "Select for compose or combine"
+                        }
+                        onClick={(e) => toggle(t.id, e.shiftKey)}
+                        onChange={() => {}}
+                      />
+                      <button
+                        className="h-10 w-10 shrink-0 overflow-hidden border border-line bg-field p-0.5"
+                        style={{ borderRadius: 2 }}
+                        title="View the source photo and accepted selection"
+                        onClick={() => openView(t)}
+                      >
+                        <img src={thumbSrc(t)} alt="" className="h-full w-full object-contain" />
+                      </button>
+                      <button
+                        className="min-w-0 flex-1 truncate text-left font-mono text-sm text-field hover:text-teal hover:underline"
+                        title='Reopen this tool as "current tool" — examine its full capture/calibration details, download its bin files, and regenerate it with adjusted settings'
+                        onClick={() => reopenAsCurrent(t)}
+                      >
+                        {t.label || t.id}
+                      </button>
+                      <span
+                        className={`w-14 shrink-0 text-right font-mono text-[10px] uppercase ${READINESS_TEXT_TONE[t.readiness.status]}`}
+                        title={t.readiness.checks.filter((check) => check.status !== "pass").map((check) => check.message).join("\n")}
+                      >
+                        {READINESS_LABEL[t.readiness.status]}
+                      </span>
+                      <button
+                        className="shrink-0 font-mono text-sm text-teal hover:text-knockout"
+                        title="Duplicate this tool under a new id, so you can select two of the same tool in one combine/compose bin"
+                        onClick={() => void clone(t.id)}
+                      >
+                        ⧉
+                      </button>
+                      <button
+                        className="shrink-0 font-mono text-base text-knockout hover:text-gold"
+                        title="Delete tool"
+                        onClick={() => remove(t.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {composed && (
+                <div className="panel p-4 sm:p-6">
+                  {renderComposedResult()}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {editing && (

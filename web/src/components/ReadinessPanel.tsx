@@ -12,6 +12,16 @@ const LABEL: Record<ReadinessStatus, string> = {
   block: "blocked",
 };
 
+/** Text-only colour (no border) — for a plain-text readiness label outside
+ *  the bordered badge/panel, e.g. the library's list view. */
+export const READINESS_TEXT_TONE: Record<ReadinessStatus, string> = {
+  pass: "text-teal",
+  review: "text-orange-text",
+  block: "text-orange",
+};
+
+export const READINESS_LABEL = LABEL;
+
 export function ReadinessBadge({
   readiness,
   title,

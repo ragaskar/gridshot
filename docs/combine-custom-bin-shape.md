@@ -20,8 +20,10 @@ custom shape, since the corral wall/deck and live-grid sockets aren't shape-awar
 
 A removed cell is treated the same as the space outside a locked bin: drag a tool's
 pocket or finger-access cutout over one and it turns red, the same overflow warning as
-crossing the locked footprint's edge. **Export bin**, **Export slice**, and **Preview 3D**
-stay disabled until every tool is moved clear.
+crossing the locked footprint's edge. **Preview 3D** stays disabled until every tool is
+moved clear; **Export bin**, **Export slice**, and **Save to Bin Library** stay
+available regardless (a tool's location may come out wrong in the export until the
+overlap is fixed).
 
 ## Constraints
 
