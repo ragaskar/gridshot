@@ -7,7 +7,15 @@ import { EdgeSplitModifier } from "three/examples/jsm/modifiers/EdgeSplitModifie
 /** three.js preview of the generated bin GLB. Gridfinity is z-up, so the
  *  camera's up vector is set to z and it looks down from a front-iso angle;
  *  drag to orbit, scroll to zoom. Bin rendered in Instrument Teal on Deep Field. */
-export function BinViewer({ url }: { url: string }) {
+export function BinViewer({
+  url, onCanvasReady,
+}: {
+  url: string;
+  /** Called with the live WebGL canvas element right after it's mounted
+   *  (and again with `null` on unmount) — lets a caller grab a snapshot via
+   *  `canvas.toDataURL()`, e.g. for a Bin Profile's saved thumbnail. */
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,10 +28,18 @@ export function BinViewer({ url }: { url: string }) {
     scene.background = new THREE.Color(0x17191c); // --field
     const camera = new THREE.PerspectiveCamera(35, w / h, 1, 5000);
     camera.up.set(0, 0, 1); // gridfinity z-up
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      // Without this, the drawing buffer can be cleared right after each
+      // frame composites, making a canvas.toDataURL() snapshot taken from
+      // outside the render loop (e.g. onCanvasReady, on a Save click)
+      // unreliable — blank or stale — in some browsers.
+      preserveDrawingBuffer: true,
+    });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     el.appendChild(renderer.domElement);
+    onCanvasReady?.(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight(0xf3efe4, 0x243049, 2.0));
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -118,8 +134,9 @@ export function BinViewer({ url }: { url: string }) {
       controls.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === el) el.removeChild(renderer.domElement);
+      onCanvasReady?.(null);
     };
-  }, [url]);
+  }, [url]); // eslint-disable-line
 
   return <div ref={ref} className="w-full h-full" />;
 }

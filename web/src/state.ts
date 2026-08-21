@@ -43,6 +43,7 @@ export type View =
   | "result"
   | "library"
   | "bins"
+  | "binProfiles"
   | "batch"
   | "calibration"
   | "reference";

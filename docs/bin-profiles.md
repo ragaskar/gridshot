@@ -13,8 +13,28 @@ live reference: editing or deleting a profile later never changes a bin already 
 from it.
 
 This is landing in phases; this doc grows with each one. **Currently shipped: storage,
-CLI, geometry, and the REST API only** — there's no UI yet, so nothing changes for
-existing bins or the combine editor until that lands.
+CLI, geometry, the REST API, and the Bin Profiles page itself** — the four places you
+currently pick a bin style (the combine editor, single-tool capture, the result page's
+regenerate flow, and a tool's per-tool default) haven't been converted to use profiles
+yet, so nothing changes there until that lands.
+
+## The Bin Profiles page
+
+A new **Bin Profiles** entry in the top nav lists every profile as a card (thumbnail,
+name, base style, lip on/off), plus a **"+ New bin profile"** tile. Three are seeded for
+you — Pocket, Corral, Live Grid — reproducing today's hardcoded styles exactly.
+
+Clicking a card (or "+ New") opens its editor: a live 3D preview of the synthetic
+4×4-unit/2×2-pocket bin next to every field — name, base style, stacking lip, magnet-hole
+defaults, and "Allow custom grid shape" (an independent checkbox, not derived from base
+style — checking it for Corral/Live Grid shows a note that cell removal isn't supported
+there yet, since the underlying geometry can't do it regardless of the checkbox). An
+"Advanced (structural)" section holds the 12 dimensional overrides described below, each
+starting blank (inheriting gridfinity.py's constant) with its default shown as a
+placeholder.
+
+Saving uploads a snapshot of the live preview as the card's thumbnail. The page is
+deep-linkable: `/bin-profiles/:id` opens straight to that profile's editor.
 
 ## REST API
 

@@ -8,7 +8,7 @@ import type { View } from "./state";
 type LinkableView = Exclude<View, "tracing" | "editor" | "result">;
 
 const LINKABLE_VIEWS: LinkableView[] = [
-  "upload", "library", "bins", "batch", "calibration", "reference",
+  "upload", "library", "bins", "binProfiles", "batch", "calibration", "reference",
 ];
 
 export interface DecodedUrlState {
@@ -19,10 +19,12 @@ export interface DecodedUrlState {
   combineIds: string[] | null;
   /** Saved-bin id to reopen the combine editor from, from `/bins/:id/combine`. */
   reopenBinId: string | null;
+  /** Bin profile id to open the editor for, from `/bin-profiles/:id`. */
+  editBinProfileId: string | null;
 }
 
 const NOTHING_DECODED: DecodedUrlState = {
-  view: null, session: null, project: null, combineIds: null, reopenBinId: null,
+  view: null, session: null, project: null, combineIds: null, reopenBinId: null, editBinProfileId: null,
 };
 
 /** Parse a location.pathname into whichever deep-link identifiers it carries.
@@ -42,6 +44,15 @@ export function decodeUrlState(pathname: string): DecodedUrlState {
   if (head === "bins" && rest[0] && rest[1] === "combine") {
     return { ...NOTHING_DECODED, view: "bins", reopenBinId: rest[0] };
   }
+  // "binProfiles" is kebab-cased in the URL (matching the REST API's
+  // /api/bin-profiles) but camelCased as a View, so it needs its own branch
+  // rather than the generic same-name-as-the-view-id check below. A second
+  // segment addresses that profile's editor, same shape as /bins/:id/combine.
+  if (head === "bin-profiles") {
+    return rest[0]
+      ? { ...NOTHING_DECODED, view: "binProfiles", editBinProfileId: rest[0] }
+      : { ...NOTHING_DECODED, view: "binProfiles" };
+  }
   if ((LINKABLE_VIEWS as string[]).includes(head)) return { ...NOTHING_DECODED, view: head as LinkableView };
   return NOTHING_DECODED;
 }
@@ -58,6 +69,7 @@ export function pathForView(
   if (view === "result") return ids.project ? `/result/${encodeURIComponent(ids.project)}` : "";
   if (view === "tracing") return "";
   if (view === "upload") return "/";
+  if (view === "binProfiles") return "/bin-profiles";
   return `/${view}`;
 }
 
@@ -71,4 +83,10 @@ export function pathForCombine(ids: string[]): string {
  *  nested under the Bin Library page that hosts it. */
 export function pathForBinReopen(binId: string): string {
   return `/bins/${encodeURIComponent(binId)}/combine`;
+}
+
+/** Path for opening a bin profile's editor, nested under the Bin Profiles
+ *  page that hosts it. */
+export function pathForBinProfileEdit(profileId: string): string {
+  return `/bin-profiles/${encodeURIComponent(profileId)}`;
 }

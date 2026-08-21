@@ -9,6 +9,7 @@ const PRIMARY: { view: NavView; label: string }[] = [
   { view: "batch", label: "Batch ZIP" },
   { view: "library", label: "Library" },
   { view: "bins", label: "Bin Library" },
+  { view: "binProfiles", label: "Bin Profiles" },
   { view: "calibration", label: "Calibration" },
   { view: "reference", label: "Mat Reference" },
 ];
