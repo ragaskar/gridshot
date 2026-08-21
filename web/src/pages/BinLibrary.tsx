@@ -9,6 +9,7 @@ import {
   type SavedBin,
 } from "../api";
 import { CombineEditor, type CombineEditorInitial } from "../components/CombineEditor";
+import { binExportName } from "../exportNaming";
 import { decodeUrlState, pathForBinReopen, pathForView } from "../urlState";
 
 /** Saved multi-tool combine-editor arrangements — a recipe (tools, placements,
@@ -61,11 +62,11 @@ export function BinLibrary() {
     }
   }
 
-  async function exportBin(id: string) {
-    setBusyId(id);
+  async function exportBin(b: SavedBin) {
+    setBusyId(b.id);
     setNotice(null);
     try {
-      await exportSavedBin(id);
+      await exportSavedBin(b.id, binExportName(b.label, b.tool_labels.filter((l): l is string => Boolean(l))));
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -73,11 +74,15 @@ export function BinLibrary() {
     }
   }
 
-  async function exportSlice(id: string) {
-    setBusyId(id);
+  async function exportSlice(b: SavedBin) {
+    setBusyId(b.id);
     setNotice(null);
     try {
-      await exportSavedBinSlice(id);
+      await exportSavedBinSlice(
+        b.id,
+        undefined,
+        binExportName(b.label, b.tool_labels.filter((l): l is string => Boolean(l))),
+      );
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -87,6 +92,7 @@ export function BinLibrary() {
 
   function reopenInitial(b: SavedBin): CombineEditorInitial {
     return {
+      label: b.label,
       placements: b.placements,
       overrides: b.overrides,
       binStyle: b.bin_style,
@@ -171,14 +177,14 @@ export function BinLibrary() {
                     <button
                       className="btn btn-ghost text-[10px] !px-2 !py-2"
                       disabled={busyId === b.id}
-                      onClick={() => void exportBin(b.id)}
+                      onClick={() => void exportBin(b)}
                     >
                       ↓ Export bin
                     </button>
                     <button
                       className="btn btn-ghost text-[10px] !px-2 !py-2"
                       disabled={busyId === b.id}
-                      onClick={() => void exportSlice(b.id)}
+                      onClick={() => void exportSlice(b)}
                     >
                       ↓ Export slice
                     </button>

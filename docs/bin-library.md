@@ -36,6 +36,20 @@ bin style, and the tools it contains. Four actions:
 - **× Delete** — removes the saved bin (asks for confirmation first). This never touches the
   tools it references, only the saved arrangement itself.
 
+## Export filenames
+
+Exported files (from either the combine editor or the Bin Library list) are named after
+the bin, not a generic `multitool-bin.3mf`:
+
+- **Saved** — the bin's own name (the one you gave it, or edited afterward). Reopening a
+  saved bin and exporting from *inside* the editor uses this too, even before saving again
+  in that session — and if you save it under a new name mid-session, exports made after
+  that use the new name.
+- **Not saved** — the selected tools' names, joined (e.g. `Wrench, Pliers`), capped at 3
+  names plus a count (`Wrench, Pliers, Hammer +2 more`) for a large selection.
+
+Slice exports get a `-slice` suffix on the same base name either way.
+
 ## Constraints
 
 - This pass only covers *combined* bins (arrangements from the multi-tool combine editor) — not

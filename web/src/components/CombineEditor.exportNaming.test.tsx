@@ -1,0 +1,151 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { CombineEditor } from "./CombineEditor";
+import type { CombineToolOverride, Placement } from "../api";
+
+vi.mock("../api", () => ({
+  combinePreview: vi.fn(),
+  combinePreviewGlb: vi.fn(),
+  combineLibrary: vi.fn(),
+  combineLibrarySlice: vi.fn(),
+  saveBin: vi.fn(),
+}));
+
+import { combineLibrary, combineLibrarySlice, combinePreview, combinePreviewGlb, saveBin } from "../api";
+
+const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
+
+function baseTool(id: string, label: string, tx: number) {
+  return {
+    id, label, bin_style: "pocket" as const,
+    depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_mode: "automatic" as const,
+    clearance_mm: 1.0, clearance_mm_inherited: 1.0, clearance_mm_override: null,
+    round_tool: false,
+    finger: false, finger_hole: false, finger_hole_inherited: false, finger_hole_override: null,
+    finger_hole_side: "center" as const, finger_hole_offset_mm_max: 0,
+    finger_hole_side_flip: false, finger_hole_side_flip_override: null,
+    finger_hole_offset_mm: 0, finger_hole_offset_mm_override: null,
+    finger_holes: [] as [number, number, number][],
+    derivation_key: `${id}-key`,
+    stamp: STAMP,
+    tx, ty: 0, rot: 0,
+  };
+}
+
+function buildResponse(overrides: CombineToolOverride[] | null | undefined, placements: Placement[] | null | undefined) {
+  const bases = [baseTool("tool-a", "Wrench", -15), baseTool("tool-b", "Pliers", 15)];
+  const tools = bases.map((base) => {
+    const override = overrides?.find((o) => o.id === base.id);
+    const placement = placements?.find((p) => p.id === base.id);
+    const clearance_mm_override = override?.clearance_mm ?? null;
+    return {
+      ...base,
+      tx: placement?.tx ?? base.tx,
+      ty: placement?.ty ?? base.ty,
+      rot: placement?.rot ?? base.rot,
+      clearance_mm: clearance_mm_override ?? base.clearance_mm_inherited,
+      clearance_mm_override,
+    };
+  });
+  return {
+    bin_style: "pocket" as const, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
+    overall_height_mm: 25.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
+    reserved_cells: [], available_cells: [], tools,
+  };
+}
+
+describe("CombineEditor export filenames", () => {
+  beforeEach(() => {
+    vi.mocked(combinePreview).mockImplementation(
+      (_ids, placements, _overallHeight, _lip, overrides) =>
+        Promise.resolve(buildResponse(overrides, placements)),
+    );
+    vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
+    vi.mocked(combineLibrary).mockReset().mockResolvedValue(undefined);
+    vi.mocked(combineLibrarySlice).mockReset().mockResolvedValue(undefined);
+    vi.mocked(saveBin).mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("names a fresh (unsaved) export after the selected tools", async () => {
+    render(
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+    );
+    await screen.findByText("Wrench");
+
+    fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
+
+    await waitFor(() => {
+      expect(combineLibrary).toHaveBeenCalled();
+    });
+    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    expect(filename).toBe("Wrench, Pliers");
+  });
+
+  it("names a reopened saved bin's export after the bin, not the tools", async () => {
+    render(
+      <CombineEditor
+        ids={["tool-a", "tool-b"]}
+        overallHeight={null}
+        lip={true}
+        onClose={() => {}}
+        initial={{
+          label: "Workbench Drawer 3",
+          placements: [], overrides: [], binStyle: "pocket",
+          magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2,
+          forceGx: null, forceGy: null, removedCells: null,
+        }}
+      />,
+    );
+    await screen.findByText("Wrench");
+
+    fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
+
+    await waitFor(() => expect(combineLibrary).toHaveBeenCalled());
+    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    expect(filename).toBe("Workbench Drawer 3");
+  });
+
+  it("uses the newly-saved name for exports made later in the same session", async () => {
+    vi.mocked(saveBin).mockResolvedValue({
+      id: "bin-1", label: "Fresh Save", created_ts: 0,
+      tool_ids: ["tool-a", "tool-b"], tool_labels: ["Wrench", "Pliers"],
+      placements: [], overrides: [], overall_height: null, lip: true, bin_style: "pocket",
+      magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
+      force_gx: null, force_gy: null, removed_cells: null,
+    });
+    render(
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+    );
+    await screen.findByText("Wrench");
+
+    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
+    const nameInput = screen.getByLabelText("Bin Library entry name") as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "Fresh Save" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(saveBin).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
+    await waitFor(() => expect(combineLibrary).toHaveBeenCalled());
+    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    expect(filename).toBe("Fresh Save");
+  });
+
+  it("names a slice export the same way as the full bin export", async () => {
+    render(
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+    );
+    await screen.findByText("Wrench");
+
+    fireEvent.click(screen.getByText("↓ Export slice (3MF)"));
+    fireEvent.click(screen.getByText("Export"));
+
+    await waitFor(() => expect(combineLibrarySlice).toHaveBeenCalled());
+    const filename = vi.mocked(combineLibrarySlice).mock.calls[0][13];
+    expect(filename).toBe("Wrench, Pliers");
+  });
+});

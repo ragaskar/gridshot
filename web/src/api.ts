@@ -1081,6 +1081,7 @@ export async function combineLibrary(
   forceGx?: number | null,
   forceGy?: number | null,
   removedCells?: [number, number][] | null,
+  filename = "multitool-bin",
 ): Promise<void> {
   const r = await fetch("/api/library/combine", {
     method: "POST",
@@ -1094,7 +1095,7 @@ export async function combineLibrary(
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = "multitool-bin.3mf";
+  a.download = `${filename}.3mf`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1113,6 +1114,7 @@ export async function combineLibrarySlice(
   forceGx?: number | null,
   forceGy?: number | null,
   removedCells?: [number, number][] | null,
+  filename = "multitool-bin",
 ): Promise<void> {
   const r = await fetch("/api/library/combine/slice", {
     method: "POST",
@@ -1126,7 +1128,7 @@ export async function combineLibrarySlice(
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = "multitool-bin-slice.3mf";
+  a.download = `${filename}-slice.3mf`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1200,7 +1202,7 @@ export async function deleteBin(id: string): Promise<void> {
   await fetch(`/api/bins/${id}`, { method: "DELETE" });
 }
 
-export async function exportSavedBin(id: string): Promise<void> {
+export async function exportSavedBin(id: string, filename = "multitool-bin"): Promise<void> {
   const r = await fetch(`/api/bins/${id}/export`, { method: "POST" });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1209,12 +1211,16 @@ export async function exportSavedBin(id: string): Promise<void> {
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = "multitool-bin.3mf";
+  a.download = `${filename}.3mf`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-export async function exportSavedBinSlice(id: string, sliceThicknessMm?: number | null): Promise<void> {
+export async function exportSavedBinSlice(
+  id: string,
+  sliceThicknessMm?: number | null,
+  filename = "multitool-bin",
+): Promise<void> {
   const r = await fetch(`/api/bins/${id}/export/slice`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1227,7 +1233,7 @@ export async function exportSavedBinSlice(id: string, sliceThicknessMm?: number 
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");
   a.href = url;
-  a.download = "multitool-bin-slice.3mf";
+  a.download = `${filename}-slice.3mf`;
   a.click();
   URL.revokeObjectURL(url);
 }

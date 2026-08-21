@@ -13,6 +13,7 @@ import {
 } from "../api";
 import { BinViewer } from "./BinViewer";
 import { commitOnChange } from "../domEvents";
+import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
 
@@ -65,8 +66,12 @@ function defaultBinName(): string {
 }
 
 /** Seed state for reopening a saved Bin Library entry, instead of the usual
- *  fresh auto-pack. Mirrors a combine request's recipe fields. */
+ *  fresh auto-pack. Mirrors a combine request's recipe fields. `label` isn't
+ *  part of that recipe (it's not sent back to /combine) — it's carried
+ *  along only so exports from this reopened session are named after the
+ *  saved bin, same as exporting it directly from the Bin Library list. */
 export interface CombineEditorInitial {
+  label: string;
   placements: Placement[];
   overrides: CombineToolOverride[];
   binStyle: BinStyle;
@@ -170,6 +175,10 @@ export function CombineEditor({
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [saveDone, setSaveDone] = useState(false);
+  // Name exports after: reopened from this saved bin, or saved during this
+  // session — either way, falls back to the tools' own names once neither
+  // is true.
+  const [savedLabel, setSavedLabel] = useState<string | null>(initial?.label ?? null);
   // Multi-select-only local draft for the pocket-depth override checkbox —
   // null means "no pending edit"; checking the box (when not on a single
   // tool) never commits by itself, only setting a depth or unchecking does.
@@ -691,6 +700,7 @@ export function CombineEditor({
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
         customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
+        binExportName(savedLabel, tools.map((t) => t.label)),
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -718,6 +728,7 @@ export function CombineEditor({
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
         customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
+        binExportName(savedLabel, tools.map((t) => t.label)),
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -731,8 +742,9 @@ export function CombineEditor({
     setSaveErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
+      const label = saveName.trim() || defaultBinName();
       await saveBin(
-        saveName.trim() || defaultBinName(),
+        label,
         ids,
         placementsFor(tools),
         overridesFor(tools),
@@ -746,6 +758,7 @@ export function CombineEditor({
         force ? Number(forceGy) : null,
         customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
       );
+      setSavedLabel(label);
       setSaveDialogOpen(false);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);

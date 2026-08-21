@@ -378,6 +378,9 @@ Features added on top of the original public release, newest last:
   params, so they survive a full reload in every browser; the FastAPI static mount
   gained a proper SPA fallback route to match (see
   [docs/deep-link-urls.md](docs/deep-link-urls.md))
+- Exported bin/slice files are named after the saved Bin Library entry, or the selected
+  tools when not saved, instead of a generic `multitool-bin.3mf` (see
+  [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 
