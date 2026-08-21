@@ -31,6 +31,7 @@ import { DrawerViewer } from "../components/DrawerViewer";
 import { PhotoLightbox } from "../components/PhotoLightbox";
 import { ReadinessBadge, READINESS_LABEL, READINESS_TEXT_TONE } from "../components/ReadinessPanel";
 import { useLocation } from "wouter";
+import { commitOnChange } from "../domEvents";
 import { decodeUrlState, pathForCombine, pathForView } from "../urlState";
 import { applySelectionClick } from "../selection";
 
@@ -596,7 +597,7 @@ export function Library() {
                               className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                               type="number" step={0.1} min={0.1}
                               defaultValue={t.magnet_hole_diameter_mm}
-                              onBlur={(e) => Number(e.target.value) !== t.magnet_hole_diameter_mm && patch(t.id, { magnet_hole_diameter_mm: Number(e.target.value) })}
+                              ref={commitOnChange((v) => Number(v) !== t.magnet_hole_diameter_mm && patch(t.id, { magnet_hole_diameter_mm: Number(v) }))}
                             />
                           </label>
                           <label className="min-w-0">
@@ -606,7 +607,7 @@ export function Library() {
                               className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                               type="number" step={0.1} min={0.1} max={4.7}
                               defaultValue={t.magnet_hole_depth_mm}
-                              onBlur={(e) => Number(e.target.value) !== t.magnet_hole_depth_mm && patch(t.id, { magnet_hole_depth_mm: Number(e.target.value) })}
+                              ref={commitOnChange((v) => Number(v) !== t.magnet_hole_depth_mm && patch(t.id, { magnet_hole_depth_mm: Number(v) }))}
                             />
                           </label>
                         </div>
@@ -619,7 +620,7 @@ export function Library() {
                             className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                             type="number" step={0.5} min={0}
                             defaultValue={t.thickness_mm}
-                            onBlur={(e) => Number(e.target.value) !== t.thickness_mm && patch(t.id, { thickness_mm: Number(e.target.value) })}
+                            ref={commitOnChange((v) => Number(v) !== t.thickness_mm && patch(t.id, { thickness_mm: Number(v) }))}
                           />
                         </label>
                         <label className="min-w-0">
@@ -630,10 +631,10 @@ export function Library() {
                             type="number" step={0.5} min={0.1}
                             placeholder="optional"
                             defaultValue={t.full_height_mm ?? ""}
-                            onBlur={(e) => {
-                              const value = e.target.value === "" ? null : Number(e.target.value);
+                            ref={commitOnChange((raw) => {
+                              const value = raw === "" ? null : Number(raw);
                               if (value !== t.full_height_mm) patch(t.id, { full_height_mm: value }).catch(() => {});
-                            }}
+                            })}
                           />
                         </label>
                         <label className="min-w-0">
@@ -648,14 +649,14 @@ export function Library() {
                             type="number" step={0.5} min={0.1}
                             defaultValue={t.pocket_depth_mm ?? t.derived_pocket_depth_mm ?? ""}
                             title={t.pocket_depth_mm == null ? "Automatic recess depth; type to override" : "Manual override; clear for automatic"}
-                            onBlur={(e) => {
-                              const v = e.target.value === "" ? null : Number(e.target.value);
+                            ref={commitOnChange((raw) => {
+                              const v = raw === "" ? null : Number(raw);
                               const matchesDerived =
                                 v != null &&
                                 t.derived_pocket_depth_mm != null &&
                                 v === t.derived_pocket_depth_mm;
                               patch(t.id, { pocket_depth_mm: matchesDerived ? null : v }).catch(() => {});
-                            }}
+                            })}
                           />
                         </label>
                         <label className="min-w-0">
@@ -665,7 +666,7 @@ export function Library() {
                             className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                             type="number" step={0.25} min={0}
                             defaultValue={t.clearance_mm}
-                            onBlur={(e) => Number(e.target.value) !== t.clearance_mm && patch(t.id, { clearance_mm: Number(e.target.value) })}
+                            ref={commitOnChange((v) => Number(v) !== t.clearance_mm && patch(t.id, { clearance_mm: Number(v) }))}
                           />
                         </label>
                       </div>

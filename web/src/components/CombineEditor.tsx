@@ -12,6 +12,7 @@ import {
   type Placement,
 } from "../api";
 import { BinViewer } from "./BinViewer";
+import { commitOnChange } from "../domEvents";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
 
@@ -1067,7 +1068,7 @@ export function CombineEditor({
                     type="number" step={1} min={1}
                     value={forceGx}
                     onChange={(event) => setForceGx(event.target.value)}
-                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
                 <label className="min-w-0">
@@ -1078,7 +1079,7 @@ export function CombineEditor({
                     type="number" step={1} min={1}
                     value={forceGy}
                     onChange={(event) => setForceGy(event.target.value)}
-                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
               </div>
@@ -1149,7 +1150,7 @@ export function CombineEditor({
                     type="number" step={0.1} min={0.1}
                     value={magnetHoleDiameter}
                     onChange={(event) => setMagnetHoleDiameter(event.target.value)}
-                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
                 <label className="min-w-0">
@@ -1160,7 +1161,7 @@ export function CombineEditor({
                     type="number" step={0.1} min={0.1} max={4.7}
                     value={magnetHoleDepth}
                     onChange={(event) => setMagnetHoleDepth(event.target.value)}
-                    onBlur={() => void load(placementsFor(tools), overridesFor(tools))}
+                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
               </div>
@@ -1269,10 +1270,10 @@ export function CombineEditor({
                       disabled={busy}
                       defaultValue={selectedTool.depth_mm}
                       key={`${selectedTool.id}-depth-${selectedTool.depth_mm}`}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
+                      ref={commitOnChange((raw) => {
+                        const value = Number(raw);
                         if (Number.isFinite(value) && value > 0 && value !== selectedTool.depth_mm) void setDepthOverride(value);
-                      }}
+                      })}
                     />
                   ) : (
                     <input
@@ -1283,14 +1284,13 @@ export function CombineEditor({
                       value={depthOverrideDraft ?? ""}
                       placeholder={depthOverrideDraft === "" ? "–" : undefined}
                       onChange={(event) => setDepthOverrideDraft(event.target.value)}
-                      onBlur={(event) => {
-                        const raw = event.target.value;
+                      ref={commitOnChange((raw) => {
                         if (raw === "") return; // stays pending, inert
                         const value = Number(raw);
                         if (!Number.isFinite(value) || value <= 0) return;
                         setDepthOverrideDraft(null);
                         void setDepthOverride(value);
-                      }}
+                      })}
                     />
                   )}
                   <span className="text-muted">mm</span>
@@ -1312,14 +1312,13 @@ export function CombineEditor({
                     defaultValue={clearanceValue ?? ""}
                     placeholder={clearanceValue === undefined ? "–" : undefined}
                     key={`${selectionKey}-clearance-${clearanceValue ?? "mixed"}`}
-                    onBlur={(event) => {
-                      const raw = event.target.value;
+                    ref={commitOnChange((raw) => {
                       if (raw === "") return; // untouched indeterminate field — no-op
                       const value = Number(raw);
                       if (!Number.isFinite(value)) return;
                       if (clearanceValue !== undefined && value === clearanceValue) return; // unchanged
                       void setClearance(value);
-                    }}
+                    })}
                   />
                   <span className="text-muted">mm</span>
                 </div>
@@ -1391,14 +1390,13 @@ export function CombineEditor({
                           defaultValue={offsetValue ?? ""}
                           placeholder={offsetValue === undefined ? "–" : undefined}
                           key={`${selectionKey}-offset-${offsetValue ?? "mixed"}`}
-                          onBlur={(event) => {
-                            const raw = event.target.value;
+                          ref={commitOnChange((raw) => {
                             if (raw === "") return; // untouched indeterminate field — no-op
                             const value = Number(raw);
                             if (!Number.isFinite(value)) return;
                             if (offsetValue !== undefined && value === offsetValue) return; // unchanged
                             void setFingerHoleOffset(value);
-                          }}
+                          })}
                         />
                         <span className="text-knockout">mm</span>
                       </div>

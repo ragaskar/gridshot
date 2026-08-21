@@ -157,6 +157,24 @@ describe("CombineEditor clearance override", () => {
     });
   });
 
+  it("persists a clearance value changed via the native change event without a blur (spin buttons)", async () => {
+    // A number input's spin buttons fire a native `change` event immediately
+    // without blurring the field — unlike typing, which only commits on
+    // blur. Firing `change` alone (no `blur`) reproduces that.
+    render(
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+    );
+    await screen.findByText("Wrench");
+    fireEvent.click(listRow("Wrench"));
+
+    const clearanceInput = await screen.findByLabelText("Clearance override in millimetres") as HTMLInputElement;
+    fireEvent.change(clearanceInput, { target: { value: "2.5" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Clearance 2.5 mm")).toHaveLength(1);
+    });
+  });
+
   it("applies a multi-select clearance override to both tools", async () => {
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
