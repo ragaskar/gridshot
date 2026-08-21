@@ -10,9 +10,10 @@ vi.mock("../api", () => ({
   combineLibrary: vi.fn(),
   combineLibrarySlice: vi.fn(),
   saveBin: vi.fn(),
+  listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -76,6 +77,7 @@ describe("CombineEditor clearance override", () => {
     // The debounced 3D-preview effect fires regardless of which view tab is
     // active; give it a resolvable Blob so it doesn't throw on an unmocked call.
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
+    vi.mocked(listBinProfiles).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -84,7 +86,7 @@ describe("CombineEditor clearance override", () => {
 
   it("persists a typed clearance value and keeps showing it after deselect/reselect", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
 
     // wait for the initial auto-pack load to land
@@ -114,7 +116,7 @@ describe("CombineEditor clearance override", () => {
 
   it("keeps showing the override after switching to a different tool and back", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
@@ -140,7 +142,7 @@ describe("CombineEditor clearance override", () => {
 
   it("updates the bottom tool-list summary's displayed clearance", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
     expect(screen.getAllByText("Clearance 1 mm")).toHaveLength(2); // both start at the inherited default
@@ -162,7 +164,7 @@ describe("CombineEditor clearance override", () => {
     // without blurring the field — unlike typing, which only commits on
     // blur. Firing `change` alone (no `blur`) reproduces that.
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
@@ -177,7 +179,7 @@ describe("CombineEditor clearance override", () => {
 
   it("applies a multi-select clearance override to both tools", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));

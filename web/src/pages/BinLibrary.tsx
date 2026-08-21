@@ -96,12 +96,25 @@ export function BinLibrary() {
       placements: b.placements,
       overrides: b.overrides,
       binStyle: b.bin_style,
+      lip: b.lip,
       magnetHoles: b.magnet_holes,
       magnetHoleDiameterMm: b.magnet_hole_diameter_mm,
       magnetHoleDepthMm: b.magnet_hole_depth_mm,
       forceGx: b.force_gx,
       forceGy: b.force_gy,
       removedCells: b.removed_cells,
+      lipHeightMm: b.lip_height_mm,
+      lipChamferTopMm: b.lip_chamfer_top_mm,
+      lipStraightMm: b.lip_straight_mm,
+      lipChamferBottomMm: b.lip_chamfer_bottom_mm,
+      minWallMm: b.min_wall_mm,
+      minFloorMm: b.min_floor_mm,
+      corralFloorMm: b.corral_floor_mm,
+      corralWallMm: b.corral_wall_mm,
+      corralBaseFlareMm: b.corral_base_flare_mm,
+      corralBaseReinforcementHMm: b.corral_base_reinforcement_h_mm,
+      corralEdgeMarginMm: b.corral_edge_margin_mm,
+      magnetHoleInsetFromEdgeMm: b.magnet_hole_inset_from_edge_mm,
     };
   }
 
@@ -217,7 +230,6 @@ export function BinLibrary() {
             <CombineEditor
               ids={reopening.tool_ids}
               overallHeight={reopening.overall_height}
-              lip={reopening.lip}
               initial={reopenInitial(reopening)}
               onClose={closeReopen}
             />

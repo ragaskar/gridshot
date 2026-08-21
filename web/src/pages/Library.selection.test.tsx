@@ -6,6 +6,7 @@ import type { LibraryTool, ReadinessReport } from "../api";
 
 vi.mock("../api", () => ({
   listLibrary: vi.fn(),
+  listBinProfiles: vi.fn(),
   cloneLibraryTool: vi.fn(),
   deleteLibraryTool: vi.fn(),
   updateLibraryTool: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("../api", () => ({
   downloadLibraryArchive: vi.fn(),
 }));
 
-import { listLibrary } from "../api";
+import { listBinProfiles, listLibrary } from "../api";
 
 function readiness(status: ReadinessReport["status"]): ReadinessReport {
   return { status, checks: [], metrics: {} };
@@ -54,6 +55,7 @@ const TOOLS = [
 describe("Library view toggle and selection", () => {
   beforeEach(() => {
     vi.mocked(listLibrary).mockResolvedValue(TOOLS);
+    vi.mocked(listBinProfiles).mockResolvedValue([]);
   });
 
   afterEach(() => {

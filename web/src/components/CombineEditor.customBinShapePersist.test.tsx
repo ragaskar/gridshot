@@ -10,9 +10,10 @@ vi.mock("../api", () => ({
   combineLibrary: vi.fn(),
   combineLibrarySlice: vi.fn(),
   saveBin: vi.fn(),
+  listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -49,13 +50,27 @@ function buildResponse(
   };
 }
 
-describe("CombineEditor custom bin shape persistence across bin style switches", () => {
+const POCKET_PROFILE = {
+  id: "seed-pocket", name: "Pocket", created_ts: 0,
+  base_style: "pocket" as const, lip: true, allow_custom_shape: true,
+  magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
+  lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
+  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
+  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, magnet_hole_inset_from_edge_mm: null,
+  has_preview_image: false,
+};
+const CORRAL_PROFILE = {
+  ...POCKET_PROFILE, id: "seed-corral", name: "Corral", base_style: "corral" as const, allow_custom_shape: false,
+};
+
+describe("CombineEditor custom bin shape persistence across bin profile switches", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
       (_ids, options) =>
         Promise.resolve(buildResponse(options?.placements, options?.binStyle ?? "pocket")),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
+    vi.mocked(listBinProfiles).mockResolvedValue([POCKET_PROFILE, CORRAL_PROFILE]);
   });
 
   afterEach(() => {
@@ -64,9 +79,11 @@ describe("CombineEditor custom bin shape persistence across bin style switches",
 
   it("keeps the custom shape checkbox and removed cells when switching away from pocket and back, but omits them from non-pocket requests", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
+    const profileSelect = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
+    await waitFor(() => expect(profileSelect.options.length).toBe(3)); // placeholder + 2 profiles
 
     fireEvent.click(screen.getByText("Force bin size"));
     await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(2));
@@ -76,9 +93,9 @@ describe("CombineEditor custom bin shape persistence across bin style switches",
     fireEvent.click(removeCell);
     await screen.findByLabelText("Grid cell column 1, row 1 (removed)");
 
-    // switch to corral: the checkbox/grid UI disappears, and the removed
-    // cell must NOT be sent for a non-pocket style...
-    fireEvent.click(screen.getByRole("button", { name: "Corral" }));
+    // apply the Corral profile: the checkbox/grid UI disappears (Corral's
+    // allow_custom_shape is false), and the removed cell must NOT be sent...
+    fireEvent.change(profileSelect, { target: { value: "seed-corral" } });
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
       expect(last[1]?.binStyle).toBe("corral");
@@ -86,9 +103,9 @@ describe("CombineEditor custom bin shape persistence across bin style switches",
     });
     expect(screen.queryByText("Custom bin shape")).toBeNull();
 
-    // ...but switching back to pocket brings both the checkbox state and the
-    // removed cell right back, without having to redraw it.
-    fireEvent.click(screen.getByRole("button", { name: "Pocket" }));
+    // ...but applying the Pocket profile again brings both the checkbox
+    // state and the removed cell right back, without having to redraw it.
+    fireEvent.change(profileSelect, { target: { value: "seed-pocket" } });
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
       expect(last[1]?.binStyle).toBe("pocket");

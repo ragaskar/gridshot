@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Library } from "./Library";
-import type { LibraryTool, ReadinessReport } from "../api";
+import type { BinProfile, LibraryTool } from "../api";
 
 vi.mock("../api", () => ({
   listLibrary: vi.fn(),
@@ -26,10 +26,6 @@ vi.mock("../api", () => ({
 
 import { listBinProfiles, listLibrary, updateLibraryTool } from "../api";
 
-function readiness(status: ReadinessReport["status"]): ReadinessReport {
-  return { status, checks: [], metrics: {} };
-}
-
 function tool(id: string, label: string): LibraryTool {
   return {
     id, label, grid_x: 2, grid_y: 1, thickness_mm: 4, silhouette_height_mm: 20,
@@ -41,14 +37,24 @@ function tool(id: string, label: string): LibraryTool {
     magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
     has_photo: false, source_project: `${id}-proj`, source_tool: id,
     created_ts: 0, thumb: `/thumb/${id}.png`, photo_thumb: null,
-    readiness: readiness("pass"), provenance: null, outline_revision: 1,
+    readiness: { status: "pass", checks: [], metrics: {} }, provenance: null, outline_revision: 1,
   };
 }
 
-describe("Library number-field commit", () => {
+const CORRAL_PROFILE: BinProfile = {
+  id: "p1", name: "My Corral", created_ts: 0,
+  base_style: "corral", lip: false, allow_custom_shape: false,
+  magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5,
+  lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
+  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
+  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, magnet_hole_inset_from_edge_mm: null,
+  has_preview_image: false,
+};
+
+describe("Library per-tool bin profile picker", () => {
   beforeEach(() => {
     vi.mocked(listLibrary).mockResolvedValue([tool("t-a", "Wrench")]);
-    vi.mocked(listBinProfiles).mockResolvedValue([]);
+    vi.mocked(listBinProfiles).mockResolvedValue([CORRAL_PROFILE]);
     vi.mocked(updateLibraryTool).mockImplementation(async (id, changes) => ({
       ...tool(id, "Wrench"),
       ...changes,
@@ -59,27 +65,22 @@ describe("Library number-field commit", () => {
     cleanup();
   });
 
-  it("persists a clearance value changed via the native change event without a blur (spin buttons)", async () => {
+  it("applies a profile's base style and magnet-hole defaults to the tool", async () => {
     render(<Library />);
     await screen.findByDisplayValue("Wrench");
 
-    const clearanceInput = screen.getByLabelText("Pocket clearance in millimetres") as HTMLInputElement;
-    fireEvent.change(clearanceInput, { target: { value: "2.5" } });
+    const select = (await screen.findByLabelText("Bin profile for Wrench")) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(2));
+
+    fireEvent.change(select, { target: { value: "p1" } });
 
     await waitFor(() => {
-      expect(updateLibraryTool).toHaveBeenCalledWith("t-a", { clearance_mm: 2.5 });
-    });
-  });
-
-  it("persists a thickness value changed via the native change event without a blur", async () => {
-    render(<Library />);
-    await screen.findByDisplayValue("Wrench");
-
-    const input = screen.getByLabelText("Tool thickness in millimetres") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "6" } });
-
-    await waitFor(() => {
-      expect(updateLibraryTool).toHaveBeenCalledWith("t-a", { thickness_mm: 6 });
+      expect(updateLibraryTool).toHaveBeenCalledWith("t-a", {
+        bin_style: "corral",
+        magnet_holes: true,
+        magnet_hole_diameter_mm: 5.0,
+        magnet_hole_depth_mm: 1.5,
+      });
     });
   });
 });

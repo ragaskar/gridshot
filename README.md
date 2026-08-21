@@ -384,10 +384,12 @@ Features added on top of the original public release, newest last:
 - Undo/redo in the multi-tool combine editor — Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z, plus
   toolbar buttons, with drags and nudge/rotate bursts collapsing to one undo step (see
   [docs/combine-editor-undo-redo.md](docs/combine-editor-undo-redo.md))
-- Bin Profiles: a new page for creating and editing named, reusable bin-style presets
-  (lip, base geometry mode, magnet-hole defaults, allow-custom-shape, and advanced
-  structural constants) with a live 3D preview, replacing the old hardcoded
-  Pocket/Corral/Live Grid styles (see [docs/bin-profiles.md](docs/bin-profiles.md))
+- Bin Profiles: named, reusable bin-style presets (lip, base geometry mode, magnet-hole
+  defaults, allow-custom-shape, and advanced structural constants), managed on their own
+  page with a live 3D preview, and selectable everywhere a bin style is picked — the
+  combine editor, single-tool capture, the result page's regenerate flow, and a tool's
+  per-tool default — replacing the old hardcoded Pocket/Corral/Live Grid buttons (see
+  [docs/bin-profiles.md](docs/bin-profiles.md))
 
 ## License
 

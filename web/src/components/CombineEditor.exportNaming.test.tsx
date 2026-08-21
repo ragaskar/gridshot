@@ -10,9 +10,10 @@ vi.mock("../api", () => ({
   combineLibrary: vi.fn(),
   combineLibrarySlice: vi.fn(),
   saveBin: vi.fn(),
+  listBinProfiles: vi.fn(),
 }));
 
-import { combineLibrary, combineLibrarySlice, combinePreview, combinePreviewGlb, saveBin } from "../api";
+import { combineLibrary, combineLibrarySlice, combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -62,6 +63,7 @@ describe("CombineEditor export filenames", () => {
         Promise.resolve(buildResponse(options?.overrides, options?.placements)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
+    vi.mocked(listBinProfiles).mockResolvedValue([]);
     vi.mocked(combineLibrary).mockReset().mockResolvedValue(undefined);
     vi.mocked(combineLibrarySlice).mockReset().mockResolvedValue(undefined);
     vi.mocked(saveBin).mockReset();
@@ -73,7 +75,7 @@ describe("CombineEditor export filenames", () => {
 
   it("names a fresh (unsaved) export after the selected tools", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
 
@@ -91,13 +93,16 @@ describe("CombineEditor export filenames", () => {
       <CombineEditor
         ids={["tool-a", "tool-b"]}
         overallHeight={null}
-        lip={true}
         onClose={() => {}}
         initial={{
           label: "Workbench Drawer 3",
-          placements: [], overrides: [], binStyle: "pocket",
+          placements: [], overrides: [], binStyle: "pocket", lip: true,
           magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2,
           forceGx: null, forceGy: null, removedCells: null,
+          lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
+          minWallMm: null, minFloorMm: null, corralFloorMm: null, corralWallMm: null,
+          corralBaseFlareMm: null, corralBaseReinforcementHMm: null, corralEdgeMarginMm: null,
+          magnetHoleInsetFromEdgeMm: null,
         }}
       />,
     );
@@ -123,7 +128,7 @@ describe("CombineEditor export filenames", () => {
       magnet_hole_inset_from_edge_mm: null,
     });
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
 
@@ -141,7 +146,7 @@ describe("CombineEditor export filenames", () => {
 
   it("names a slice export the same way as the full bin export", async () => {
     render(
-      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
+      <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
 

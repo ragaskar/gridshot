@@ -5,6 +5,7 @@ import {
   combinePreview,
   combinePreviewGlb,
   saveBin,
+  type BinProfile,
   type CombinePreview,
   type CombineTool,
   type CombineToolOverride,
@@ -16,6 +17,7 @@ import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
+import { useBinProfiles } from "../useBinProfiles";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 const OVERFLOW_COLOR = "#ff4d4d";
@@ -75,12 +77,84 @@ export interface CombineEditorInitial {
   placements: Placement[];
   overrides: CombineToolOverride[];
   binStyle: BinStyle;
+  lip: boolean;
   magnetHoles: boolean;
   magnetHoleDiameterMm: number;
   magnetHoleDepthMm: number;
   forceGx: number | null;
   forceGy: number | null;
   removedCells: [number, number][] | null;
+  lipHeightMm: number | null;
+  lipChamferTopMm: number | null;
+  lipStraightMm: number | null;
+  lipChamferBottomMm: number | null;
+  minWallMm: number | null;
+  minFloorMm: number | null;
+  corralFloorMm: number | null;
+  corralWallMm: number | null;
+  corralBaseFlareMm: number | null;
+  corralBaseReinforcementHMm: number | null;
+  corralEdgeMarginMm: number | null;
+  magnetHoleInsetFromEdgeMm: number | null;
+}
+
+type StructuralOverrideKey =
+  | "lipHeightMm" | "lipChamferTopMm" | "lipStraightMm" | "lipChamferBottomMm"
+  | "minWallMm" | "minFloorMm" | "corralFloorMm" | "corralWallMm"
+  | "corralBaseFlareMm" | "corralBaseReinforcementHMm" | "corralEdgeMarginMm"
+  | "magnetHoleInsetFromEdgeMm";
+
+/** The 12 Bin Profile structural overrides — set only by picking a profile
+ *  (there's no per-field UI for these here; that lives on the Bin Profiles
+ *  page), but carried in state so they thread into every request and
+ *  survive undo/redo like every other profile-driven field. */
+type StructuralOverrides = { [K in StructuralOverrideKey]: number | null };
+
+const BLANK_STRUCTURAL: StructuralOverrides = {
+  lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
+  minWallMm: null, minFloorMm: null, corralFloorMm: null, corralWallMm: null,
+  corralBaseFlareMm: null, corralBaseReinforcementHMm: null, corralEdgeMarginMm: null,
+  magnetHoleInsetFromEdgeMm: null,
+};
+
+function structuralFrom(source: {
+  lipHeightMm: number | null; lipChamferTopMm: number | null; lipStraightMm: number | null;
+  lipChamferBottomMm: number | null; minWallMm: number | null; minFloorMm: number | null;
+  corralFloorMm: number | null; corralWallMm: number | null; corralBaseFlareMm: number | null;
+  corralBaseReinforcementHMm: number | null; corralEdgeMarginMm: number | null;
+  magnetHoleInsetFromEdgeMm: number | null;
+}): StructuralOverrides {
+  return {
+    lipHeightMm: source.lipHeightMm,
+    lipChamferTopMm: source.lipChamferTopMm,
+    lipStraightMm: source.lipStraightMm,
+    lipChamferBottomMm: source.lipChamferBottomMm,
+    minWallMm: source.minWallMm,
+    minFloorMm: source.minFloorMm,
+    corralFloorMm: source.corralFloorMm,
+    corralWallMm: source.corralWallMm,
+    corralBaseFlareMm: source.corralBaseFlareMm,
+    corralBaseReinforcementHMm: source.corralBaseReinforcementHMm,
+    corralEdgeMarginMm: source.corralEdgeMarginMm,
+    magnetHoleInsetFromEdgeMm: source.magnetHoleInsetFromEdgeMm,
+  };
+}
+
+function structuralFromProfile(p: BinProfile): StructuralOverrides {
+  return {
+    lipHeightMm: p.lip_height_mm,
+    lipChamferTopMm: p.lip_chamfer_top_mm,
+    lipStraightMm: p.lip_straight_mm,
+    lipChamferBottomMm: p.lip_chamfer_bottom_mm,
+    minWallMm: p.min_wall_mm,
+    minFloorMm: p.min_floor_mm,
+    corralFloorMm: p.corral_floor_mm,
+    corralWallMm: p.corral_wall_mm,
+    corralBaseFlareMm: p.corral_base_flare_mm,
+    corralBaseReinforcementHMm: p.corral_base_reinforcement_h_mm,
+    corralEdgeMarginMm: null, // not part of BinProfile (app.py-layer-only field)
+    magnetHoleInsetFromEdgeMm: p.magnet_hole_inset_from_edge_mm,
+  };
 }
 
 /** Everything undo/redo tracks — the editor's "content", as opposed to
@@ -90,6 +164,9 @@ export interface CombineEditorInitial {
 interface Snapshot {
   tools: CombineTool[];
   binStyle: BinStyle;
+  lip: boolean;
+  allowCustomShape: boolean;
+  structural: StructuralOverrides;
   magnetHoles: boolean;
   magnetHoleDiameter: string;
   magnetHoleDepth: string;
@@ -151,18 +228,17 @@ function CustomShapeGrid({
 export function CombineEditor({
   ids,
   overallHeight,
-  lip,
   initial,
   onClose,
 }: {
   ids: string[];
   overallHeight: number | null;
-  lip: boolean;
   /** When set, the editor opens seeded from this saved arrangement instead
    *  of auto-packing fresh — see `initial`-aware mount effect below. */
   initial?: CombineEditorInitial;
   onClose: () => void;
 }) {
+  const binProfiles = useBinProfiles();
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -174,6 +250,20 @@ export function CombineEditor({
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [binStyle, setBinStyle] = useState<BinStyle>(initial?.binStyle ?? "pocket");
+  const [lip, setLip] = useState(initial?.lip ?? true);
+  // Independent of binStyle — not derived from it. Set only by picking a
+  // profile (or true by default, matching every style's behaviour before
+  // Bin Profiles existed); the "Custom bin shape" control still separately
+  // requires binStyle === "pocket", since the geometry itself can't do
+  // custom shapes on corral/grid regardless of this flag.
+  const [allowCustomShape, setAllowCustomShape] = useState(true);
+  const [structural, setStructural] = useState<StructuralOverrides>(
+    () => (initial ? structuralFrom(initial) : BLANK_STRUCTURAL),
+  );
+  // Purely which profile the dropdown displays as picked — cosmetic only.
+  // Fields copied from a profile are independently editable afterward, so
+  // this can go stale relative to the live style state; that's expected.
+  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
   const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
@@ -283,11 +373,14 @@ export function CombineEditor({
     return [...cells].map((k) => k.split(",").map(Number) as [number, number]);
   }
 
-  // Custom bin shape only applies to pocket bins — the checkbox state and
-  // removed cells stay intact across a style switch (so they reappear if you
-  // switch back to pocket), but are ignored for every other style.
-  function effectiveRemovedCells(style: BinStyle): [number, number][] | null {
-    return style === "pocket" && customShape && removedCells.size > 0
+  // Custom bin shape only applies to pocket bins, and only when the active
+  // profile allows it — the checkbox state and removed cells stay intact
+  // across a style/profile switch (so they reappear if you switch back),
+  // but are ignored otherwise.
+  function effectiveRemovedCells(
+    style: BinStyle, allow: boolean = allowCustomShape,
+  ): [number, number][] | null {
+    return style === "pocket" && allow && customShape && removedCells.size > 0
       ? removedCellsArray(removedCells)
       : null;
   }
@@ -300,6 +393,11 @@ export function CombineEditor({
       ? [Number(forceGx), Number(forceGy)]
       : null,
     removed: [number, number][] | null = effectiveRemovedCells(style),
+    lipOverride: boolean = lip,
+    structuralOverride: StructuralOverrides = structural,
+    magnetHolesOverride: boolean = magnetHoles,
+    magnetHoleDiameterOverride: string = magnetHoleDiameter,
+    magnetHoleDepthOverride: string = magnetHoleDepth,
   ) {
     setBusy(true);
     setErr(null);
@@ -307,15 +405,16 @@ export function CombineEditor({
       const p = await combinePreview(ids, {
         placements: placements ?? null,
         overallHeight,
-        lip,
+        lip: lipOverride,
         overrides,
         binStyle: style,
-        magnetHoles,
-        magnetHoleDiameterMm: Number(magnetHoleDiameter),
-        magnetHoleDepthMm: Number(magnetHoleDepth),
+        magnetHoles: magnetHolesOverride,
+        magnetHoleDiameterMm: Number(magnetHoleDiameterOverride),
+        magnetHoleDepthMm: Number(magnetHoleDepthOverride),
         forceGx: force ? force[0] : null,
         forceGy: force ? force[1] : null,
         removedCells: removed,
+        ...structuralOverride,
       });
       setMeta(p);
       setTools(p.tools);
@@ -351,6 +450,9 @@ export function CombineEditor({
     return {
       tools: tools.map((t) => ({ ...t })),
       binStyle,
+      lip,
+      allowCustomShape,
+      structural: { ...structural },
       magnetHoles,
       magnetHoleDiameter,
       magnetHoleDepth,
@@ -389,6 +491,9 @@ export function CombineEditor({
   function applySnapshot(s: Snapshot) {
     setTools(s.tools);
     setBinStyle(s.binStyle);
+    setLip(s.lip);
+    setAllowCustomShape(s.allowCustomShape);
+    setStructural(s.structural);
     setMagnetHoles(s.magnetHoles);
     setMagnetHoleDiameter(s.magnetHoleDiameter);
     setMagnetHoleDepth(s.magnetHoleDepth);
@@ -401,10 +506,13 @@ export function CombineEditor({
     const force: [number, number] | null = s.forceSize && s.forceGx && s.forceGy
       ? [Number(s.forceGx), Number(s.forceGy)]
       : null;
-    const removed = s.binStyle === "pocket" && s.customShape && s.removedCells.size > 0
+    const removed = s.binStyle === "pocket" && s.allowCustomShape && s.customShape && s.removedCells.size > 0
       ? removedCellsArray(s.removedCells)
       : null;
-    void load(placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.binStyle, force, removed);
+    void load(
+      placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.binStyle, force, removed,
+      s.lip, s.structural, s.magnetHoles, s.magnetHoleDiameter, s.magnetHoleDepth,
+    );
   }
 
   function undo() {
@@ -560,6 +668,7 @@ export function CombineEditor({
         placements, overallHeight, lip, overrides, binStyle,
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
+        ...structural,
       })
         .then((blob) => {
           if (sequence !== previewSequence.current) return;
@@ -578,7 +687,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, binStyle, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -827,6 +936,7 @@ export function CombineEditor({
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
         removedCells: effectiveRemovedCells(binStyle),
+        ...structural,
       }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
       setErr((e as Error).message);
@@ -853,6 +963,7 @@ export function CombineEditor({
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
         removedCells: effectiveRemovedCells(binStyle),
+        ...structural,
       }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
       setErr((e as Error).message);
@@ -879,6 +990,7 @@ export function CombineEditor({
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
         removedCells: effectiveRemovedCells(binStyle),
+        ...structural,
       });
       setSavedLabel(label);
       setSaveDialogOpen(false);
@@ -1159,30 +1271,58 @@ export function CombineEditor({
 
         <div className="space-y-3 min-w-0">
           <div>
-            <span className="font-mono text-[10px] uppercase text-muted">Bin style</span>
-            <div className="mt-1 grid grid-cols-3 gap-1">
-              {(["pocket", "corral", "grid"] as BinStyle[]).map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  aria-pressed={binStyle === style}
-                  className={`btn !px-1 !py-2 text-[10px] ${binStyle === style ? "border-teal text-teal" : "btn-ghost"}`}
-                  disabled={busy}
-                  onClick={() => {
-                    pushSnapshot();
-                    setBinStyle(style);
-                    // Custom bin shape is pocket-only, but its checkbox state and
-                    // removed cells are kept (not cleared) across the switch — they
-                    // just stop applying — so they reappear if you switch back to
-                    // pocket instead of having to be redrawn.
-                    void load(placementsFor(tools), overridesFor(tools), style);
-                  }}
-                >
-                  {style === "pocket" ? "Pocket" : style === "corral" ? "Corral" : "Live grid"}
-                </button>
+            <span className="font-mono text-[10px] uppercase text-muted">Bin profile</span>
+            <select
+              className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+              aria-label="Bin profile"
+              disabled={busy}
+              value={appliedProfileId ?? ""}
+              onChange={(e) => {
+                const profile = binProfiles.find((p) => p.id === e.target.value);
+                if (!profile) return;
+                pushSnapshot();
+                setAppliedProfileId(profile.id);
+                setBinStyle(profile.base_style);
+                setLip(profile.lip);
+                setAllowCustomShape(profile.allow_custom_shape);
+                setMagnetHoles(profile.magnet_holes_default);
+                setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
+                setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
+                const nextStructural = structuralFromProfile(profile);
+                setStructural(nextStructural);
+                // Every field a profile carries is a one-time copy — applying
+                // it doesn't create a live link, so editing or deleting the
+                // profile later never changes this bin.
+                void load(
+                  placementsFor(tools), overridesFor(tools), profile.base_style, undefined,
+                  effectiveRemovedCells(profile.base_style, profile.allow_custom_shape),
+                  profile.lip, nextStructural,
+                  profile.magnet_holes_default,
+                  String(profile.magnet_hole_diameter_mm_default),
+                  String(profile.magnet_hole_depth_mm_default),
+                );
+              }}
+            >
+              <option value="" disabled>Apply a bin profile…</option>
+              {binProfiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
               ))}
-            </div>
+            </select>
           </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={lip}
+              disabled={busy}
+              onChange={(e) => {
+                pushSnapshot();
+                const checked = e.target.checked;
+                setLip(checked);
+                void load(placementsFor(tools), overridesFor(tools), binStyle, undefined, undefined, checked);
+              }}
+            />
+            <span className="font-mono text-[10px] uppercase text-muted">Stacking lip</span>
+          </label>
           <div>
             <label className="flex items-center gap-2">
               <input
@@ -1239,7 +1379,7 @@ export function CombineEditor({
                 </label>
               </div>
             )}
-            {forceSize && binStyle === "pocket" && (
+            {forceSize && binStyle === "pocket" && allowCustomShape && (
               <div className="mt-2">
                 <label className="flex items-center gap-2">
                   <input

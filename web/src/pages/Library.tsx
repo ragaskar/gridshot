@@ -34,6 +34,7 @@ import { useLocation } from "wouter";
 import { commitOnChange } from "../domEvents";
 import { decodeUrlState, pathForCombine, pathForView } from "../urlState";
 import { applySelectionClick } from "../selection";
+import { useBinProfiles } from "../useBinProfiles";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 
@@ -44,6 +45,7 @@ export function Library() {
   const [path, navigate] = useLocation();
   const currentResult = useApp((s) => s.result);
   const setCurrentResult = useApp((s) => s.setResult);
+  const binProfiles = useBinProfiles();
   const [tools, setTools] = useState<LibraryTool[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [cols, setCols] = useState(8);
@@ -550,20 +552,32 @@ export function Library() {
                         <span className="font-mono text-[10px] uppercase text-muted">Print readiness</span>
                         <ReadinessBadge readiness={t.readiness} />
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["pocket", "corral", "grid"] as const).map((style) => (
-                          <button
-                            key={style}
-                            type="button"
-                            aria-pressed={t.bin_style === style}
-                            className={`border px-2 py-1 font-mono text-[10px] ${t.bin_style === style ? "border-teal text-teal" : "border-line text-muted"}`}
-                            style={{ borderRadius: 2 }}
-                            onClick={() => patch(t.id, { bin_style: style }).catch(() => {})}
-                          >
-                            {style === "pocket" ? "Pocket" : style === "corral" ? "Corral" : "Live grid"}
-                          </button>
-                        ))}
-                      </div>
+                      <label className="block">
+                        <span className="font-mono text-[10px] uppercase text-muted">Bin profile</span>
+                        <select
+                          className="mono-input mt-1 w-full !px-2 !py-1 !text-[10px]"
+                          aria-label={`Bin profile for ${t.label || "this tool"}`}
+                          value=""
+                          onChange={(e) => {
+                            const profile = binProfiles.find((p) => p.id === e.target.value);
+                            if (!profile) return;
+                            // lip isn't editable per-tool via this control today —
+                            // updateLibraryTool's PATCH doesn't accept it — so only
+                            // base style and magnet-hole defaults apply here.
+                            patch(t.id, {
+                              bin_style: profile.base_style,
+                              magnet_holes: profile.magnet_holes_default,
+                              magnet_hole_diameter_mm: profile.magnet_hole_diameter_mm_default,
+                              magnet_hole_depth_mm: profile.magnet_hole_depth_mm_default,
+                            }).catch(() => {});
+                          }}
+                        >
+                          <option value="" disabled>{t.bin_style === "pocket" ? "Pocket" : t.bin_style === "corral" ? "Corral" : "Live grid"}</option>
+                          {binProfiles.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </label>
                       <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-muted">
                         <span>
                           {t.grid_x}×{t.grid_y}u · {t.derived_overall_height_mm ?? "—"}mm tall
@@ -977,7 +991,6 @@ export function Library() {
             <CombineEditor
               ids={[...sel]}
               overallHeight={overallHeight === "" ? null : overallHeight}
-              lip={true}
               onClose={closeCombining}
             />
           </div>

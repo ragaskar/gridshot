@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getHealth, startSession, type BinStyle, type Health } from "../api";
 import { useApp } from "../state";
 import { InfoTip, ParallaxDiagram } from "../components/InfoTip";
+import { useBinProfiles } from "../useBinProfiles";
 
 export function Upload() {
   const {
@@ -23,6 +24,8 @@ export function Upload() {
   const [finger, setFinger] = useState(true);
   const [lip, setLip] = useState(true);
   const [health, setHealth] = useState<Health | null>(null);
+  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
+  const binProfiles = useBinProfiles();
   const ref1 = useRef<HTMLInputElement>(null);
   const ref2 = useRef<HTMLInputElement>(null);
 
@@ -139,7 +142,7 @@ export function Upload() {
           <div className="grp-label mb-4">02 · Bin</div>
           <div className="space-y-5">
             <Field
-              label="Bin style"
+              label="Bin profile"
               hint={
                 binStyle === "pocket"
                   ? "solid bin with the tool recessed into a fitted pocket"
@@ -148,19 +151,23 @@ export function Upload() {
                     : "stackable corral with complete Gridfinity sockets wherever they fit outside the tool wall"
               }
             >
-              <div className="grid grid-cols-3 gap-2">
-                {(["pocket", "corral", "grid"] as BinStyle[]).map((style) => (
-                  <button
-                    key={style}
-                    type="button"
-                    aria-pressed={binStyle === style}
-                    className={`btn text-xs ${binStyle === style ? "border-teal text-teal" : "btn-ghost"}`}
-                    onClick={() => setBinStyle(style)}
-                  >
-                    {style === "pocket" ? "Pocket" : style === "corral" ? "Stackable corral" : "Live grid"}
-                  </button>
+              <select
+                className="mono-input"
+                aria-label="Bin profile"
+                value={appliedProfileId ?? ""}
+                onChange={(e) => {
+                  const profile = binProfiles.find((p) => p.id === e.target.value);
+                  if (!profile) return;
+                  setAppliedProfileId(profile.id);
+                  setBinStyle(profile.base_style);
+                  setLip(profile.lip);
+                }}
+              >
+                <option value="" disabled>Apply a bin profile…</option>
+                {binProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
-              </div>
+              </select>
             </Field>
             <Field
               label="Widest-outline height (mm)"

@@ -13,6 +13,7 @@ import { Silhouette } from "../components/Silhouette";
 import { BinViewer } from "../components/BinViewer";
 import { ReadinessPanel } from "../components/ReadinessPanel";
 import { PhysicalCutoutEditor } from "../components/PhysicalCutoutEditor";
+import { useBinProfiles } from "../useBinProfiles";
 
 const DOWNLOAD_ORDER = ["3mf", "stl", "slice-3mf", "slice-stl", "layout", "svg"];
 const DOWNLOAD_LABEL: Record<string, string> = {
@@ -40,6 +41,9 @@ export function Result() {
   const [binStyle, setBinStyle] = useState<BinStyle>(
     result?.bin.bin_style ?? "pocket",
   );
+  const [lip, setLip] = useState(result?.bin.lip ?? true);
+  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
+  const binProfiles = useBinProfiles();
   const [finishedHeight, setFinishedHeight] = useState(
     result?.bin.overall_height_override_mm?.toString() ?? "",
   );
@@ -93,6 +97,7 @@ export function Result() {
       const nextParams: GenerateParams = {
         ...params,
         bin_style: binStyle,
+        lip,
         clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
         full_height: parseOptionalPositive(fullToolHeight, "Full tool height"),
@@ -125,6 +130,7 @@ export function Result() {
       const nextParams: GenerateParams = {
         ...params,
         bin_style: binStyle,
+        lip,
         clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
         full_height: parseOptionalPositive(fullToolHeight, "Full tool height"),
@@ -327,19 +333,31 @@ export function Result() {
               Regenerate from the accepted tool outline. Live grid keeps the complete stackable
               corral and adds functional sockets only where a full 42 mm cell fits outside the tool wall.
             </p>
-            <div className="mb-4 grid grid-cols-3 gap-2">
-              {(["pocket", "corral", "grid"] as BinStyle[]).map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  aria-pressed={binStyle === style}
-                  className={`btn text-xs ${binStyle === style ? "border-teal text-teal" : "btn-ghost"}`}
+            <div className="mb-4">
+              <label className="block">
+                <span className="grp-label block mb-2">Bin profile</span>
+                <select
+                  className="mono-input w-full"
+                  aria-label="Bin profile"
                   disabled={regenerating || returning}
-                  onClick={() => setBinStyle(style)}
+                  value={appliedProfileId ?? ""}
+                  onChange={(event) => {
+                    const profile = binProfiles.find((p) => p.id === event.target.value);
+                    if (!profile) return;
+                    setAppliedProfileId(profile.id);
+                    setBinStyle(profile.base_style);
+                    setLip(profile.lip);
+                    setMagnetHoles(profile.magnet_holes_default);
+                    setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
+                    setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
+                  }}
                 >
-                  {style === "pocket" ? "Pocket" : style === "corral" ? "Stackable corral" : "Live grid"}
-                </button>
-              ))}
+                  <option value="" disabled>Apply a bin profile…</option>
+                  {binProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="grid gap-4 md:grid-cols-4">
               <label className="block">
@@ -414,7 +432,16 @@ export function Result() {
                 </span>
               </label>
             </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-3 items-end">
+            <div className="mt-4 grid gap-4 md:grid-cols-4 items-end">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={lip}
+                  disabled={regenerating || returning}
+                  onChange={(event) => setLip(event.target.checked)}
+                />
+                <span className="grp-label">Stacking lip</span>
+              </label>
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"

@@ -12,11 +12,29 @@ Applying a profile is a **one-time copy** into whatever's picking a bin style, n
 live reference: editing or deleting a profile later never changes a bin already built
 from it.
 
-This is landing in phases; this doc grows with each one. **Currently shipped: storage,
-CLI, geometry, the REST API, and the Bin Profiles page itself** — the four places you
-currently pick a bin style (the combine editor, single-tool capture, the result page's
-regenerate flow, and a tool's per-tool default) haven't been converted to use profiles
-yet, so nothing changes there until that lands.
+This landed in phases; it's now complete — storage, CLI, geometry, the REST API, the Bin
+Profiles page, and every picker converted to use it.
+
+## Where you apply a profile
+
+Every place that used to offer a hardcoded Pocket/Corral/Live Grid button group now
+offers a **Bin profile** dropdown instead:
+
+- The multi-tool **combine editor** — applies base style, lip, allow-custom-shape,
+  magnet-hole defaults, and every structural override.
+- **Upload** (single-tool capture) — applies base style and lip (this page already had
+  its own independent lip toggle, kept as-is).
+- The **Result** page's regenerate flow — applies base style, lip (a control this page
+  didn't have before — added as part of this conversion), and magnet-hole defaults.
+- Each tool's card in the **Tool Library** — applies base style and magnet-hole defaults
+  only; a per-tool `lip` default isn't editable through this control today (the
+  underlying update endpoint doesn't accept it yet), so it's the one picker with
+  narrower parity than the other three.
+
+Applying a profile anywhere is always the same one-time-copy semantics: every field it
+sets becomes independently editable again immediately afterward, and picking a different
+profile later, or editing/deleting the one you picked, never reaches back into a bin (or
+tool default) you already built with it.
 
 ## The Bin Profiles page
 

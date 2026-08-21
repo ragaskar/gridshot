@@ -10,9 +10,10 @@ vi.mock("../api", () => ({
   combineLibrary: vi.fn(),
   combineLibrarySlice: vi.fn(),
   saveBin: vi.fn(),
+  listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -95,6 +96,7 @@ describe("CombineEditor undo/redo", () => {
         Promise.resolve(buildResponse(options?.overrides, options?.placements)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
+    vi.mocked(listBinProfiles).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -103,7 +105,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("undoes and redoes a discrete action (magnet holes toggle) as one step", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
     expect(undoButton().disabled).toBe(true);
@@ -124,7 +126,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("collapses a rapid burst of nudges into a single undo step", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
 
@@ -145,7 +147,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("starts a new undo step once the nudge burst's coalescing window closes", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
 
@@ -172,7 +174,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("collapses a full pointer-drag gesture into a single undo step", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
     const svg = document.querySelector("svg")!;
@@ -196,7 +198,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("undoes and redoes via Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
     fireEvent.click(magnetHolesCheckbox());
@@ -210,7 +212,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("does not intercept Cmd+Z while a text field is focused", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
     fireEvent.click(magnetHolesCheckbox());
@@ -227,7 +229,7 @@ describe("CombineEditor undo/redo", () => {
   });
 
   it("clears the redo stack once a new action follows an undo", async () => {
-    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
     fireEvent.click(magnetHolesCheckbox()); // action A: false -> true
