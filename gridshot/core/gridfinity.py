@@ -255,10 +255,17 @@ LIP_RIM_FLAT = 0.4  # top rim flat: the spec draws a knife edge, which is both
 # engagement and clean geometry (foot seats 0.4mm shallower, laterally solid)
 
 
-def _lip_ring(outline: CrossSection, z_top: float) -> Manifold:
-    """Spec stacking lip: a 4.4mm rim whose inner cavity accepts the foot of
-    the bin above (45° faces mate flush).  Sits on the solid body, so the
-    spec's thin-wall support section isn't needed.
+def _lip_ring(
+    outline: CrossSection,
+    z_top: float,
+    lip_height_mm: float = LIP_H,
+    lip_chamfer_top_mm: float = LIP_CH_TOP,
+    lip_straight_mm: float = LIP_STRAIGHT,
+    lip_chamfer_bottom_mm: float = LIP_CH_BOT,
+) -> Manifold:
+    """Spec stacking lip: a rim whose inner cavity accepts the foot of the
+    bin above (45° faces mate flush).  Sits on the solid body, so the spec's
+    thin-wall support section isn't needed.
 
     `outline` is the bin's outer footprint — a plain rounded rect, or, for a
     [[custom bin shape]], the rounded polyomino outline from
@@ -267,9 +274,10 @@ def _lip_ring(outline: CrossSection, z_top: float) -> Manifold:
     for a plain rect this reduces to exactly the old dimension math (eroding
     a rounded rect by `t` shrinks each side by `2t` and the corner radius by
     `t`), it's just expressed as a generic offset instead."""
-    ring = Manifold.extrude(outline, LIP_H).translate((0, 0, z_top))
+    lip_inset = lip_chamfer_top_mm + lip_chamfer_bottom_mm
+    ring = Manifold.extrude(outline, lip_height_mm).translate((0, 0, z_top))
 
-    z_hi = z_top + LIP_H
+    z_hi = z_top + lip_height_mm
     f = LIP_RIM_FLAT
     ov = 0.05  # segments interpenetrate by a real overlap — plate-to-plate
     # seams at EPS thickness tessellate into sub-float32 sliver faces
@@ -283,15 +291,15 @@ def _lip_ring(outline: CrossSection, z_top: float) -> Manifold:
     # opening band: vertical at the rim-flat inset, over-tall for a clean cut
     opening = Manifold.extrude(rr(f), 1.0 + f + ov).translate((0, 0, z_hi - f - ov))
     # upper 45° chamfer (truncated by the rim flat, same spec plane)
-    upper = Manifold.batch_hull([plate(f, z_hi - f), plate(LIP_CH_TOP, z_hi - LIP_CH_TOP)])
+    upper = Manifold.batch_hull([plate(f, z_hi - f), plate(lip_chamfer_top_mm, z_hi - lip_chamfer_top_mm)])
     # straight section, overlapping both chamfers
     straight = Manifold.extrude(
-        rr(LIP_CH_TOP), (LIP_STRAIGHT) + 2 * ov
-    ).translate((0, 0, z_top + LIP_CH_BOT - ov))
+        rr(lip_chamfer_top_mm), lip_straight_mm + 2 * ov
+    ).translate((0, 0, z_top + lip_chamfer_bottom_mm - ov))
     # lower 45° chamfer, extended 0.2 below the cavity floor so the boolean
     # never meets the body's top face edge-on (leaves a hidden micro-groove)
     lower = Manifold.batch_hull(
-        [plate(LIP_CH_TOP, z_top + LIP_CH_BOT), plate(LIP_INSET + 0.2, z_top - 0.2)]
+        [plate(lip_chamfer_top_mm, z_top + lip_chamfer_bottom_mm), plate(lip_inset + 0.2, z_top - 0.2)]
     )
     cavity = opening + upper + straight + lower
     return ring - cavity
@@ -337,39 +345,43 @@ def auto_pocket_depth(thickness_mm: float, round_tool: bool = False) -> float:
     return max(2.0, 2.0 * thickness_mm + FULL_DEPTH_MARGIN)
 
 
-def auto_height_u(pocket_depth: float) -> int:
+def auto_height_u(pocket_depth: float, min_floor_mm: float = MIN_FLOOR) -> int:
     """Fewest whole gridfinity units that hold base + floor + pocket."""
-    return max(1, math.ceil((BASE_H + MIN_FLOOR + pocket_depth) / UNIT_H))
+    return max(1, math.ceil((BASE_H + min_floor_mm + pocket_depth) / UNIT_H))
 
 
-def style_finished_height_mm(height_u: int, lip: bool, style: BinStyle) -> float:
+def style_finished_height_mm(
+    height_u: int, lip: bool, style: BinStyle, lip_height_mm: float = LIP_H,
+) -> float:
     """Physical top height for any tool-retention style."""
-    return finished_height_mm(height_u, lip)
+    return finished_height_mm(height_u, lip, lip_height_mm)
 
 
-def height_u_for_style_overall(overall_mm: float, lip: bool, style: BinStyle) -> int:
+def height_u_for_style_overall(
+    overall_mm: float, lip: bool, style: BinStyle, lip_height_mm: float = LIP_H,
+) -> int:
     """Inverse of style_finished_height_mm, snapped to whole units."""
-    return height_u_for_overall(overall_mm, lip)
+    return height_u_for_overall(overall_mm, lip, lip_height_mm)
 
 
-def finished_height_mm(height_u: int, lip: bool) -> float:
+def finished_height_mm(height_u: int, lip: bool, lip_height_mm: float = LIP_H) -> float:
     """Physical top-of-bin height: the unit stack plus the stacking lip.
 
-    The lip rises LIP_H above height_u·UNIT_H, so a lipped bin is 4.4mm taller
-    than a lipless one of the same unit count. This is the height that must
-    match for bins to sit level in a drawer.
+    The lip rises lip_height_mm above height_u·UNIT_H, so a lipped bin is
+    that much taller than a lipless one of the same unit count. This is the
+    height that must match for bins to sit level in a drawer.
     """
-    return height_u * UNIT_H + (LIP_H if lip else 0.0)
+    return height_u * UNIT_H + (lip_height_mm if lip else 0.0)
 
 
-def height_u_for_overall(overall_mm: float, lip: bool) -> int:
+def height_u_for_overall(overall_mm: float, lip: bool, lip_height_mm: float = LIP_H) -> int:
     """Whole unit count whose finished height is closest to overall_mm.
 
     Inverse of finished_height_mm: subtract the lip (when present) before
     quantising to the 7mm unit, so the *finished* height — not the bare unit
     stack — is what tracks the requested value.
     """
-    body = overall_mm - (LIP_H if lip else 0.0)
+    body = overall_mm - (lip_height_mm if lip else 0.0)
     return max(1, round(body / UNIT_H))
 
 
@@ -389,7 +401,8 @@ def _rounded_rect_polygon(w: float, d: float, r: float):
 
 
 def grid_candidate_cells(
-    gx: int, gy: int, *, lip: bool = False
+    gx: int, gy: int, *, lip: bool = False,
+    min_wall_mm: float = MIN_WALL, min_wall_lip_mm: float = MIN_WALL_LIP,
 ) -> list[tuple[float, float]]:
     """Complete 42 mm sockets that fit inside the corral's outer wall.
 
@@ -398,7 +411,7 @@ def grid_candidate_cells(
     """
     outer_w = PITCH * gx - (PITCH - BIN_SIZE)
     outer_d = PITCH * gy - (PITCH - BIN_SIZE)
-    inset = MIN_WALL_LIP if lip else MIN_WALL
+    inset = min_wall_lip_mm if lip else min_wall_mm
     inner_w = outer_w - 2 * inset
     inner_d = outer_d - 2 * inset
     if inner_w <= 0 or inner_d <= 0:
@@ -424,7 +437,11 @@ def grid_candidate_cells(
     return candidates
 
 
-def _grid_retention_envelope(pockets: list[tuple]):
+def _grid_retention_envelope(
+    pockets: list[tuple],
+    corral_wall_mm: float = CORRAL_WALL,
+    corral_base_flare_mm: float = CORRAL_BASE_FLARE,
+):
     envelopes = []
     for entry in pockets:
         shape = to_shapely(entry[0])
@@ -437,7 +454,7 @@ def _grid_retention_envelope(pockets: list[tuple]):
             shape = unary_union([shape, *lobes])
         envelopes.append(
             shape.buffer(
-                CORRAL_WALL + CORRAL_BASE_FLARE + GRID_SOCKET_GAP,
+                corral_wall_mm + corral_base_flare_mm + GRID_SOCKET_GAP,
                 quad_segs=16,
             )
         )
@@ -445,27 +462,31 @@ def _grid_retention_envelope(pockets: list[tuple]):
 
 
 def grid_reserved_cells(
-    gx: int, gy: int, pockets: list[tuple], *, lip: bool = False
+    gx: int, gy: int, pockets: list[tuple], *, lip: bool = False,
+    min_wall_mm: float = MIN_WALL, min_wall_lip_mm: float = MIN_WALL_LIP,
+    corral_wall_mm: float = CORRAL_WALL, corral_base_flare_mm: float = CORRAL_BASE_FLARE,
 ) -> list[tuple[float, float]]:
     """Fully fitting socket positions blocked by the complete tool envelope."""
-    envelope = _grid_retention_envelope(pockets)
+    envelope = _grid_retention_envelope(pockets, corral_wall_mm, corral_base_flare_mm)
     socket_shape = _rounded_rect_polygon(PITCH, PITCH, BASEPLATE_OUTER_R)
     return [
         (cx, cy)
-        for cx, cy in grid_candidate_cells(gx, gy, lip=lip)
+        for cx, cy in grid_candidate_cells(gx, gy, lip=lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm)
         if not shapely_translate(socket_shape, xoff=cx, yoff=cy).disjoint(envelope)
     ]
 
 
 def grid_available_cells(
-    gx: int, gy: int, pockets: list[tuple], *, lip: bool = False
+    gx: int, gy: int, pockets: list[tuple], *, lip: bool = False,
+    min_wall_mm: float = MIN_WALL, min_wall_lip_mm: float = MIN_WALL_LIP,
+    corral_wall_mm: float = CORRAL_WALL, corral_base_flare_mm: float = CORRAL_BASE_FLARE,
 ) -> list[tuple[float, float]]:
     """Complete, unobstructed socket centres in the corral floor."""
-    envelope = _grid_retention_envelope(pockets)
+    envelope = _grid_retention_envelope(pockets, corral_wall_mm, corral_base_flare_mm)
     socket_shape = _rounded_rect_polygon(PITCH, PITCH, BASEPLATE_OUTER_R)
     return [
         (cx, cy)
-        for cx, cy in grid_candidate_cells(gx, gy, lip=lip)
+        for cx, cy in grid_candidate_cells(gx, gy, lip=lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm)
         if shapely_translate(socket_shape, xoff=cx, yoff=cy).disjoint(envelope)
     ]
 
@@ -484,6 +505,17 @@ def bin_solid(
     magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
     included_cells: frozenset[tuple[int, int]] | None = None,
+    lip_height_mm: float = LIP_H,
+    lip_chamfer_top_mm: float = LIP_CH_TOP,
+    lip_straight_mm: float = LIP_STRAIGHT,
+    lip_chamfer_bottom_mm: float = LIP_CH_BOT,
+    min_wall_mm: float = MIN_WALL,
+    min_floor_mm: float = MIN_FLOOR,
+    corral_floor_mm: float = CORRAL_FLOOR,
+    corral_wall_mm: float = CORRAL_WALL,
+    corral_base_flare_mm: float = CORRAL_BASE_FLARE,
+    corral_base_reinforcement_h_mm: float = CORRAL_BASE_REINFORCEMENT_H,
+    magnet_hole_inset_from_edge_mm: float = MAGNET_HOLE_INSET_FROM_EDGE_MM,
 ) -> Manifold:
     """A Gridfinity pocket, corral, or live-grid tool holder.
 
@@ -506,6 +538,8 @@ def bin_solid(
     if style in ("corral", "grid") and not cuts:
         raise ValueError(f"{style} style needs at least one tool footprint")
 
+    min_wall_lip_mm = lip_chamfer_top_mm + lip_chamfer_bottom_mm + 0.8
+
     total_h = height_u * UNIT_H
     outer_w = PITCH * gx - (PITCH - BIN_SIZE)
     outer_d = PITCH * gy - (PITCH - BIN_SIZE)
@@ -515,12 +549,12 @@ def bin_solid(
             outline, total_h - BASE_H
         ).translate((0, 0, BASE_H))
     else:
-        deck_top = BASE_H + CORRAL_FLOOR
+        deck_top = BASE_H + corral_floor_mm
         deck = Manifold.extrude(
-            _rounded_rect(outer_w, outer_d, CORNER_R), CORRAL_FLOOR
+            _rounded_rect(outer_w, outer_d, CORNER_R), corral_floor_mm
         ).translate((0, 0, BASE_H))
         outer = _rounded_rect(outer_w, outer_d, CORNER_R)
-        inset = MIN_WALL_LIP if lip else MIN_WALL
+        inset = min_wall_lip_mm if lip else min_wall_mm
         inner = _rounded_rect(
             outer_w - 2 * inset, outer_d - 2 * inset, CORNER_R - inset
         )
@@ -535,10 +569,15 @@ def bin_solid(
                     "the stacking plane"
                 )
             socket = _baseplate_socket().translate((0, 0, deck_top - EPS))
-            for cx, cy in grid_available_cells(gx, gy, cuts, lip=lip):
+            for cx, cy in grid_available_cells(
+                gx, gy, cuts, lip=lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm,
+                corral_wall_mm=corral_wall_mm, corral_base_flare_mm=corral_base_flare_mm,
+            ):
                 body = body + socket.translate((cx, cy, 0))
     if lip:
-        body = body + _lip_ring(outline, total_h)
+        body = body + _lip_ring(
+            outline, total_h, lip_height_mm, lip_chamfer_top_mm, lip_straight_mm, lip_chamfer_bottom_mm,
+        )
 
     foot = _foot()
     feet = []
@@ -563,14 +602,15 @@ def bin_solid(
                 f"the {BASE_H}mm foot height"
             )
         radius = magnet_hole_diameter_mm / 2
+        magnet_hole_offset_mm = FOOT_BOTTOM_SIZE / 2 - magnet_hole_inset_from_edge_mm
         hole = Manifold.cylinder(
             magnet_hole_depth_mm + EPS, radius, radius, CIRCULAR_SEGMENTS
         ).translate((0, 0, -EPS))
         holes = [
             hole.translate((cx + hx, cy + hy, 0))
             for cx, cy in foot_centers
-            for hx in (-MAGNET_HOLE_OFFSET_MM, MAGNET_HOLE_OFFSET_MM)
-            for hy in (-MAGNET_HOLE_OFFSET_MM, MAGNET_HOLE_OFFSET_MM)
+            for hx in (-magnet_hole_offset_mm, magnet_hole_offset_mm)
+            for hy in (-magnet_hole_offset_mm, magnet_hole_offset_mm)
         ]
         solid = solid - Manifold.batch_boolean(holes, OpType.Add)
 
@@ -581,7 +621,7 @@ def bin_solid(
             if depth <= 0:
                 raise ValueError(f"{style} recess depth must be > 0")
             floor_z = total_h - depth
-            deck_top = BASE_H + CORRAL_FLOOR
+            deck_top = BASE_H + corral_floor_mm
             if floor_z < deck_top - EPS:
                 raise PocketTooDeepError(
                     f"{style} recess depth {depth}mm needs "
@@ -594,10 +634,10 @@ def bin_solid(
                     dia / 2, CIRCULAR_SEGMENTS
                 ).translate((fx, fy))
             outer = inner.offset(
-                CORRAL_WALL, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
+                corral_wall_mm, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
             )
             reinforced = inner.offset(
-                CORRAL_WALL + CORRAL_BASE_FLARE,
+                corral_wall_mm + corral_base_flare_mm,
                 JoinType.Round,
                 circular_segments=CIRCULAR_SEGMENTS,
             )
@@ -605,18 +645,18 @@ def bin_solid(
                 outer - inner, total_h - deck_top + EPS
             ).translate((0, 0, deck_top - EPS))
             base = Manifold.extrude(
-                reinforced - inner, CORRAL_BASE_REINFORCEMENT_H + EPS
+                reinforced - inner, corral_base_reinforcement_h_mm + EPS
             ).translate((0, 0, deck_top - EPS))
-            shelf_bottom = max(BASE_H, floor_z - CORRAL_FLOOR)
+            shelf_bottom = max(BASE_H, floor_z - corral_floor_mm)
             shelf = Manifold.extrude(
                 outer, floor_z - shelf_bottom + EPS
             ).translate((0, 0, shelf_bottom))
             solid = solid + separator + base + shelf
             continue
         floor_z = total_h - depth
-        if floor_z < BASE_H + MIN_FLOOR - EPS:
+        if floor_z < BASE_H + min_floor_mm - EPS:
             raise PocketTooDeepError(
-                f"pocket depth {depth}mm needs ≥{BASE_H + MIN_FLOOR + depth:.1f}mm "
+                f"pocket depth {depth}mm needs ≥{BASE_H + min_floor_mm + depth:.1f}mm "
                 f"of bin height; increase height_u (now {height_u})"
             )
         cut = Manifold.extrude(

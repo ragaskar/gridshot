@@ -13,8 +13,25 @@ live reference: editing or deleting a profile later never changes a bin already 
 from it.
 
 This is landing in phases; this doc grows with each one. **Currently shipped: the
-storage layer and CLI only** — there's no UI or REST API yet, so nothing changes for
-existing bins or the combine editor until those later phases land.
+storage layer, CLI, and geometry layer only** — there's no UI or REST API yet, so
+nothing changes for existing bins or the combine editor until those later phases land.
+
+## Structural parameters (advanced)
+
+Beyond the lip/style/magnet-hole fields above, a profile can also override the
+dimensional constants that used to be hardcoded in `gridshot/core/gridfinity.py`:
+the lip's own profile (height, both chamfers), pocket wall thickness, the
+floor thickness under a pocket, and the corral/live-grid deck's floor, wall,
+base flare, and base reinforcement thickness. Every one of these defaults to
+`None`, meaning "use gridfinity.py's built-in constant" — which is what
+guarantees the seeded Pocket/Corral/Live Grid profiles reproduce today's exact
+geometry, unedited.
+
+Deliberately **not** adjustable, on any profile: the 42mm pitch, 41.5mm bin
+footprint, 7mm height unit, and foot/chamfer profile. These are the dimensions
+that make a bin physically interoperable with a real Gridfinity baseplate —
+changing them per-profile would produce bins that don't actually stack or seat
+correctly, so they stay fixed regardless of style.
 
 ## Storage
 
