@@ -2442,6 +2442,21 @@ class CombineRequest(BaseModel):
     # "Custom bin shape": gridfinity-unit (ix, iy) cells to cut out of the
     # forced gx x gy footprint. Pocket-style bins only; requires force_gx/gy.
     removed_cells: Optional[list[tuple[int, int]]] = None
+    # Bin Profile structural overrides — None means "use gridfinity.py's
+    # module constant". See gridshot/core/binprofiles.py; these mirror
+    # BinProfile's own structural fields exactly.
+    lip_height_mm: Optional[float] = None
+    lip_chamfer_top_mm: Optional[float] = None
+    lip_straight_mm: Optional[float] = None
+    lip_chamfer_bottom_mm: Optional[float] = None
+    min_wall_mm: Optional[float] = None
+    min_floor_mm: Optional[float] = None
+    corral_floor_mm: Optional[float] = None
+    corral_wall_mm: Optional[float] = None
+    corral_base_flare_mm: Optional[float] = None
+    corral_base_reinforcement_h_mm: Optional[float] = None
+    corral_edge_margin_mm: Optional[float] = None
+    magnet_hole_inset_from_edge_mm: Optional[float] = None
 
     @model_validator(mode="after")
     def _force_size_is_both_or_neither(self):
@@ -2469,14 +2484,42 @@ def _combine_layout(req: "CombineRequest") -> dict:
     printer = bench_mod.load_profile() or bench_mod.default_profile()
     override_map = {item.id: item for item in req.overrides or []}
     effective_lip = req.lip
-    wall = grid_mod.MIN_WALL_LIP if effective_lip else grid_mod.MIN_WALL
+
+    # Bin Profile structural overrides — None on the request means "use
+    # gridfinity.py's module constant", resolved once here and reused by
+    # every geometry call below (and stashed in the returned dict for
+    # _combine_solid/library_combine_preview, so they don't re-derive it).
+    lip_height_mm = req.lip_height_mm if req.lip_height_mm is not None else grid_mod.LIP_H
+    lip_chamfer_top_mm = req.lip_chamfer_top_mm if req.lip_chamfer_top_mm is not None else grid_mod.LIP_CH_TOP
+    lip_straight_mm = req.lip_straight_mm if req.lip_straight_mm is not None else grid_mod.LIP_STRAIGHT
+    lip_chamfer_bottom_mm = (
+        req.lip_chamfer_bottom_mm if req.lip_chamfer_bottom_mm is not None else grid_mod.LIP_CH_BOT
+    )
+    min_wall_mm = req.min_wall_mm if req.min_wall_mm is not None else grid_mod.MIN_WALL
+    min_floor_mm = req.min_floor_mm if req.min_floor_mm is not None else grid_mod.MIN_FLOOR
+    corral_floor_mm = req.corral_floor_mm if req.corral_floor_mm is not None else grid_mod.CORRAL_FLOOR
+    corral_wall_mm = req.corral_wall_mm if req.corral_wall_mm is not None else grid_mod.CORRAL_WALL
+    corral_base_flare_mm = (
+        req.corral_base_flare_mm if req.corral_base_flare_mm is not None else grid_mod.CORRAL_BASE_FLARE
+    )
+    corral_base_reinforcement_h_mm = (
+        req.corral_base_reinforcement_h_mm
+        if req.corral_base_reinforcement_h_mm is not None
+        else grid_mod.CORRAL_BASE_REINFORCEMENT_H
+    )
+    corral_edge_margin_mm = (
+        req.corral_edge_margin_mm if req.corral_edge_margin_mm is not None else grid_mod.CORRAL_EDGE_MARGIN
+    )
+    magnet_hole_inset_from_edge_mm = (
+        req.magnet_hole_inset_from_edge_mm
+        if req.magnet_hole_inset_from_edge_mm is not None
+        else grid_mod.MAGNET_HOLE_INSET_FROM_EDGE_MM
+    )
+    min_wall_lip_mm = lip_chamfer_top_mm + lip_chamfer_bottom_mm + 0.8
+
+    wall = min_wall_lip_mm if effective_lip else min_wall_mm
     if req.bin_style in ("corral", "grid"):
-        wall = max(
-            wall,
-            grid_mod.CORRAL_WALL
-            + grid_mod.CORRAL_BASE_FLARE
-            + grid_mod.CORRAL_EDGE_MARGIN,
-        )
+        wall = max(wall, corral_wall_mm + corral_base_flare_mm + corral_edge_margin_mm)
     tools, specs, pack_stamps, pocket_stamps = [], [], [], []
     depths, fingers, inherited_fingers = [], [], []
     clearances, inherited_clearances = [], []
@@ -2697,7 +2740,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         max(
             need_u,
             grid_mod.height_u_for_style_overall(
-                req.overall_height, effective_lip, req.bin_style
+                req.overall_height, effective_lip, req.bin_style, lip_height_mm,
             ),
         )
         if req.overall_height else need_u
@@ -2706,12 +2749,16 @@ def _combine_layout(req: "CombineRequest") -> dict:
         (centered[i], depths[i], centered_fingers[i])
         for i in range(len(centered))
     ]
+    grid_cell_kwargs = dict(
+        lip=effective_lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm,
+        corral_wall_mm=corral_wall_mm, corral_base_flare_mm=corral_base_flare_mm,
+    )
     reserved_cells = (
-        grid_mod.grid_reserved_cells(gx, gy, grid_cuts, lip=effective_lip)
+        grid_mod.grid_reserved_cells(gx, gy, grid_cuts, **grid_cell_kwargs)
         if req.bin_style == "grid" else []
     )
     available_cells = (
-        grid_mod.grid_available_cells(gx, gy, grid_cuts, lip=effective_lip)
+        grid_mod.grid_available_cells(gx, gy, grid_cuts, **grid_cell_kwargs)
         if req.bin_style == "grid" else []
     )
     return {
@@ -2730,6 +2777,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "outer_w": grid_mod.PITCH * gx - (grid_mod.PITCH - grid_mod.BIN_SIZE),
         "outer_d": grid_mod.PITCH * gy - (grid_mod.PITCH - grid_mod.BIN_SIZE),
         "height_u": height_u,
+        "lip_height_mm": lip_height_mm,
+        "lip_chamfer_top_mm": lip_chamfer_top_mm,
+        "lip_straight_mm": lip_straight_mm,
+        "lip_chamfer_bottom_mm": lip_chamfer_bottom_mm,
+        "min_wall_mm": min_wall_mm,
+        "min_floor_mm": min_floor_mm,
+        "corral_floor_mm": corral_floor_mm,
+        "corral_wall_mm": corral_wall_mm,
+        "corral_base_flare_mm": corral_base_flare_mm,
+        "corral_base_reinforcement_h_mm": corral_base_reinforcement_h_mm,
+        "magnet_hole_inset_from_edge_mm": magnet_hole_inset_from_edge_mm,
     }
 
 
@@ -2801,7 +2859,7 @@ def library_combine_preview(req: CombineRequest) -> dict:
         "outer_w": round(lay["outer_w"], 2), "outer_d": round(lay["outer_d"], 2),
         "overall_height_mm": round(
             grid_mod.style_finished_height_mm(
-                lay["height_u"], lay["lip"], req.bin_style
+                lay["height_u"], lay["lip"], req.bin_style, lay["lip_height_mm"],
             ), 1
         ),
         "pitch": grid_mod.PITCH, "bin_size": grid_mod.BIN_SIZE, "wall": lay["wall"],
@@ -2827,6 +2885,17 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
             included_cells=lay.get("included_cells"),
+            lip_height_mm=lay["lip_height_mm"],
+            lip_chamfer_top_mm=lay["lip_chamfer_top_mm"],
+            lip_straight_mm=lay["lip_straight_mm"],
+            lip_chamfer_bottom_mm=lay["lip_chamfer_bottom_mm"],
+            min_wall_mm=lay["min_wall_mm"],
+            min_floor_mm=lay["min_floor_mm"],
+            corral_floor_mm=lay["corral_floor_mm"],
+            corral_wall_mm=lay["corral_wall_mm"],
+            corral_base_flare_mm=lay["corral_base_flare_mm"],
+            corral_base_reinforcement_h_mm=lay["corral_base_reinforcement_h_mm"],
+            magnet_hole_inset_from_edge_mm=lay["magnet_hole_inset_from_edge_mm"],
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -2921,6 +2990,18 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         force_gx=saved.force_gx,
         force_gy=saved.force_gy,
         removed_cells=saved.removed_cells,
+        lip_height_mm=saved.lip_height_mm,
+        lip_chamfer_top_mm=saved.lip_chamfer_top_mm,
+        lip_straight_mm=saved.lip_straight_mm,
+        lip_chamfer_bottom_mm=saved.lip_chamfer_bottom_mm,
+        min_wall_mm=saved.min_wall_mm,
+        min_floor_mm=saved.min_floor_mm,
+        corral_floor_mm=saved.corral_floor_mm,
+        corral_wall_mm=saved.corral_wall_mm,
+        corral_base_flare_mm=saved.corral_base_flare_mm,
+        corral_base_reinforcement_h_mm=saved.corral_base_reinforcement_h_mm,
+        corral_edge_margin_mm=saved.corral_edge_margin_mm,
+        magnet_hole_inset_from_edge_mm=saved.magnet_hole_inset_from_edge_mm,
     )
 
 
@@ -2948,6 +3029,18 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "force_gx": saved.force_gx,
         "force_gy": saved.force_gy,
         "removed_cells": saved.removed_cells,
+        "lip_height_mm": saved.lip_height_mm,
+        "lip_chamfer_top_mm": saved.lip_chamfer_top_mm,
+        "lip_straight_mm": saved.lip_straight_mm,
+        "lip_chamfer_bottom_mm": saved.lip_chamfer_bottom_mm,
+        "min_wall_mm": saved.min_wall_mm,
+        "min_floor_mm": saved.min_floor_mm,
+        "corral_floor_mm": saved.corral_floor_mm,
+        "corral_wall_mm": saved.corral_wall_mm,
+        "corral_base_flare_mm": saved.corral_base_flare_mm,
+        "corral_base_reinforcement_h_mm": saved.corral_base_reinforcement_h_mm,
+        "corral_edge_margin_mm": saved.corral_edge_margin_mm,
+        "magnet_hole_inset_from_edge_mm": saved.magnet_hole_inset_from_edge_mm,
     }
 
 
@@ -2984,6 +3077,18 @@ def bins_save(req: SaveBinRequest) -> dict:
         force_gx=req.force_gx,
         force_gy=req.force_gy,
         removed_cells=req.removed_cells,
+        lip_height_mm=req.lip_height_mm,
+        lip_chamfer_top_mm=req.lip_chamfer_top_mm,
+        lip_straight_mm=req.lip_straight_mm,
+        lip_chamfer_bottom_mm=req.lip_chamfer_bottom_mm,
+        min_wall_mm=req.min_wall_mm,
+        min_floor_mm=req.min_floor_mm,
+        corral_floor_mm=req.corral_floor_mm,
+        corral_wall_mm=req.corral_wall_mm,
+        corral_base_flare_mm=req.corral_base_flare_mm,
+        corral_base_reinforcement_h_mm=req.corral_base_reinforcement_h_mm,
+        corral_edge_margin_mm=req.corral_edge_margin_mm,
+        magnet_hole_inset_from_edge_mm=req.magnet_hole_inset_from_edge_mm,
     )
     binlibrary_mod.save_bin(saved)
     return _bin_json(saved)

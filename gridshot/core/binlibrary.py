@@ -60,6 +60,20 @@ class SavedBin(BaseModel):
     force_gx: Optional[int] = None
     force_gy: Optional[int] = None
     removed_cells: Optional[list[tuple[int, int]]] = None
+    # Bin Profile structural overrides — None means "use gridfinity.py's
+    # module constant" at export/reopen time. See gridshot/core/binprofiles.py.
+    lip_height_mm: Optional[float] = None
+    lip_chamfer_top_mm: Optional[float] = None
+    lip_straight_mm: Optional[float] = None
+    lip_chamfer_bottom_mm: Optional[float] = None
+    min_wall_mm: Optional[float] = None
+    min_floor_mm: Optional[float] = None
+    corral_floor_mm: Optional[float] = None
+    corral_wall_mm: Optional[float] = None
+    corral_base_flare_mm: Optional[float] = None
+    corral_base_reinforcement_h_mm: Optional[float] = None
+    corral_edge_margin_mm: Optional[float] = None
+    magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
 def bins_dir() -> Path:
