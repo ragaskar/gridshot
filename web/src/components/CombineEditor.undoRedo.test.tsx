@@ -91,8 +91,8 @@ describe("CombineEditor undo/redo", () => {
 
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
-      (_ids, placements, _overallHeight, _lip, overrides) =>
-        Promise.resolve(buildResponse(overrides, placements)),
+      (_ids, options) =>
+        Promise.resolve(buildResponse(options?.overrides, options?.placements)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
   });

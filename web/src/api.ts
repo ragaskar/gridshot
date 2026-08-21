@@ -1016,24 +1016,74 @@ export interface CombinePreview {
   tools: CombineTool[];
 }
 
-export async function combinePreview(
-  ids: string[],
-  placements?: Placement[] | null,
-  overallHeight?: number | null,
-  lip = true,
-  overrides?: CombineToolOverride[] | null,
-  binStyle: BinStyle = "pocket",
-  magnetHoles = false,
-  magnetHoleDiameterMm?: number | null,
-  magnetHoleDepthMm?: number | null,
-  forceGx?: number | null,
-  forceGy?: number | null,
-  removedCells?: [number, number][] | null,
-): Promise<CombinePreview> {
+/** Every field a combine request can carry beyond `ids` — placements/overrides
+ *  (content) plus every style field, including the Bin Profile structural
+ *  overrides (`undefined`/omitted means "use gridfinity.py's module
+ *  constant", mirroring `CombineRequest`/`SavedBin` server-side exactly).
+ *  Shared by all five combine functions below so adding a field means
+ *  touching one interface and one body-builder, not five signatures. */
+export interface CombineOptions {
+  placements?: Placement[] | null;
+  overallHeight?: number | null;
+  lip?: boolean;
+  overrides?: CombineToolOverride[] | null;
+  binStyle?: BinStyle;
+  magnetHoles?: boolean;
+  magnetHoleDiameterMm?: number | null;
+  magnetHoleDepthMm?: number | null;
+  forceGx?: number | null;
+  forceGy?: number | null;
+  removedCells?: [number, number][] | null;
+  sliceThicknessMm?: number | null;
+  lipHeightMm?: number | null;
+  lipChamferTopMm?: number | null;
+  lipStraightMm?: number | null;
+  lipChamferBottomMm?: number | null;
+  minWallMm?: number | null;
+  minFloorMm?: number | null;
+  corralFloorMm?: number | null;
+  corralWallMm?: number | null;
+  corralBaseFlareMm?: number | null;
+  corralBaseReinforcementHMm?: number | null;
+  corralEdgeMarginMm?: number | null;
+  magnetHoleInsetFromEdgeMm?: number | null;
+}
+
+function combineRequestBody(ids: string[], options: CombineOptions): Record<string, unknown> {
+  return {
+    ids,
+    placements: options.placements ?? null,
+    overall_height: options.overallHeight ?? null,
+    lip: options.lip ?? true,
+    overrides: options.overrides ?? null,
+    bin_style: options.binStyle ?? "pocket",
+    magnet_holes: options.magnetHoles ?? false,
+    magnet_hole_diameter_mm: options.magnetHoleDiameterMm ?? undefined,
+    magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
+    force_gx: options.forceGx ?? undefined,
+    force_gy: options.forceGy ?? undefined,
+    removed_cells: options.removedCells ?? undefined,
+    slice_thickness_mm: options.sliceThicknessMm ?? undefined,
+    lip_height_mm: options.lipHeightMm ?? undefined,
+    lip_chamfer_top_mm: options.lipChamferTopMm ?? undefined,
+    lip_straight_mm: options.lipStraightMm ?? undefined,
+    lip_chamfer_bottom_mm: options.lipChamferBottomMm ?? undefined,
+    min_wall_mm: options.minWallMm ?? undefined,
+    min_floor_mm: options.minFloorMm ?? undefined,
+    corral_floor_mm: options.corralFloorMm ?? undefined,
+    corral_wall_mm: options.corralWallMm ?? undefined,
+    corral_base_flare_mm: options.corralBaseFlareMm ?? undefined,
+    corral_base_reinforcement_h_mm: options.corralBaseReinforcementHMm ?? undefined,
+    corral_edge_margin_mm: options.corralEdgeMarginMm ?? undefined,
+    magnet_hole_inset_from_edge_mm: options.magnetHoleInsetFromEdgeMm ?? undefined,
+  };
+}
+
+export async function combinePreview(ids: string[], options: CombineOptions = {}): Promise<CombinePreview> {
   const r = await fetch("/api/library/combine/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined, removed_cells: removedCells ?? undefined }),
+    body: JSON.stringify(combineRequestBody(ids, options)),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1042,24 +1092,11 @@ export async function combinePreview(
   return r.json();
 }
 
-export async function combinePreviewGlb(
-  ids: string[],
-  placements?: Placement[] | null,
-  overallHeight?: number | null,
-  lip = true,
-  overrides?: CombineToolOverride[] | null,
-  binStyle: BinStyle = "pocket",
-  magnetHoles = false,
-  magnetHoleDiameterMm?: number | null,
-  magnetHoleDepthMm?: number | null,
-  forceGx?: number | null,
-  forceGy?: number | null,
-  removedCells?: [number, number][] | null,
-): Promise<Blob> {
+export async function combinePreviewGlb(ids: string[], options: CombineOptions = {}): Promise<Blob> {
   const r = await fetch("/api/library/combine/preview.glb", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined, removed_cells: removedCells ?? undefined }),
+    body: JSON.stringify(combineRequestBody(ids, options)),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1069,24 +1106,12 @@ export async function combinePreviewGlb(
 }
 
 export async function combineLibrary(
-  ids: string[],
-  placements?: Placement[] | null,
-  overallHeight?: number | null,
-  lip = true,
-  overrides?: CombineToolOverride[] | null,
-  binStyle: BinStyle = "pocket",
-  magnetHoles = false,
-  magnetHoleDiameterMm?: number | null,
-  magnetHoleDepthMm?: number | null,
-  forceGx?: number | null,
-  forceGy?: number | null,
-  removedCells?: [number, number][] | null,
-  filename = "multitool-bin",
+  ids: string[], options: CombineOptions = {}, filename = "multitool-bin",
 ): Promise<void> {
   const r = await fetch("/api/library/combine", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined, removed_cells: removedCells ?? undefined }),
+    body: JSON.stringify(combineRequestBody(ids, options)),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1101,25 +1126,12 @@ export async function combineLibrary(
 }
 
 export async function combineLibrarySlice(
-  ids: string[],
-  placements?: Placement[] | null,
-  overallHeight?: number | null,
-  lip = true,
-  overrides?: CombineToolOverride[] | null,
-  binStyle: BinStyle = "pocket",
-  magnetHoles = false,
-  magnetHoleDiameterMm?: number | null,
-  magnetHoleDepthMm?: number | null,
-  sliceThicknessMm?: number | null,
-  forceGx?: number | null,
-  forceGy?: number | null,
-  removedCells?: [number, number][] | null,
-  filename = "multitool-bin",
+  ids: string[], options: CombineOptions = {}, filename = "multitool-bin",
 ): Promise<void> {
   const r = await fetch("/api/library/combine/slice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, slice_thickness_mm: sliceThicknessMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined, removed_cells: removedCells ?? undefined }),
+    body: JSON.stringify(combineRequestBody(ids, options)),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1150,27 +1162,27 @@ export interface SavedBin {
   force_gx: number | null;
   force_gy: number | null;
   removed_cells: [number, number][] | null;
+  lip_height_mm: number | null;
+  lip_chamfer_top_mm: number | null;
+  lip_straight_mm: number | null;
+  lip_chamfer_bottom_mm: number | null;
+  min_wall_mm: number | null;
+  min_floor_mm: number | null;
+  corral_floor_mm: number | null;
+  corral_wall_mm: number | null;
+  corral_base_flare_mm: number | null;
+  corral_base_reinforcement_h_mm: number | null;
+  corral_edge_margin_mm: number | null;
+  magnet_hole_inset_from_edge_mm: number | null;
 }
 
 export async function saveBin(
-  label: string,
-  ids: string[],
-  placements: Placement[] | null,
-  overrides: CombineToolOverride[] | null,
-  overallHeight?: number | null,
-  lip = true,
-  binStyle: BinStyle = "pocket",
-  magnetHoles = false,
-  magnetHoleDiameterMm?: number | null,
-  magnetHoleDepthMm?: number | null,
-  forceGx?: number | null,
-  forceGy?: number | null,
-  removedCells?: [number, number][] | null,
+  label: string, ids: string[], options: CombineOptions = {},
 ): Promise<SavedBin> {
   const r = await fetch("/api/bins", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, label, placements: placements ?? null, overall_height: overallHeight ?? null, lip, overrides: overrides ?? null, bin_style: binStyle, magnet_holes: magnetHoles, magnet_hole_diameter_mm: magnetHoleDiameterMm ?? undefined, magnet_hole_depth_mm: magnetHoleDepthMm ?? undefined, force_gx: forceGx ?? undefined, force_gy: forceGy ?? undefined, removed_cells: removedCells ?? undefined }),
+    body: JSON.stringify({ ...combineRequestBody(ids, options), label }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1236,6 +1248,118 @@ export async function exportSavedBinSlice(
   a.download = `${filename}-slice.3mf`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** A named, saved preset of bin *style* parameters — lip, base geometry
+ *  mode, magnet-hole defaults, whether custom bin shape is offered, and the
+ *  advanced structural constants. Applying one is a one-time copy into
+ *  whichever picker set it, never a live reference: editing or deleting a
+ *  profile later never touches a bin already built from it. Mirrors
+ *  `gridshot.core.binprofiles.BinProfile` exactly. */
+export interface BinProfile {
+  id: string;
+  name: string;
+  created_ts: number;
+  base_style: BinStyle;
+  lip: boolean;
+  allow_custom_shape: boolean;
+  magnet_holes_default: boolean;
+  magnet_hole_diameter_mm_default: number;
+  magnet_hole_depth_mm_default: number;
+  lip_height_mm: number | null;
+  lip_chamfer_top_mm: number | null;
+  lip_straight_mm: number | null;
+  lip_chamfer_bottom_mm: number | null;
+  min_wall_mm: number | null;
+  min_floor_mm: number | null;
+  corral_floor_mm: number | null;
+  corral_wall_mm: number | null;
+  corral_base_flare_mm: number | null;
+  corral_base_reinforcement_h_mm: number | null;
+  magnet_hole_inset_from_edge_mm: number | null;
+  has_preview_image: boolean;
+}
+
+/** Every editable `BinProfile` field except `id`/`created_ts` — shared by
+ *  create and update (partial on update; a create with no fields uses the
+ *  server's own defaults, matching a fresh Pocket-style profile). */
+export type BinProfileFields = Omit<BinProfile, "id" | "created_ts" | "has_preview_image">;
+
+export async function listBinProfiles(): Promise<BinProfile[]> {
+  const r = await fetch("/api/bin-profiles");
+  if (!r.ok) throw new Error("bin profile list failed");
+  return (await r.json()).profiles;
+}
+
+export async function getBinProfile(id: string): Promise<BinProfile> {
+  const r = await fetch(`/api/bin-profiles/${id}`);
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "bin profile not found");
+  }
+  return r.json();
+}
+
+export async function createBinProfile(fields: Partial<BinProfileFields> & { name: string }): Promise<BinProfile> {
+  const r = await fetch("/api/bin-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "create bin profile failed");
+  }
+  return r.json();
+}
+
+export async function updateBinProfile(id: string, fields: Partial<BinProfileFields>): Promise<BinProfile> {
+  const r = await fetch(`/api/bin-profiles/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "update bin profile failed");
+  }
+  return r.json();
+}
+
+export async function deleteBinProfile(id: string): Promise<void> {
+  await fetch(`/api/bin-profiles/${id}`, { method: "DELETE" });
+}
+
+export function binProfilePreviewUrl(id: string): string {
+  return `/api/bin-profiles/${id}/preview`;
+}
+
+export async function uploadBinProfilePreview(id: string, image: Blob): Promise<void> {
+  const form = new FormData();
+  form.append("photo", image, "preview.png");
+  const r = await fetch(`/api/bin-profiles/${id}/preview`, { method: "POST", body: form });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "preview upload failed");
+  }
+}
+
+/** The synthetic-bin GLB preview used while editing a profile (saved or
+ *  not) — a 4x4-unit bin with one ~2x2-unit square pocket, built directly
+ *  from these style fields without touching the tool library at all. */
+export async function previewBinProfileGlb(
+  fields: Partial<Omit<BinProfileFields, "name" | "allow_custom_shape">>,
+): Promise<Blob> {
+  const r = await fetch("/api/bin-profiles/preview.glb", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "bin profile preview failed");
+  }
+  return r.blob();
 }
 
 export async function exportDrawer(

@@ -70,8 +70,8 @@ function listRow(label: string): HTMLElement {
 describe("CombineEditor clearance override", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
-      (_ids, placements, _overallHeight, _lip, overrides) =>
-        Promise.resolve(buildResponse(overrides, placements)),
+      (_ids, options) =>
+        Promise.resolve(buildResponse(options?.overrides, options?.placements)),
     );
     // The debounced 3D-preview effect fires regardless of which view tab is
     // active; give it a resolvable Blob so it doesn't throw on an unmocked call.

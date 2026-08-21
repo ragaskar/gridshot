@@ -52,8 +52,8 @@ function buildResponse(
 describe("CombineEditor custom bin shape persistence across bin style switches", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
-      (_ids, placements, _overallHeight, _lip, _overrides, binStyle) =>
-        Promise.resolve(buildResponse(placements, binStyle ?? "pocket")),
+      (_ids, options) =>
+        Promise.resolve(buildResponse(options?.placements, options?.binStyle ?? "pocket")),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
   });
@@ -81,8 +81,8 @@ describe("CombineEditor custom bin shape persistence across bin style switches",
     fireEvent.click(screen.getByRole("button", { name: "Corral" }));
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
-      expect(last[5]).toBe("corral");
-      expect(last[11]).toBeNull();
+      expect(last[1]?.binStyle).toBe("corral");
+      expect(last[1]?.removedCells).toBeNull();
     });
     expect(screen.queryByText("Custom bin shape")).toBeNull();
 
@@ -91,8 +91,8 @@ describe("CombineEditor custom bin shape persistence across bin style switches",
     fireEvent.click(screen.getByRole("button", { name: "Pocket" }));
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
-      expect(last[5]).toBe("pocket");
-      expect(last[11]).toEqual([[0, 0]]);
+      expect(last[1]?.binStyle).toBe("pocket");
+      expect(last[1]?.removedCells).toEqual([[0, 0]]);
     });
     const checkbox = screen.getByText("Custom bin shape").previousElementSibling as HTMLInputElement;
     expect(checkbox.checked).toBe(true);

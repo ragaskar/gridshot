@@ -58,8 +58,8 @@ function buildResponse(overrides: CombineToolOverride[] | null | undefined, plac
 describe("CombineEditor export filenames", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
-      (_ids, placements, _overallHeight, _lip, overrides) =>
-        Promise.resolve(buildResponse(overrides, placements)),
+      (_ids, options) =>
+        Promise.resolve(buildResponse(options?.overrides, options?.placements)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(combineLibrary).mockReset().mockResolvedValue(undefined);
@@ -82,7 +82,7 @@ describe("CombineEditor export filenames", () => {
     await waitFor(() => {
       expect(combineLibrary).toHaveBeenCalled();
     });
-    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    const filename = vi.mocked(combineLibrary).mock.calls[0][2];
     expect(filename).toBe("Wrench, Pliers");
   });
 
@@ -106,7 +106,7 @@ describe("CombineEditor export filenames", () => {
     fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
 
     await waitFor(() => expect(combineLibrary).toHaveBeenCalled());
-    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    const filename = vi.mocked(combineLibrary).mock.calls[0][2];
     expect(filename).toBe("Workbench Drawer 3");
   });
 
@@ -117,6 +117,10 @@ describe("CombineEditor export filenames", () => {
       placements: [], overrides: [], overall_height: null, lip: true, bin_style: "pocket",
       magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
       force_gx: null, force_gy: null, removed_cells: null,
+      lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
+      min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
+      corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+      magnet_hole_inset_from_edge_mm: null,
     });
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} lip={true} onClose={() => {}} />,
@@ -131,7 +135,7 @@ describe("CombineEditor export filenames", () => {
 
     fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
     await waitFor(() => expect(combineLibrary).toHaveBeenCalled());
-    const filename = vi.mocked(combineLibrary).mock.calls[0][12];
+    const filename = vi.mocked(combineLibrary).mock.calls[0][2];
     expect(filename).toBe("Fresh Save");
   });
 
@@ -145,7 +149,7 @@ describe("CombineEditor export filenames", () => {
     fireEvent.click(screen.getByText("Export"));
 
     await waitFor(() => expect(combineLibrarySlice).toHaveBeenCalled());
-    const filename = vi.mocked(combineLibrarySlice).mock.calls[0][13];
+    const filename = vi.mocked(combineLibrarySlice).mock.calls[0][2];
     expect(filename).toBe("Wrench, Pliers");
   });
 });

@@ -304,20 +304,19 @@ export function CombineEditor({
     setBusy(true);
     setErr(null);
     try {
-      const p = await combinePreview(
-        ids,
-        placements ?? null,
+      const p = await combinePreview(ids, {
+        placements: placements ?? null,
         overallHeight,
         lip,
         overrides,
-        style,
+        binStyle: style,
         magnetHoles,
-        Number(magnetHoleDiameter),
-        Number(magnetHoleDepth),
-        force ? force[0] : null,
-        force ? force[1] : null,
-        removed,
-      );
+        magnetHoleDiameterMm: Number(magnetHoleDiameter),
+        magnetHoleDepthMm: Number(magnetHoleDepth),
+        forceGx: force ? force[0] : null,
+        forceGy: force ? force[1] : null,
+        removedCells: removed,
+      });
       setMeta(p);
       setTools(p.tools);
       setSelectedIds((current) => new Set([...current].filter((id) => p.tools.some((tool) => tool.id === id))));
@@ -557,11 +556,11 @@ export function CombineEditor({
     const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
     const removedVal = effectiveRemovedCells(binStyle);
     const timer = window.setTimeout(() => {
-      combinePreviewGlb(
-        ids, placements, overallHeight, lip, overrides, binStyle,
-        magnetHoles, Number(magnetHoleDiameter), Number(magnetHoleDepth),
-        forceGxVal, forceGyVal, removedVal,
-      )
+      combinePreviewGlb(ids, {
+        placements, overallHeight, lip, overrides, binStyle,
+        magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
+        forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
+      })
         .then((blob) => {
           if (sequence !== previewSequence.current) return;
           const nextUrl = URL.createObjectURL(blob);
@@ -816,21 +815,19 @@ export function CombineEditor({
     setErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
-      await combineLibrary(
-        ids,
-        placementsFor(tools),
+      await combineLibrary(ids, {
+        placements: placementsFor(tools),
         overallHeight,
         lip,
-        overridesFor(tools),
+        overrides: overridesFor(tools),
         binStyle,
         magnetHoles,
-        Number(magnetHoleDiameter),
-        Number(magnetHoleDepth),
-        force ? Number(forceGx) : null,
-        force ? Number(forceGy) : null,
-        effectiveRemovedCells(binStyle),
-        binExportName(savedLabel, tools.map((t) => t.label)),
-      );
+        magnetHoleDiameterMm: Number(magnetHoleDiameter),
+        magnetHoleDepthMm: Number(magnetHoleDepth),
+        forceGx: force ? Number(forceGx) : null,
+        forceGy: force ? Number(forceGy) : null,
+        removedCells: effectiveRemovedCells(binStyle),
+      }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -843,22 +840,20 @@ export function CombineEditor({
     setErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
-      await combineLibrarySlice(
-        ids,
-        placementsFor(tools),
+      await combineLibrarySlice(ids, {
+        placements: placementsFor(tools),
         overallHeight,
         lip,
-        overridesFor(tools),
+        overrides: overridesFor(tools),
         binStyle,
         magnetHoles,
-        Number(magnetHoleDiameter),
-        Number(magnetHoleDepth),
-        thicknessMm,
-        force ? Number(forceGx) : null,
-        force ? Number(forceGy) : null,
-        effectiveRemovedCells(binStyle),
-        binExportName(savedLabel, tools.map((t) => t.label)),
-      );
+        magnetHoleDiameterMm: Number(magnetHoleDiameter),
+        magnetHoleDepthMm: Number(magnetHoleDepth),
+        sliceThicknessMm: thicknessMm,
+        forceGx: force ? Number(forceGx) : null,
+        forceGy: force ? Number(forceGy) : null,
+        removedCells: effectiveRemovedCells(binStyle),
+      }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -872,21 +867,19 @@ export function CombineEditor({
     try {
       const force = forceSize && forceGx && forceGy;
       const label = saveName.trim() || defaultBinName();
-      await saveBin(
-        label,
-        ids,
-        placementsFor(tools),
-        overridesFor(tools),
+      await saveBin(label, ids, {
+        placements: placementsFor(tools),
+        overrides: overridesFor(tools),
         overallHeight,
         lip,
         binStyle,
         magnetHoles,
-        Number(magnetHoleDiameter),
-        Number(magnetHoleDepth),
-        force ? Number(forceGx) : null,
-        force ? Number(forceGy) : null,
-        effectiveRemovedCells(binStyle),
-      );
+        magnetHoleDiameterMm: Number(magnetHoleDiameter),
+        magnetHoleDepthMm: Number(magnetHoleDepth),
+        forceGx: force ? Number(forceGx) : null,
+        forceGy: force ? Number(forceGy) : null,
+        removedCells: effectiveRemovedCells(binStyle),
+      });
       setSavedLabel(label);
       setSaveDialogOpen(false);
       setSaveDone(true);
