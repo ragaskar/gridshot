@@ -83,6 +83,24 @@ export interface CombineEditorInitial {
   removedCells: [number, number][] | null;
 }
 
+/** Everything undo/redo tracks — the editor's "content", as opposed to
+ *  transient UI state like selection or dialog visibility. Positions/rotation
+ *  live directly on each `CombineTool` (`tx`/`ty`/`rot`), so snapshotting
+ *  `tools` captures them for free — no separate placements schema needed. */
+interface Snapshot {
+  tools: CombineTool[];
+  binStyle: BinStyle;
+  magnetHoles: boolean;
+  magnetHoleDiameter: string;
+  magnetHoleDepth: string;
+  forceSize: boolean;
+  forceGx: string;
+  forceGy: string;
+  customShape: boolean;
+  removedCells: Set<CellKey>;
+  lockedRotations: Set<string>;
+}
+
 /** A gx×gy grid of small toggle squares, one per gridfinity unit, for
  *  "custom bin shape" — checking a cell removes it from the bin. Rows run
  *  top-to-bottom in increasing iy and columns left-to-right in increasing
@@ -206,19 +224,23 @@ export function CombineEditor({
     setDepthOverrideDraft(null);
   }, [selectionKey]);
 
-  // Esc clears the selection from anywhere in the modal — except while
-  // typing in a field, where it has no obvious meaning and could surprise
-  // someone mid-edit.
+  // Esc clears the selection, and Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z undo/redo,
+  // from anywhere in the modal — except while typing in a field, where none
+  // of that has an obvious meaning and could surprise someone mid-edit.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      setSelectedIds(new Set());
+      if (e.key === "Escape") {
+        setSelectedIds(new Set());
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [undo, redo]);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -238,7 +260,10 @@ export function CombineEditor({
     return new Set([id]);
   }
 
-  function overridesFor(tools: CombineTool[]): CombineToolOverride[] {
+  function overridesFor(
+    tools: CombineTool[],
+    lockedRotationsOverride: Set<string> = lockedRotations,
+  ): CombineToolOverride[] {
     return tools.map(({
       id, rot, finger_hole_override, clearance_mm_override,
       finger_hole_side_flip_override, finger_hole_offset_mm_override,
@@ -249,7 +274,7 @@ export function CombineEditor({
       clearance_mm: clearance_mm_override,
       finger_hole_side_flip: finger_hole_side_flip_override,
       finger_hole_offset_mm: finger_hole_offset_mm_override,
-      locked_rotation_deg: lockedRotations.has(id) ? rot : null,
+      locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
     }));
   }
@@ -315,6 +340,89 @@ export function CombineEditor({
       load(); // auto-pack on open
     }
   }, []); // eslint-disable-line
+
+  const UNDO_HISTORY_LIMIT = 50;
+  const NUDGE_BURST_MS = 1000;
+  const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<Snapshot[]>([]);
+  const burstActive = useRef(false);
+  const burstTimer = useRef<number | null>(null);
+
+  function snapshot(): Snapshot {
+    return {
+      tools: tools.map((t) => ({ ...t })),
+      binStyle,
+      magnetHoles,
+      magnetHoleDiameter,
+      magnetHoleDepth,
+      forceSize,
+      forceGx,
+      forceGy,
+      customShape,
+      removedCells: new Set(removedCells),
+      lockedRotations: new Set(lockedRotations),
+    };
+  }
+
+  /** Pushes the state as it is *right now*, before the caller applies its
+   *  change — call at the top of every discrete, one-shot committing action. */
+  function pushSnapshot() {
+    setUndoStack((s) => [...s.slice(-(UNDO_HISTORY_LIMIT - 1)), snapshot()]);
+    setRedoStack([]);
+  }
+
+  /** Same as `pushSnapshot`, but for a *burst* of rapid-fire actions (nudge
+   *  keys, fine-rotate clicks, typing a rotation value) — pushes once at the
+   *  start of the burst, then holds off until `NUDGE_BURST_MS` after the
+   *  last call, so undo reverts the whole burst in one step. */
+  function pushSnapshotCoalesced() {
+    if (!burstActive.current) {
+      pushSnapshot();
+      burstActive.current = true;
+    }
+    if (burstTimer.current !== null) window.clearTimeout(burstTimer.current);
+    burstTimer.current = window.setTimeout(() => {
+      burstActive.current = false;
+      burstTimer.current = null;
+    }, NUDGE_BURST_MS);
+  }
+
+  function applySnapshot(s: Snapshot) {
+    setTools(s.tools);
+    setBinStyle(s.binStyle);
+    setMagnetHoles(s.magnetHoles);
+    setMagnetHoleDiameter(s.magnetHoleDiameter);
+    setMagnetHoleDepth(s.magnetHoleDepth);
+    setForceSize(s.forceSize);
+    setForceGx(s.forceGx);
+    setForceGy(s.forceGy);
+    setCustomShape(s.customShape);
+    setRemovedCells(new Set(s.removedCells));
+    setLockedRotations(new Set(s.lockedRotations));
+    const force: [number, number] | null = s.forceSize && s.forceGx && s.forceGy
+      ? [Number(s.forceGx), Number(s.forceGy)]
+      : null;
+    const removed = s.binStyle === "pocket" && s.customShape && s.removedCells.size > 0
+      ? removedCellsArray(s.removedCells)
+      : null;
+    void load(placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.binStyle, force, removed);
+  }
+
+  function undo() {
+    if (!undoStack.length) return;
+    const last = undoStack[undoStack.length - 1];
+    setUndoStack((s) => s.slice(0, -1));
+    setRedoStack((r) => [...r, snapshot()]);
+    applySnapshot(last);
+  }
+
+  function redo() {
+    if (!redoStack.length) return;
+    const last = redoStack[redoStack.length - 1];
+    setRedoStack((r) => r.slice(0, -1));
+    setUndoStack((u) => [...u, snapshot()]);
+    applySnapshot(last);
+  }
 
   const idsKey = ids.join("|");
   const geometryKey = useMemo(
@@ -509,6 +617,9 @@ export function CombineEditor({
     if (!drag.current) return;
     const [mx, my] = toData(e);
     const { offsets } = drag.current;
+    // One undo step per drag gesture, not per pointermove: push right at the
+    // moment this drag's first move is registered, not on every subsequent one.
+    if (!drag.current.moved) pushSnapshot();
     drag.current.moved = true;
     setTools((ts) => ts.map((t) => {
       const o = offsets.get(t.id);
@@ -517,6 +628,7 @@ export function CombineEditor({
   }
   function rotate(deg: number) {
     if (!selectedTool) return;
+    pushSnapshotCoalesced();
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: t.rot + deg } : t)));
   }
@@ -525,6 +637,7 @@ export function CombineEditor({
    *  scallop). Horizontal alignment only ever changes tx; vertical only ty. */
   function alignSelected(edge: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") {
     if (selectedTools.length < 2) return;
+    pushSnapshot();
     const boxes = new Map(selectedTools.map((t) => [t.id, bboxOf(placed(t.stamp, t.tx, t.ty, t.rot))]));
     const all = [...boxes.values()];
     if (edge === "left" || edge === "right" || edge === "hcenter") {
@@ -555,6 +668,7 @@ export function CombineEditor({
    *  an equal-gap position between them. */
   function distributeSelected(axis: "horizontal" | "vertical") {
     if (selectedTools.length < 3) return;
+    pushSnapshot();
     const entries = selectedTools
       .map((t) => {
         const b = bboxOf(placed(t.stamp, t.tx, t.ty, t.rot));
@@ -574,6 +688,7 @@ export function CombineEditor({
   }
   function nudgeSelected(dx: number, dy: number) {
     if (!selectedIds.size) return;
+    pushSnapshotCoalesced();
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
@@ -594,12 +709,14 @@ export function CombineEditor({
   }
   function setRotation(deg: number) {
     if (!selectedTool || !Number.isFinite(deg)) return;
+    pushSnapshotCoalesced();
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: deg } : t)));
   }
 
   async function setFingerHole(enabled: boolean | null) {
     if (!selectedIds.size) return;
+    pushSnapshot();
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       finger: enabled ?? tool.finger_hole_inherited,
@@ -611,6 +728,7 @@ export function CombineEditor({
 
   async function setClearance(mm: number | null) {
     if (!selectedIds.size) return;
+    pushSnapshot();
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       clearance_mm: mm ?? tool.clearance_mm_inherited,
@@ -621,6 +739,7 @@ export function CombineEditor({
 
   async function setDepthOverride(mm: number | null) {
     if (!selectedIds.size) return;
+    pushSnapshot();
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       depth_mm: mm ?? tool.depth_mm_inherited,
@@ -655,6 +774,7 @@ export function CombineEditor({
 
   async function setFingerHoleSideFlip(flip: boolean | null) {
     if (!selectedIds.size) return;
+    pushSnapshot();
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       finger_hole_side_flip: flip ?? false,
@@ -665,6 +785,7 @@ export function CombineEditor({
 
   async function setFingerHoleOffset(mm: number | null) {
     if (!selectedIds.size) return;
+    pushSnapshot();
     const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
       ...tool,
       finger_hole_offset_mm: mm ?? 0,
@@ -680,6 +801,7 @@ export function CombineEditor({
    *  control above. */
   async function alignFingerHoles() {
     if (!fingerAlignPlan) return;
+    pushSnapshot();
     const { updates } = fingerAlignPlan;
     const updated = tools.map((tool) => {
       const next = updates.get(tool.id);
@@ -863,7 +985,29 @@ export function CombineEditor({
   return (
     <div className="panel !p-4 sm:!p-6 w-full max-w-[1180px] max-h-[calc(100dvh-2rem)] overflow-auto">
       <div className="grp-label mb-2 flex flex-wrap justify-between gap-2">
-        <span>Arrange multi-tool bin</span>
+        <span className="flex items-center gap-2">
+          Arrange multi-tool bin
+          <button
+            type="button"
+            className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+            aria-label="Undo"
+            title="Undo (Cmd/Ctrl+Z)"
+            disabled={!undoStack.length}
+            onClick={undo}
+          >
+            ↶ Undo
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+            aria-label="Redo"
+            title="Redo (Cmd/Ctrl+Shift+Z)"
+            disabled={!redoStack.length}
+            onClick={redo}
+          >
+            ↷ Redo
+          </button>
+        </span>
         {layout && (
           <span className="text-muted">
             {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · {binStyle}
@@ -1032,6 +1176,7 @@ export function CombineEditor({
                   className={`btn !px-1 !py-2 text-[10px] ${binStyle === style ? "border-teal text-teal" : "btn-ghost"}`}
                   disabled={busy}
                   onClick={() => {
+                    pushSnapshot();
                     setBinStyle(style);
                     // Custom bin shape is pocket-only, but its checkbox state and
                     // removed cells are kept (not cleared) across the switch — they
@@ -1052,6 +1197,7 @@ export function CombineEditor({
                 checked={forceSize}
                 disabled={busy}
                 onChange={(event) => {
+                  pushSnapshot();
                   const checked = event.target.checked;
                   setForceSize(checked);
                   if (!checked) {
@@ -1083,7 +1229,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={1} min={1}
                     value={forceGx}
-                    onChange={(event) => setForceGx(event.target.value)}
+                    onChange={(event) => { pushSnapshotCoalesced(); setForceGx(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1094,7 +1240,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={1} min={1}
                     value={forceGy}
-                    onChange={(event) => setForceGy(event.target.value)}
+                    onChange={(event) => { pushSnapshotCoalesced(); setForceGy(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1108,6 +1254,7 @@ export function CombineEditor({
                     checked={customShape}
                     disabled={busy}
                     onChange={(event) => {
+                      pushSnapshot();
                       const checked = event.target.checked;
                       setCustomShape(checked);
                       if (!checked) {
@@ -1125,6 +1272,7 @@ export function CombineEditor({
                     removedCells={removedCells}
                     disabled={busy}
                     onToggle={(ix, iy) => {
+                      pushSnapshot();
                       const key = cellKey(ix, iy);
                       const next = new Set(removedCells);
                       next.has(key) ? next.delete(key) : next.add(key);
@@ -1150,6 +1298,7 @@ export function CombineEditor({
                 checked={magnetHoles}
                 disabled={busy}
                 onChange={(event) => {
+                  pushSnapshot();
                   setMagnetHoles(event.target.checked);
                   void load(placementsFor(tools), overridesFor(tools));
                 }}
@@ -1165,7 +1314,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0.1}
                     value={magnetHoleDiameter}
-                    onChange={(event) => setMagnetHoleDiameter(event.target.value)}
+                    onChange={(event) => { pushSnapshotCoalesced(); setMagnetHoleDiameter(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1176,7 +1325,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0.1} max={4.7}
                     value={magnetHoleDepth}
-                    onChange={(event) => setMagnetHoleDepth(event.target.value)}
+                    onChange={(event) => { pushSnapshotCoalesced(); setMagnetHoleDepth(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1205,6 +1354,7 @@ export function CombineEditor({
               checked={selectedTool !== null && lockedRotations.has(selectedTool.id)}
               onChange={(event) => {
                 if (!selectedTool) return;
+                pushSnapshot();
                 const id = selectedTool.id;
                 setLockedRotations((current) => {
                   const next = new Set(current);
@@ -1482,7 +1632,7 @@ export function CombineEditor({
               A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
             </p>
           )}
-          <button className="btn w-full text-xs" disabled={busy} onClick={() => load(undefined, overridesFor(tools), binStyle)}>↻ Auto-pack</button>
+          <button className="btn w-full text-xs" disabled={busy} onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), binStyle); }}>↻ Auto-pack</button>
           <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>

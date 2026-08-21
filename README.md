@@ -381,6 +381,9 @@ Features added on top of the original public release, newest last:
 - Exported bin/slice files are named after the saved Bin Library entry, or the selected
   tools when not saved, instead of a generic `multitool-bin.3mf` (see
   [docs/bin-library.md](docs/bin-library.md))
+- Undo/redo in the multi-tool combine editor — Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z, plus
+  toolbar buttons, with drags and nudge/rotate bursts collapsing to one undo step (see
+  [docs/combine-editor-undo-redo.md](docs/combine-editor-undo-redo.md))
 
 ## License
 
