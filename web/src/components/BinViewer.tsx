@@ -28,10 +28,10 @@ export function BinViewer({ url }: { url: string }) {
     scene.add(new THREE.HemisphereLight(0xf3efe4, 0x243049, 2.0));
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const key = new THREE.DirectionalLight(0xffffff, 2.4);
-    key.position.set(0.5, -0.8, 1.6);
+    key.position.set(0.5, 0.8, 1.6);
     scene.add(key);
     const fill = new THREE.DirectionalLight(0xf3efe4, 0.8);
-    fill.position.set(-1, 0.5, 0.4);
+    fill.position.set(-1, -0.5, 0.4);
     scene.add(fill);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -72,8 +72,12 @@ export function BinViewer({ url }: { url: string }) {
       scene.add(obj);
 
       const d = Math.max(size.x, size.y, size.z);
-      // look down into the pocket (opening is at +z) from a front-iso angle
-      camera.position.set(d * 0.55, -d * 0.85, d * 1.15);
+      // look down into the pocket (opening is at +z) from a front-iso angle.
+      // +y here must appear toward the viewer/bottom of the frame, matching
+      // the Arrange 2D view's SVG y-down convention (server/world y is
+      // plotted directly as SVG y there) — otherwise a tool placed at the
+      // "bottom" of Arrange 2D shows up at the top of this preview.
+      camera.position.set(d * 0.55, d * 0.85, d * 1.15);
       camera.lookAt(0, 0, 0);
       controls.target.set(0, 0, 0);
       controls.update();

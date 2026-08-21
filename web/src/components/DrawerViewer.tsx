@@ -43,10 +43,10 @@ export function DrawerViewer({
     scene.add(new THREE.HemisphereLight(0xf3efe4, 0x172033, 2.2));
     scene.add(new THREE.AmbientLight(0xffffff, 0.45));
     const key = new THREE.DirectionalLight(0xffffff, 2.5);
-    key.position.set(0.6, -0.9, 1.8);
+    key.position.set(0.6, 0.9, 1.8);
     scene.add(key);
     const fill = new THREE.DirectionalLight(0x8ed8db, 0.9);
-    fill.position.set(-1, 0.5, 0.7);
+    fill.position.set(-1, -0.5, 0.7);
     scene.add(fill);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -100,7 +100,11 @@ export function DrawerViewer({
         loadedObject = object;
 
         const span = Math.max(size.x, size.y, size.z * 3, 1);
-        camera.position.set(span * 0.72, -span * 0.9, span * 0.95);
+        // +y must appear toward the viewer/bottom of the frame, matching the
+        // compose layout SVG's y-down convention (see BinViewer's identical
+        // fix) — otherwise a bin placed at the "bottom" of the layout preview
+        // shows up at the top of this 3D preview.
+        camera.position.set(span * 0.72, span * 0.9, span * 0.95);
         camera.lookAt(0, 0, 0);
         controls.target.set(0, 0, 0);
         controls.update();
