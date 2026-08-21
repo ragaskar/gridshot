@@ -13,8 +13,11 @@ gridfinity unit from the bin. The Arrange 2D picture updates immediately, includ
 bin's outer corners rounding wherever a removal creates a new one (an internal notch
 corner rounds inward, just like the bin's four outer corners already do).
 
-Only available for **pocket**-style bins — switching to Corral or Live grid clears any
-custom shape, since the corral wall/deck and live-grid sockets aren't shape-aware yet.
+Only available for **pocket**-style bins — switching to Corral or Live grid hides the
+checkbox and stops applying the shape, since the corral wall/deck and live-grid sockets
+aren't shape-aware yet. The checkbox state and removed cells aren't cleared, though:
+switch back to Pocket and they reappear exactly as you left them, instead of having to
+redraw the shape.
 
 ## Dragging over a removed cell
 

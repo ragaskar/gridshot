@@ -258,6 +258,15 @@ export function CombineEditor({
     return [...cells].map((k) => k.split(",").map(Number) as [number, number]);
   }
 
+  // Custom bin shape only applies to pocket bins — the checkbox state and
+  // removed cells stay intact across a style switch (so they reappear if you
+  // switch back to pocket), but are ignored for every other style.
+  function effectiveRemovedCells(style: BinStyle): [number, number][] | null {
+    return style === "pocket" && customShape && removedCells.size > 0
+      ? removedCellsArray(removedCells)
+      : null;
+  }
+
   async function load(
     placements?: Placement[],
     overrides: CombineToolOverride[] = overridesFor(tools),
@@ -265,9 +274,7 @@ export function CombineEditor({
     force: [number, number] | null = forceSize && forceGx && forceGy
       ? [Number(forceGx), Number(forceGy)]
       : null,
-    removed: [number, number][] | null = customShape && removedCells.size > 0
-      ? removedCellsArray(removedCells)
-      : null,
+    removed: [number, number][] | null = effectiveRemovedCells(style),
   ) {
     setBusy(true);
     setErr(null);
@@ -385,7 +392,7 @@ export function CombineEditor({
     // Custom bin shape: a tool crossing into a removed cell is exactly as
     // invalid as crossing the locked bin's outer edge — same warning colour,
     // same export/preview gate.
-    if (locked && customShape && removedCells.size > 0) {
+    if (locked && binStyle === "pocket" && customShape && removedCells.size > 0) {
       const half = bin_size / 2;
       const removedRects = [...removedCells].map((k) => {
         const [ix, iy] = k.split(",").map(Number);
@@ -420,7 +427,7 @@ export function CombineEditor({
     const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
 
     return { polys, fingerCircles, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
-  }, [tools, meta, forceSize, forceGx, forceGy, customShape, removedCells]);
+  }, [tools, meta, forceSize, forceGx, forceGy, binStyle, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
 
@@ -440,7 +447,7 @@ export function CombineEditor({
     setPreviewErr(null);
     const forceGxVal = forceSize && forceGx && forceGy ? Number(forceGx) : null;
     const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
-    const removedVal = customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null;
+    const removedVal = effectiveRemovedCells(binStyle);
     const timer = window.setTimeout(() => {
       combinePreviewGlb(
         ids, placements, overallHeight, lip, overrides, binStyle,
@@ -699,7 +706,7 @@ export function CombineEditor({
         Number(magnetHoleDepth),
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
-        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
+        effectiveRemovedCells(binStyle),
         binExportName(savedLabel, tools.map((t) => t.label)),
       );
     } catch (e) {
@@ -727,7 +734,7 @@ export function CombineEditor({
         thicknessMm,
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
-        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
+        effectiveRemovedCells(binStyle),
         binExportName(savedLabel, tools.map((t) => t.label)),
       );
     } catch (e) {
@@ -756,7 +763,7 @@ export function CombineEditor({
         Number(magnetHoleDepth),
         force ? Number(forceGx) : null,
         force ? Number(forceGy) : null,
-        customShape && removedCells.size > 0 ? removedCellsArray(removedCells) : null,
+        effectiveRemovedCells(binStyle),
       );
       setSavedLabel(label);
       setSaveDialogOpen(false);
@@ -1026,15 +1033,11 @@ export function CombineEditor({
                   disabled={busy}
                   onClick={() => {
                     setBinStyle(style);
-                    // Custom bin shape is pocket-only — leaving pocket clears it
-                    // rather than carrying an invalid combination forward.
-                    if (style !== "pocket" && customShape) {
-                      setCustomShape(false);
-                      setRemovedCells(new Set());
-                      void load(placementsFor(tools), overridesFor(tools), style, undefined, null);
-                    } else {
-                      void load(placementsFor(tools), overridesFor(tools), style);
-                    }
+                    // Custom bin shape is pocket-only, but its checkbox state and
+                    // removed cells are kept (not cleared) across the switch — they
+                    // just stop applying — so they reappear if you switch back to
+                    // pocket instead of having to be redrawn.
+                    void load(placementsFor(tools), overridesFor(tools), style);
                   }}
                 >
                   {style === "pocket" ? "Pocket" : style === "corral" ? "Corral" : "Live grid"}
