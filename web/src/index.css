@@ -139,6 +139,19 @@
   }
 }
 
+/* "Marching ants" selection outline — a moving dashed stroke, distinguishable
+   from an unselected shape even when fill opacity alone can't tell them
+   apart (e.g. every tool selected at once). Respects prefers-reduced-motion
+   via the blanket rule below. */
+.marching-ants {
+  animation: marching-ants 0.6s linear infinite;
+}
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -7;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

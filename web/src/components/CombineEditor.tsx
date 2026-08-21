@@ -967,6 +967,8 @@ export function CombineEditor({
                     points={layout.polys[i].map((p) => `${p[0]},${p[1]}`).join(" ")}
                     fill={toolColor + (isSelected ? "88" : isHovered ? "70" : "55")}
                     stroke={toolColor} strokeWidth={isSelected ? 1.2 : isHovered ? 1 : 0.7}
+                    strokeDasharray={isSelected ? "2 1.5" : undefined}
+                    className={isSelected ? "marching-ants" : undefined}
                     style={{ cursor: "grab" }}
                     onPointerDown={(e) => down(t.id, e)}
                     onPointerEnter={() => setHoverId(t.id)}
