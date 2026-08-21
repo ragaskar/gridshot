@@ -92,6 +92,12 @@ export function DrawerViewer({
           });
         });
 
+        // Mirror x on the preview only — see BinViewer's identical fix for
+        // why (x-right/y-down SVG vs. a right-handed z-up camera is a
+        // genuine chirality mismatch no camera repositioning can resolve)
+        // — before measuring the bounding box, so centering still works on
+        // the mirrored result.
+        object.scale.x = -1;
         const bounds = new THREE.Box3().setFromObject(object);
         const size = bounds.getSize(new THREE.Vector3());
         const center = bounds.getCenter(new THREE.Vector3());

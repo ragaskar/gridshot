@@ -65,6 +65,17 @@ export function BinViewer({ url }: { url: string }) {
           });
         }
       });
+      // Arrange 2D's SVG is x-right/y-down; a right-handed z-up camera that
+      // gets y pointed "toward the viewer" (below) can only do so with x
+      // appearing reversed — no repositioning of a fixed-up-vector camera
+      // can match both axes at once, since that combination is a genuine
+      // mirror (chirality), not a rotation. So mirror x on the *preview*
+      // object only — never the exported geometry — before measuring its
+      // bounding box, so centering still works on the mirrored result.
+      // (three.js compensates the resulting negative-determinant transform's
+      // triangle winding automatically, so lighting/backface culling stay
+      // correct.)
+      obj.scale.x = -1;
       const box = new THREE.Box3().setFromObject(obj);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
