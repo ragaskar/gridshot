@@ -1356,7 +1356,7 @@ export function CombineEditor({
                 </button>
               )}
               <button
-                className="mt-2 w-full btn btn-ghost text-[10px] !py-1"
+                className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
                 disabled={busy || selectedTools.length < 2 || !fingerAlignPlan}
                 title="Align every selected tool's finger hole onto one line — needs at least 2 finger holes on the same edge (top/bottom or left/right), each within reach of the bottom-most (or left-most) one"
                 onClick={() => void alignFingerHoles()}
