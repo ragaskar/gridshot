@@ -340,9 +340,10 @@ export function CombineEditor({
     const locked = forceSize && Number(forceGx) > 0 && Number(forceGy) > 0;
     let gx: number, gy: number, cx: number, cy: number;
     if (locked) {
-      // Fixed footprint — the server always re-centres the tool group's own
-      // bbox to world origin (0,0) on every load(), so that's the bin's
-      // stable centre between round-trips, independent of local drags.
+      // Fixed footprint — the server never re-centres a manual re-arrange
+      // while a size is forced (see _combine_layout), so world origin (0,0)
+      // stays the bin's stable centre across round-trips, independent of
+      // local drags.
       gx = Math.max(1, Math.round(Number(forceGx)));
       gy = Math.max(1, Math.round(Number(forceGy)));
       cx = 0;

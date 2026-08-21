@@ -82,3 +82,48 @@ class TestCombineForceSize:
         assert body["gy"] == 6
         tool_a = next(t for t in body["tools"] if t["id"] == "tool-a")
         assert tool_a["rot"] == 15.0
+
+
+class TestForcedSizeManualPlacementsDontRecentre:
+    """A forced size gives the bin a stable, fixed frame. Submitting a manual
+    re-arrange (e.g. after dragging one tool near an edge) must not silently
+    re-centre every tool around the group's own (now off-centre) bounding
+    box — that reads as the whole arrangement "repacking" itself, and made
+    the 3D preview (which round-trips the same way) disagree with the 2D
+    view after a drag."""
+
+    def test_off_center_manual_placements_are_returned_unshifted(self, client, library_dir):
+        _seed_two_tools()
+        placements = [
+            {"id": "tool-a", "tx": 40.0, "ty": 25.0, "rot": 0.0},
+            {"id": "tool-b", "tx": 60.0, "ty": 25.0, "rot": 0.0},
+        ]
+
+        response = _preview(client, placements=placements, force_gx=6, force_gy=6)
+
+        assert response.status_code == 200
+        body = response.json()
+        tool_a = next(t for t in body["tools"] if t["id"] == "tool-a")
+        tool_b = next(t for t in body["tools"] if t["id"] == "tool-b")
+        assert tool_a["tx"] == pytest.approx(40.0)
+        assert tool_a["ty"] == pytest.approx(25.0)
+        assert tool_b["tx"] == pytest.approx(60.0)
+        assert tool_b["ty"] == pytest.approx(25.0)
+
+    def test_off_center_manual_placements_without_a_forced_size_still_recentre(self, client, library_dir):
+        # Unforced (auto-fit) bins still track the tool group, so re-centring
+        # here is intentional and must be unaffected by the fix above.
+        _seed_two_tools()
+        placements = [
+            {"id": "tool-a", "tx": 40.0, "ty": 25.0, "rot": 0.0},
+            {"id": "tool-b", "tx": 60.0, "ty": 25.0, "rot": 0.0},
+        ]
+
+        response = _preview(client, placements=placements)
+
+        assert response.status_code == 200
+        body = response.json()
+        tool_a = next(t for t in body["tools"] if t["id"] == "tool-a")
+        tool_b = next(t for t in body["tools"] if t["id"] == "tool-b")
+        assert tool_a["tx"] != pytest.approx(40.0)
+        assert tool_b["tx"] != pytest.approx(60.0)

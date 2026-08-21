@@ -2645,7 +2645,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
         except grid_mod.DisconnectedBinShapeError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-    dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin
+    if req.force_gx is not None and req.placements:
+        # A forced size gives the bin a fixed, stable frame — the whole point
+        # of dragging within it is that the frame itself doesn't move.
+        # Re-centring on every request (as the auto-fit path below still
+        # does) would silently shift every tool whenever the group's own
+        # bounding box has drifted off-centre since the last round-trip —
+        # e.g. after dragging one tool near an edge — which is exactly the
+        # "toggling a checkbox repacks everything" bug this avoids.
+        dx, dy = 0.0, 0.0
+    else:
+        dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin
 
     centered, centered_fingers, ctfs = [], [], []
     for i, p in enumerate(placed_pockets):
