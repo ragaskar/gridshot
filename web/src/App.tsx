@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useLocation } from "wouter";
+import { navigate as pushPath } from "wouter/use-browser-location";
 import { forgetActiveSession, loadActiveSession, useApp, type View } from "./state";
 import { Upload } from "./pages/Upload";
 import { Editor } from "./pages/SharedEditorPage";
@@ -10,7 +12,7 @@ import { Calibration } from "./pages/Calibration";
 import { MatReference } from "./pages/MatReference";
 import { AppNavigation } from "./components/AppNavigation";
 import { getSession, type GenerateParams, type Session, type TraceResult } from "./api";
-import { decodeUrlState, encodeViewParams } from "./urlState";
+import { decodeUrlState, pathForView } from "./urlState";
 
 const DEFAULT_PARAMS = {
   thickness: 4,
@@ -32,8 +34,8 @@ function urlKeyFor(state: { view: View; session: Session | null; result: TraceRe
   return `view:${state.view}`;
 }
 
-function urlKeyFromLocation(): string {
-  const d = decodeUrlState(location.search);
+function urlKeyFromPath(pathname: string): string {
+  const d = decodeUrlState(pathname);
   if (d.session) return `editor:${d.session}`;
   if (d.project) return `result:${d.project}`;
   return `view:${d.view ?? "upload"}`;
@@ -44,7 +46,7 @@ function hydrateFromUrl(
   setEditor: (s: Session, p: GenerateParams) => void,
   navigate: (v: Exclude<View, "tracing">) => void,
 ) {
-  const decoded = decodeUrlState(location.search);
+  const decoded = decodeUrlState(location.pathname);
   const stored = loadActiveSession();
   const sess = decoded.session ?? stored?.session;
   if (decoded.project) {
@@ -65,14 +67,15 @@ function hydrateFromUrl(
 }
 
 export function App() {
+  const [path] = useLocation();
   const view = useApp((s) => s.view);
   const setResult = useApp((s) => s.setResult);
   const setEditor = useApp((s) => s.setEditor);
   const navigate = useApp((s) => s.navigate);
 
-  // Deep-links: ?project=<id> reopens a stored result, ?session=<id> the
-  // editor, ?view=<view> everything else. Hydrate once on mount, then keep
-  // the URL and the store in sync in both directions.
+  // Deep-links: /result/<id> reopens a stored result, /editor/<id> the
+  // editor, /<view> everything else. Hydrate once on mount, then keep the
+  // URL and the store in sync in both directions.
   useEffect(() => {
     hydrateFromUrl(setResult, setEditor, navigate);
   }, []); // eslint-disable-line
@@ -80,36 +83,43 @@ export function App() {
   useEffect(() => {
     const unsubscribe = useApp.subscribe((state) => {
       const key = urlKeyFor(state);
-      if (key === urlKeyFromLocation()) return; // already reflects this state (e.g. via popstate)
-      const qs = encodeViewParams(state.view, {
+      if (key === urlKeyFromPath(location.pathname)) return; // already reflects this state
+      const next = pathForView(state.view, {
         session: state.session?.session,
         project: state.result?.project,
       });
-      if (!qs) return; // tracing, or editor/result without an id yet — leave the URL alone
-      history.pushState(null, "", `${location.pathname}?${qs}${location.hash}`);
+      if (!next) return; // tracing, or editor/result without an id yet — leave the URL alone
+      pushPath(next);
     });
     return unsubscribe;
   }, []);
 
+  // Reacts to path changes not caused by the push above — back/forward, or a
+  // page pushing its own nested sub-path (combine editor). The mount-time
+  // hydrate above already handled the initial path, so skip this effect's
+  // own first run.
+  const mountedRef = useRef(false);
   useEffect(() => {
-    function onPopState() {
-      const decoded = decodeUrlState(location.search);
-      if (decoded.project) {
-        fetch(`/api/result/${decoded.project}`)
-          .then((r) => (r.ok ? r.json() : Promise.reject()))
-          .then((r: TraceResult) => setResult(r))
-          .catch(() => {});
-      } else if (decoded.session) {
-        getSession(decoded.session)
-          .then((s: Session) => setEditor(s, DEFAULT_PARAMS))
-          .catch(() => forgetActiveSession());
-      } else {
-        navigate(decoded.view ?? "upload");
-      }
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
     }
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [setResult, setEditor, navigate]);
+    const key = urlKeyFor(useApp.getState());
+    if (key === urlKeyFromPath(path)) return; // our own push, or a page-local sub-path change
+    const decoded = decodeUrlState(path);
+    if (decoded.project) {
+      fetch(`/api/result/${decoded.project}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then((r: TraceResult) => setResult(r))
+        .catch(() => {});
+    } else if (decoded.session) {
+      getSession(decoded.session)
+        .then((s: Session) => setEditor(s, DEFAULT_PARAMS))
+        .catch(() => forgetActiveSession());
+    } else {
+      navigate(decoded.view ?? "upload");
+    }
+  }, [path, setResult, setEditor, navigate]);
 
   let page;
   if (view === "result") page = <Result />;

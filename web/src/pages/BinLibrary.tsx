@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import {
   deleteBin,
   exportSavedBin,
@@ -8,12 +9,13 @@ import {
   type SavedBin,
 } from "../api";
 import { CombineEditor, type CombineEditorInitial } from "../components/CombineEditor";
-import { getUrlParam, setUrlParam } from "../urlState";
+import { decodeUrlState, pathForBinReopen, pathForView } from "../urlState";
 
 /** Saved multi-tool combine-editor arrangements — a recipe (tools, placements,
  *  overrides, bin-wide settings), not a frozen geometry snapshot. Export and
  *  "Reopen" both regenerate from the tools' current library state. */
 export function BinLibrary() {
+  const [path, navigate] = useLocation();
   const [bins, setBins] = useState<SavedBin[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -22,26 +24,22 @@ export function BinLibrary() {
   const refresh = () => listBins().then(setBins).catch(() => setBins([]));
   useEffect(() => { refresh(); }, []);
 
-  // Deep-link: ?bin=<id> reopens that saved bin's editor once the list has
-  // loaded. Only ever restored once — later refreshes() (rename, delete, ...)
-  // mustn't reopen it.
-  const restoredBin = useRef(false);
+  // Deep-link: /bins/:id/combine reopens that saved bin's editor — reactively,
+  // so it tracks the URL both ways (opens when a link lands here, closes
+  // again on browser Back).
   useEffect(() => {
-    if (restoredBin.current || !bins.length) return;
-    restoredBin.current = true;
-    const id = getUrlParam("bin");
+    if (!bins.length) return;
+    const id = decodeUrlState(path).reopenBinId;
     const found = id ? bins.find((b) => b.id === id) : undefined;
-    if (found) openReopen(found);
-  }, [bins]);
+    setReopening(found ?? null);
+  }, [path, bins]);
 
   function openReopen(b: SavedBin) {
-    setUrlParam("bin", b.id, { push: true });
-    setReopening(b);
+    navigate(pathForBinReopen(b.id));
   }
 
   function closeReopen() {
-    setUrlParam("bin", null, { push: true });
-    setReopening(null);
+    navigate(pathForView("bins"));
   }
 
   async function rename(id: string, label: string) {

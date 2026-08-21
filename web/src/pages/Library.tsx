@@ -30,7 +30,8 @@ import { CombineEditor } from "../components/CombineEditor";
 import { DrawerViewer } from "../components/DrawerViewer";
 import { PhotoLightbox } from "../components/PhotoLightbox";
 import { ReadinessBadge, READINESS_LABEL, READINESS_TEXT_TONE } from "../components/ReadinessPanel";
-import { getUrlParam, setUrlParam } from "../urlState";
+import { useLocation } from "wouter";
+import { decodeUrlState, pathForCombine, pathForView } from "../urlState";
 import { applySelectionClick } from "../selection";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
@@ -39,6 +40,7 @@ const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "
  *  tools saved from separate captures, pick a drawer size, and nest them —
  *  building a big set from small, accurate, fully-on-mat captures. */
 export function Library() {
+  const [path, navigate] = useLocation();
   const currentResult = useApp((s) => s.result);
   const setCurrentResult = useApp((s) => s.setResult);
   const [tools, setTools] = useState<LibraryTool[]>([]);
@@ -185,25 +187,22 @@ export function Library() {
     if (drawerPreviewUrlRef.current) URL.revokeObjectURL(drawerPreviewUrlRef.current);
   }, []);
 
-  // Deep-link: ?combine=id1,id2,... reopens the multi-combine editor with
-  // that tool selection once the library has loaded. Only ever restored
-  // once — subsequent refreshes() (delete, clone, ...) mustn't reopen it.
-  const restoredCombine = useRef(false);
+  // Deep-link: /library/combine/id1,id2,... reopens the multi-combine editor
+  // with that tool selection — reactively, so it tracks the URL both ways
+  // (opens when a link lands here, closes again on browser Back).
   useEffect(() => {
-    if (restoredCombine.current || !tools.length) return;
-    restoredCombine.current = true;
-    const raw = getUrlParam("combine");
-    if (!raw) return;
-    const ids = raw.split(",").filter((id) => tools.some((t) => t.id === id));
-    if (ids.length >= 2) {
+    if (!tools.length) return;
+    const ids = decodeUrlState(path).combineIds?.filter((id) => tools.some((t) => t.id === id));
+    if (ids && ids.length >= 2) {
       setSel(new Set(ids));
       setCombining(true);
+    } else {
+      setCombining(false);
     }
-  }, [tools]);
+  }, [path, tools]);
 
   function closeCombining() {
-    setUrlParam("combine", null, { push: true });
-    setCombining(false);
+    navigate(pathForView("library"));
   }
 
   /** Plain click toggles one tool (and becomes the shift-click anchor);
@@ -746,8 +745,7 @@ export function Library() {
                 <button
                   className="btn w-full"
                   onClick={() => {
-                    setUrlParam("combine", [...sel].join(","), { push: true });
-                    setCombining(true);
+                    navigate(pathForCombine([...sel]));
                   }}
                 >
                   ⧉ Combine into ONE bin…
@@ -773,8 +771,7 @@ export function Library() {
                     <button
                       className="btn"
                       onClick={() => {
-                        setUrlParam("combine", [...sel].join(","), { push: true });
-                        setCombining(true);
+                        navigate(pathForCombine([...sel]));
                       }}
                     >
                       Combine {sel.size} Tool{sel.size === 1 ? "" : "s"}

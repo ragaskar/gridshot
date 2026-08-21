@@ -4769,21 +4769,35 @@ for _router_factory in (
     app.include_router(_router_factory(_ROUTE_OWNER))
 
 
-# SPA last: any non-/api path falls through to the built single-page app
-class _SpaStatic(StaticFiles):
-    """Serve the SPA so updates land immediately: index.html is revalidated on
-    every load (no-cache) — otherwise the browser keeps an old index pointing at
-    stale, content-hashed JS and the UI silently freezes on an old build. The
-    hashed /assets/* are immutable, so they cache forever."""
+# SPA last: everything below falls through from the API routers above.
+class _ImmutableAssets(StaticFiles):
+    """Hashed build output never changes for a given URL, so cache it forever."""
 
     async def get_response(self, path, scope):
         resp = await super().get_response(path, scope)
-        if path == "." or path.endswith(".html"):
-            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
-        elif path.startswith("assets/"):
-            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
 
 
+_SPA_NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
+
+
+def spa_fallback(full_path: str) -> FileResponse:
+    """Any GET reaching here is a client-side route (e.g. /library,
+    /editor/<id>) or a plain static file (favicon.ico) — serve the matching
+    dist file if there is one, else index.html so a full reload lands back in
+    the SPA instead of 404ing. index.html is revalidated on every load
+    (no-cache) — otherwise the browser keeps an old index pointing at stale,
+    content-hashed JS and the UI silently freezes on an old build."""
+    candidate = (WEB_DIST / full_path).resolve()
+    dist_root = WEB_DIST.resolve()
+    if full_path and candidate.is_file() and str(candidate).startswith(str(dist_root)):
+        return FileResponse(candidate)
+    return FileResponse(WEB_DIST / "index.html", headers=_SPA_NO_CACHE)
+
+
 if WEB_DIST.is_dir():
-    app.mount("/", _SpaStatic(directory=WEB_DIST, html=True), name="spa")
+    app.mount("/assets", _ImmutableAssets(directory=WEB_DIST / "assets"), name="spa-assets")
+    # HEAD alongside GET: StaticFiles (the old "/" mount this replaces)
+    # answered HEAD requests too, and some tooling/health checks rely on it.
+    app.api_route("/{full_path:path}", methods=["GET", "HEAD"])(spa_fallback)

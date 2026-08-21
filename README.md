@@ -374,6 +374,10 @@ Features added on top of the original public release, newest last:
 - Tool Library: a compact List view alongside the original Tile view, plus
   select-all and shift-click range selection in both (see
   [docs/library-list-view.md](docs/library-list-view.md))
+- Deep-link URLs now use path segments (`/library`, `/editor/<id>`) instead of query
+  params, so they survive a full reload in every browser; the FastAPI static mount
+  gained a proper SPA fallback route to match (see
+  [docs/deep-link-urls.md](docs/deep-link-urls.md))
 
 ## License
 
