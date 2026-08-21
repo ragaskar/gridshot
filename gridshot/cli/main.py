@@ -17,9 +17,11 @@ app = typer.Typer(no_args_is_help=True, help="Phone photo → Gridfinity tool-cu
 mat_app = typer.Typer(no_args_is_help=True, help="Calibration mat: generate, verify, list.")
 calib_app = typer.Typer(no_args_is_help=True, help="Camera calibration: per-device intrinsics.")
 bench_app = typer.Typer(no_args_is_help=True, help="Printer calibration and physical G1 accuracy.")
+bin_profiles_app = typer.Typer(no_args_is_help=True, help="Bin Profiles: named style presets for the combine editor.")
 app.add_typer(mat_app, name="mat")
 app.add_typer(calib_app, name="calib")
 app.add_typer(bench_app, name="bench")
+app.add_typer(bin_profiles_app, name="bin-profiles")
 
 
 @bench_app.command("coupon")
@@ -645,6 +647,57 @@ def mat_list() -> None:
             f"{p.mat_id}  {p.spec.paper}  {p.spec.squares_x}x{p.spec.squares_y}"
             f"  scale X {p.scale_x:.5f} Y {p.scale_y:.5f}  [{status}]"
         )
+
+
+@bin_profiles_app.command("list")
+def bin_profiles_list() -> None:
+    """List every bin profile. `*` marks a built-in seeded profile."""
+    from gridshot.core import binprofiles as profiles_mod
+
+    seed_ids = {profiles_mod.SEED_POCKET_ID, profiles_mod.SEED_CORRAL_ID, profiles_mod.SEED_GRID_ID}
+    for p in profiles_mod.list_profiles():
+        marker = "*" if p.id in seed_ids else " "
+        shape = "shape" if p.allow_custom_shape else "     "
+        typer.echo(
+            f"{marker} {p.id}  {p.name!r:30}  {p.base_style:6}  "
+            f"{'lip' if p.lip else '   '}  {shape}"
+        )
+
+
+@bin_profiles_app.command("seed")
+def bin_profiles_seed() -> None:
+    """Create any of the 3 built-in profiles (Pocket/Corral/Live Grid) that
+    don't already exist. Idempotent — never touches an existing profile."""
+    from gridshot.core import binprofiles as profiles_mod
+
+    written = profiles_mod.seed_defaults()
+    if not written:
+        typer.echo("all 3 built-in profiles already exist — nothing to do")
+        return
+    for p in written:
+        typer.echo(f"seeded: {p.id}  {p.name}")
+
+
+@bin_profiles_app.command("reseed")
+def bin_profiles_reseed() -> None:
+    """Reset the 3 built-in profiles back to factory settings, without
+    touching any other, user-created profile."""
+    from gridshot.core import binprofiles as profiles_mod
+
+    for p in profiles_mod.seed_defaults(force=True):
+        typer.echo(f"reset: {p.id}  {p.name}")
+
+
+@bin_profiles_app.command("delete")
+def bin_profiles_delete(
+    profile_id: str = typer.Argument(help="Bin profile id."),
+) -> None:
+    """Delete one bin profile (including its preview image)."""
+    from gridshot.core import binprofiles as profiles_mod
+
+    if not profiles_mod.delete_profile(profile_id):
+        raise typer.BadParameter(f"no such bin profile: {profile_id}")
+    typer.echo(f"deleted: {profile_id}")
 
 
 if __name__ == "__main__":
