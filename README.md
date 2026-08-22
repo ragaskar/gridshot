@@ -408,6 +408,12 @@ Features added on top of the original public release, newest last:
   copy of the selected tool within the same bin, without touching the Tool Library;
   replaces the old workflow of cloning a whole library entry just to select it twice
   (see [docs/bin-library.md](docs/bin-library.md))
+- Replaced the hardcoded Pocket/Corral/Live-Grid bin styles with two orthogonal
+  parameters — `fill_height_pct` (0–100%) and `live_grid` — so a Bin Profile is no
+  longer limited to three fixed presets; the Bin Profile editor now exposes a fill
+  height slider and live grid checkbox instead of a 3-way style picker (see
+  [docs/bin-profiles.md](docs/bin-profiles.md) and
+  [docs/bin-profiles-v2-proposal.md](docs/bin-profiles-v2-proposal.md) for the design)
 
 ## License
 
