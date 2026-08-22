@@ -55,11 +55,21 @@ describe("BinProfiles page", () => {
     vi.mocked(createBinProfile).mockReset();
     vi.mocked(updateBinProfile).mockReset();
     vi.mocked(deleteBinProfile).mockReset();
+    // Pinned to local noon so the local calendar date (what the component
+    // formats) and the UTC calendar date agree in every real-world
+    // timezone — any farther-than-noon offset would put local and UTC on
+    // different sides of midnight and reintroduce exactly the flake this
+    // pins against.
+    // Only fakes `Date` — leaving setTimeout/setInterval real so
+    // testing-library's findBy/waitFor (which poll on real timers) still work.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2024, 2, 15, 12, 0, 0));
   });
 
   afterEach(() => {
     cleanup();
     setPath("/");
+    vi.useRealTimers();
   });
 
   it("lists every profile with its base style and a New tile", async () => {
@@ -77,7 +87,11 @@ describe("BinProfiles page", () => {
     fireEvent.click(screen.getByText("New bin profile"));
 
     const nameInput = (await screen.findByLabelText("Bin profile name")) as HTMLInputElement;
-    const today = new Date().toISOString().slice(0, 10);
+    // Local date fields, matching how the component itself formats "today"
+    // (see BinProfiles.tsx) — not `toISOString()`, which is UTC and drifts
+    // a calendar day off local in roughly half the world's timezones.
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     expect(nameInput.value).toBe(`Bin Profile ${today}`);
     expect(screen.getByRole("button", { name: "Pocket" }).getAttribute("aria-pressed")).toBe("true");
   });
