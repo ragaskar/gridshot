@@ -49,6 +49,11 @@ The copy is a **bin tool** — the same private, per-bin mechanism "each tool it
 save time" above uses, forked immediately rather than waiting for Save so it previews and undoes
 like any other tool. Undo removes it from the bin again, same as any other change.
 
+A bin tool created this way but never saved into a bin (the combine session was closed instead)
+is orphaned — deleting a saved bin already cleans up its own, but nothing catches this case
+automatically. Run `gridshot bin-tools gc` to delete every bin tool no saved bin references any
+more.
+
 ## The Bin Library page
 
 Each saved bin is a card: its name (editable in place, same as the Tool Library), the save date,
@@ -59,8 +64,9 @@ bin style, and the tools it contains. Four actions:
   entry; **Save As…** creates a separate new one instead.
 - **↓ Export bin** / **↓ Export slice** — regenerate and download the 3MF directly from the list,
   without opening the editor.
-- **× Delete** — removes the saved bin (asks for confirmation first). This never touches the
-  tools it references, only the saved arrangement itself.
+- **× Delete** — removes the saved bin (asks for confirmation first). Also deletes any bin tool
+  it referenced that no *other* remaining saved bin still uses (two bins can share one via
+  reopen-then-Save-As); never touches an actual Tool Library entry.
 
 ## Export filenames
 

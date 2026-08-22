@@ -78,6 +78,12 @@ def load(tool_id: str) -> LibraryTool:
     return LibraryTool.model_validate(json.loads(path.read_text()))
 
 
+def list_ids() -> list[str]:
+    """Every bin-tool id currently on disk — for `gridshot bin-tools gc`,
+    which deletes whichever of these no saved bin references any more."""
+    return [p.stem for p in bin_tools_dir().glob("*.json")]
+
+
 def delete(tool_id: str) -> bool:
     try:
         path = _tool_path(tool_id)

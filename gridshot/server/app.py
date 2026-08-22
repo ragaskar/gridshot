@@ -3176,8 +3176,27 @@ def bins_update(bin_id: str, upd: BinUpdate) -> dict:
     return _bin_json(saved)
 
 
+def _gc_orphaned_bin_tools(candidate_ids: list[str]) -> None:
+    """After deleting a saved bin, remove any of its bin-tool ids that no
+    *other* remaining saved bin still references (two saved bins can share a
+    bin-tool id via reopen-then-Save-As — see `_fork_new_tools`). Doesn't
+    catch a bin-tool forked mid-session (Duplicate) but never saved — that's
+    what `gridshot bin-tools gc` is for."""
+    still_referenced = {tid for b in binlibrary_mod.list_bins() for tid in b.tool_ids}
+    for tid in candidate_ids:
+        if bintools_mod.is_bin_tool_id(tid) and tid not in still_referenced:
+            bintools_mod.delete(tid)
+
+
 def bins_delete(bin_id: str) -> dict:
-    return {"deleted": binlibrary_mod.delete_bin(bin_id)}
+    try:
+        saved = binlibrary_mod.load_bin(bin_id)
+    except KeyError:
+        return {"deleted": False}
+    deleted = binlibrary_mod.delete_bin(bin_id)
+    if deleted:
+        _gc_orphaned_bin_tools(saved.tool_ids)
+    return {"deleted": deleted}
 
 
 def bins_export(bin_id: str) -> Response:

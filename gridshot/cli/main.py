@@ -18,10 +18,12 @@ mat_app = typer.Typer(no_args_is_help=True, help="Calibration mat: generate, ver
 calib_app = typer.Typer(no_args_is_help=True, help="Camera calibration: per-device intrinsics.")
 bench_app = typer.Typer(no_args_is_help=True, help="Printer calibration and physical G1 accuracy.")
 bin_profiles_app = typer.Typer(no_args_is_help=True, help="Bin Profiles: named style presets for the combine editor.")
+bin_tools_app = typer.Typer(no_args_is_help=True, help="Bin tools: private, per-bin tool copies (see Duplicate).")
 app.add_typer(mat_app, name="mat")
 app.add_typer(calib_app, name="calib")
 app.add_typer(bench_app, name="bench")
 app.add_typer(bin_profiles_app, name="bin-profiles")
+app.add_typer(bin_tools_app, name="bin-tools")
 
 
 @bench_app.command("coupon")
@@ -698,6 +700,27 @@ def bin_profiles_delete(
     if not profiles_mod.delete_profile(profile_id):
         raise typer.BadParameter(f"no such bin profile: {profile_id}")
     typer.echo(f"deleted: {profile_id}")
+
+
+@bin_tools_app.command("gc")
+def bin_tools_gc() -> None:
+    """Delete every bin-tool that no saved Bin Library entry references any
+    more — catches one forked mid-session (Duplicate, or the fork-at-save
+    step) whose session was never saved, or was saved and later deleted
+    while shared with another bin. Saving/deleting through the app already
+    keeps this clean in the common case; this is for anything that slips
+    through (an interrupted session, manual file surgery, etc.)."""
+    from gridshot.core import binlibrary as binlibrary_mod
+    from gridshot.core import bintools as bintools_mod
+
+    referenced = {tid for b in binlibrary_mod.list_bins() for tid in b.tool_ids}
+    orphaned = [tid for tid in bintools_mod.list_ids() if tid not in referenced]
+    if not orphaned:
+        typer.echo("no orphaned bin tools — nothing to do")
+        return
+    for tid in orphaned:
+        bintools_mod.delete(tid)
+        typer.echo(f"deleted: {tid}")
 
 
 if __name__ == "__main__":
