@@ -37,6 +37,18 @@ keeps exporting and reopening exactly as it looked when you saved it. (Bins save
 existed still reference the live library tool the old way, including the "(deleted tool)" label
 if it's since been removed — this only applies going forward.)
 
+## Duplicating a tool
+
+Inside the combine editor, select a single tool and click **"⧉ Duplicate"** to get a second,
+independently-editable copy of it in the same bin (its own rotation, its own finger-hole/
+clearance overrides) — for using one tool's shape twice without adding a second entry to the
+Tool Library. This replaces the old workflow of cloning a whole Tool Library entry (photo,
+calibration, provenance, and all) just to select it twice.
+
+The copy is a **bin tool** — the same private, per-bin mechanism "each tool itself is frozen at
+save time" above uses, forked immediately rather than waiting for Save so it previews and undoes
+like any other tool. Undo removes it from the bin again, same as any other change.
+
 ## The Bin Library page
 
 Each saved bin is a card: its name (editable in place, same as the Tool Library), the save date,

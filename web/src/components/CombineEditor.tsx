@@ -4,6 +4,7 @@ import {
   combineLibrarySlice,
   combinePreview,
   combinePreviewGlb,
+  duplicateTool,
   overwriteBin,
   saveBin,
   type BinProfile,
@@ -165,6 +166,7 @@ function structuralFromProfile(p: BinProfile): StructuralOverrides {
  *  live directly on each `CombineTool` (`tx`/`ty`/`rot`), so snapshotting
  *  `tools` captures them for free — no separate placements schema needed. */
 interface Snapshot {
+  toolIds: string[];
   tools: CombineTool[];
   binStyle: BinStyle;
   lip: boolean;
@@ -242,6 +244,12 @@ export function CombineEditor({
   onClose: () => void;
 }) {
   const binProfiles = useBinProfiles();
+  // The `ids` prop is only this editor's *starting* set — Duplicate appends
+  // to this, and a successful Save/Save As adopts the (possibly just-forked)
+  // ids the server returns, so a second save in the session doesn't re-fork
+  // still-raw ids the client is holding locally (see saveToBinLibrary/
+  // saveInPlace below).
+  const [toolIds, setToolIds] = useState<string[]>(ids);
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -291,6 +299,8 @@ export function CombineEditor({
   const [removedCells, setRemovedCells] = useState<Set<CellKey>>(
     () => new Set((initial?.removedCells ?? []).map(([ix, iy]) => cellKey(ix, iy))),
   );
+  const [duplicateBusy, setDuplicateBusy] = useState(false);
+  const [duplicateErr, setDuplicateErr] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -411,11 +421,14 @@ export function CombineEditor({
     magnetHolesOverride: boolean = magnetHoles,
     magnetHoleDiameterOverride: string = magnetHoleDiameter,
     magnetHoleDepthOverride: string = magnetHoleDepth,
+    // Only Duplicate needs this — it must load with the just-appended id
+    // immediately, before React re-renders with the new `toolIds` state.
+    idsOverride: string[] = toolIds,
   ) {
     setBusy(true);
     setErr(null);
     try {
-      const p = await combinePreview(ids, {
+      const p = await combinePreview(idsOverride, {
         placements: placements ?? null,
         overallHeight,
         lip: lipOverride,
@@ -505,6 +518,7 @@ export function CombineEditor({
 
   function snapshot(): Snapshot {
     return {
+      toolIds: [...toolIds],
       tools: tools.map((t) => ({ ...t })),
       binStyle,
       lip,
@@ -546,6 +560,7 @@ export function CombineEditor({
   }
 
   function applySnapshot(s: Snapshot) {
+    setToolIds(s.toolIds);
     setTools(s.tools);
     setBinStyle(s.binStyle);
     setLip(s.lip);
@@ -568,7 +583,7 @@ export function CombineEditor({
       : null;
     void load(
       placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.binStyle, force, removed,
-      s.lip, s.structural, s.magnetHoles, s.magnetHoleDiameter, s.magnetHoleDepth,
+      s.lip, s.structural, s.magnetHoles, s.magnetHoleDiameter, s.magnetHoleDepth, s.toolIds,
     );
   }
 
@@ -588,7 +603,7 @@ export function CombineEditor({
     applySnapshot(last);
   }
 
-  const idsKey = ids.join("|");
+  const idsKey = toolIds.join("|");
   const geometryKey = useMemo(
     () => JSON.stringify(tools.map((tool) => [
       tool.id,
@@ -721,7 +736,7 @@ export function CombineEditor({
     const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
     const removedVal = effectiveRemovedCells(binStyle);
     const timer = window.setTimeout(() => {
-      combinePreviewGlb(ids, {
+      combinePreviewGlb(toolIds, {
         placements, overallHeight, lip, overrides, binStyle,
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
@@ -981,7 +996,7 @@ export function CombineEditor({
     setErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
-      await combineLibrary(ids, {
+      await combineLibrary(toolIds, {
         placements: placementsFor(tools),
         overallHeight,
         lip,
@@ -1007,7 +1022,7 @@ export function CombineEditor({
     setErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
-      await combineLibrarySlice(ids, {
+      await combineLibrarySlice(toolIds, {
         placements: placementsFor(tools),
         overallHeight,
         lip,
@@ -1026,6 +1041,30 @@ export function CombineEditor({
       setErr((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** "⧉ Duplicate": a second, independently-editable copy of the single
+   *  selected tool's geometry within this bin (own rotation, own finger-hole/
+   *  clearance overrides — the existing per-id override/placement model
+   *  already supports that, since the copy gets its own id). Forks
+   *  immediately via the bin-tools store (gridshot/core/bintools.py), not
+   *  deferred to Save — so it previews and undoes like any other tool. */
+  async function duplicateSelectedTool() {
+    if (!selectedTool) return;
+    setDuplicateBusy(true);
+    setDuplicateErr(null);
+    try {
+      const duplicated = await duplicateTool(selectedTool.id);
+      pushSnapshot();
+      const nextIds = [...toolIds, duplicated.id];
+      setToolIds(nextIds);
+      await load(placementsFor(tools), overridesFor(tools), binStyle, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      setSelectedIds(new Set([duplicated.id]));
+    } catch (e) {
+      setDuplicateErr((e as Error).message);
+    } finally {
+      setDuplicateBusy(false);
     }
   }
 
@@ -1057,9 +1096,13 @@ export function CombineEditor({
     setSaveErr(null);
     try {
       const label = saveName.trim() || defaultBinName();
-      const saved = await saveBin(label, ids, saveOptions());
+      const saved = await saveBin(label, toolIds, saveOptions());
       setSavedBinId(saved.id);
       setSavedLabel(label);
+      // Adopt the (possibly just-forked) ids the server returned — a second
+      // Save in this session must reuse them, not re-fork the still-raw ids
+      // this client was holding.
+      setToolIds(saved.tool_ids);
       setSaveDialogOpen(false);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
@@ -1079,7 +1122,8 @@ export function CombineEditor({
     setSaveErr(null);
     try {
       const label = savedLabel || defaultBinName();
-      await overwriteBin(savedBinId, label, ids, saveOptions());
+      const saved = await overwriteBin(savedBinId, label, toolIds, saveOptions());
+      setToolIds(saved.tool_ids);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
@@ -1606,6 +1650,19 @@ export function CombineEditor({
                 </span>
                 <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
               </div>
+              {selectedTool && (
+                <div className="mb-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost w-full !py-1 text-[10px]"
+                    disabled={busy || duplicateBusy}
+                    onClick={() => void duplicateSelectedTool()}
+                  >
+                    {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
+                  </button>
+                  {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
+                </div>
+              )}
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
                 <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
                 <dd className="text-knockout">{depthMmLabel}</dd>

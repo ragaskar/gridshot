@@ -404,6 +404,10 @@ Features added on top of the original public release, newest last:
   to its state at save time — editing or deleting the original Tool Library entry
   afterward no longer affects a bin already saved with it (see
   [docs/bin-library.md](docs/bin-library.md))
+- "⧉ Duplicate" in the multi-tool combine editor — a second, independently-editable
+  copy of the selected tool within the same bin, without touching the Tool Library;
+  replaces the old workflow of cloning a whole library entry just to select it twice
+  (see [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 
