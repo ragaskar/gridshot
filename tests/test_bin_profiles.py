@@ -26,7 +26,8 @@ class TestStorage:
         }
         pocket = next(p for p in profiles if p.id == profiles_mod.SEED_POCKET_ID)
         assert pocket.name == "Pocket"
-        assert pocket.base_style == "pocket"
+        assert pocket.fill_height_pct == 100
+        assert pocket.live_grid is False
         assert pocket.lip is True
         assert pocket.allow_custom_shape is True
         # Every structural field inherits gridfinity.py's module constant —
@@ -50,7 +51,7 @@ class TestStorage:
         profiles_mod.list_profiles()  # ensure the dir/marker exist
         custom = profiles_mod.BinProfile(
             id=profiles_mod.new_profile_id(), name="My Style",
-            base_style="pocket", lip=False, min_wall_mm=2.5,
+            fill_height_pct=100, lip=False, min_wall_mm=2.5,
         )
         profiles_mod.save_profile(custom)
 
@@ -93,7 +94,7 @@ class TestStorage:
         path.write_text('{"id": "legacy", "name": "Legacy"}')
 
         loaded = profiles_mod.load_profile("legacy")
-        assert loaded.base_style == "pocket"
+        assert loaded.fill_height_pct == 100
         assert loaded.lip_height_mm is None
 
 

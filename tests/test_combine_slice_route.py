@@ -43,10 +43,10 @@ def _stub_layout(monkeypatch, depths, height_u=4):
         "lip_chamfer_bottom_mm": grid_mod.LIP_CH_BOT,
         "min_wall_mm": grid_mod.MIN_WALL,
         "min_floor_mm": grid_mod.MIN_FLOOR,
-        "corral_floor_mm": grid_mod.CORRAL_FLOOR,
-        "corral_wall_mm": grid_mod.CORRAL_WALL,
-        "corral_base_flare_mm": grid_mod.CORRAL_BASE_FLARE,
-        "corral_base_reinforcement_h_mm": grid_mod.CORRAL_BASE_REINFORCEMENT_H,
+        "floor_thickness_mm": grid_mod.FLOOR_THICKNESS,
+        "tool_wall_mm": grid_mod.TOOL_WALL,
+        "tool_wall_flare_mm": grid_mod.TOOL_WALL_FLARE,
+        "tool_wall_reinforcement_h_mm": grid_mod.TOOL_WALL_REINFORCEMENT_H,
         "magnet_hole_inset_from_edge_mm": grid_mod.MAGNET_HOLE_INSET_FROM_EDGE_MM,
     }
     monkeypatch.setattr(app_module, "_combine_layout", lambda req: lay)
@@ -56,7 +56,7 @@ def _stub_layout(monkeypatch, depths, height_u=4):
 def _post(client, ids=("a", "b"), **extra):
     return client.post(
         "/api/library/combine/slice",
-        json={"ids": list(ids), "bin_style": "pocket", **extra},
+        json={"ids": list(ids), "fill_height_pct": 100, **extra},
     )
 
 

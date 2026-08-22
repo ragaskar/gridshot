@@ -598,13 +598,15 @@ def trace(
     from gridshot.core import gridfinity as grid_mod
     from gridshot.core import trace as trace_mod
 
+    fill_height_pct, live_grid = grid_mod.style_to_fill_params(style)
     result = trace_mod.run(
         photo,
         thickness_mm=thickness,
         photo2=photo2,
         clearance_mm=clearance,
         smooth_mm=smooth,
-        bin_style=style,
+        fill_height_pct=fill_height_pct,
+        live_grid=live_grid,
         pocket_depth_mm=depth,
         full_height_mm=full_height,
         height_u=height_u,
@@ -625,9 +627,13 @@ def trace(
         f"(t={result.thickness_mm:.1f}mm, H={cal.camera_height_mm:.0f}mm)"
     )
     geometry = f"recess {result.pocket_depth_mm:.1f}mm deep"
+    style_label = (
+        "pocket" if result.fill_height_pct == 100 and not result.live_grid
+        else "grid" if result.live_grid else "corral"
+    )
     typer.echo(
         f"bin:         {result.grid[0]}x{result.grid[1]} units, "
-        f"{result.height_u}u tall, {result.bin_style}, {geometry}"
+        f"{result.height_u}u tall, {style_label}, {geometry}"
     )
     for w in result.warnings:
         typer.secho(f"warning: {w}", fg=typer.colors.YELLOW)
@@ -660,8 +666,11 @@ def bin_profiles_list() -> None:
     for p in profiles_mod.list_profiles():
         marker = "*" if p.id in seed_ids else " "
         shape = "shape" if p.allow_custom_shape else "     "
+        fill_label = f"fill{p.fill_height_pct:.0f}%"
+        if p.live_grid:
+            fill_label += "+grid"
         typer.echo(
-            f"{marker} {p.id}  {p.name!r:30}  {p.base_style:6}  "
+            f"{marker} {p.id}  {p.name!r:30}  {fill_label:11}  "
             f"{'lip' if p.lip else '   '}  {shape}"
         )
 

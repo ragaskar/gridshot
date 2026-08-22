@@ -1,7 +1,7 @@
 """Bin Profiles Phase 2: gridfinity.py's previously-hardcoded structural
-constants (lip profile, wall thickness, corral/grid deck dimensions, magnet
-hole edge inset) are now optional parameters, each defaulting to the same
-value the module constant used to be. Two guarantees matter here:
+constants (lip profile, wall thickness, general-fill/tool-wall dimensions,
+magnet hole edge inset) are now optional parameters, each defaulting to the
+same value the module constant used to be. Two guarantees matter here:
 
 1. Omitting a new parameter produces geometry identical to before this
    change (the seeded Bin Profiles, and every untouched single-tool caller,
@@ -28,14 +28,16 @@ def _vertices(solid) -> object:
 
 class TestDefaultsMatchOmittingTheParameter:
     @pytest.mark.parametrize("lip", [False, True])
-    @pytest.mark.parametrize("style", ["pocket", "corral", "grid"])
-    def test_bin_solid_explicit_defaults_are_byte_identical(self, style, lip):
+    @pytest.mark.parametrize(
+        "fill_height_pct,live_grid", [(100, False), (0, False), (0, True)]
+    )
+    def test_bin_solid_explicit_defaults_are_byte_identical(self, fill_height_pct, live_grid, lip):
         kwargs = dict(
             gx=2, gy=2, height_u=3, pocket=TOOL_POCKET, pocket_depth=5.0,
-            style=style, lip=lip,
+            fill_height_pct=fill_height_pct, live_grid=live_grid, lip=lip,
         )
-        if style == "grid":
-            kwargs["height_u"] = 4  # grid needs >=2u below the stacking plane
+        if live_grid:
+            kwargs["height_u"] = 4  # live_grid needs >=2u below the stacking plane
         baseline = grid_mod.bin_solid(**kwargs)
         explicit = grid_mod.bin_solid(
             **kwargs,
@@ -45,10 +47,10 @@ class TestDefaultsMatchOmittingTheParameter:
             lip_chamfer_bottom_mm=grid_mod.LIP_CH_BOT,
             min_wall_mm=grid_mod.MIN_WALL,
             min_floor_mm=grid_mod.MIN_FLOOR,
-            corral_floor_mm=grid_mod.CORRAL_FLOOR,
-            corral_wall_mm=grid_mod.CORRAL_WALL,
-            corral_base_flare_mm=grid_mod.CORRAL_BASE_FLARE,
-            corral_base_reinforcement_h_mm=grid_mod.CORRAL_BASE_REINFORCEMENT_H,
+            floor_thickness_mm=grid_mod.FLOOR_THICKNESS,
+            tool_wall_mm=grid_mod.TOOL_WALL,
+            tool_wall_flare_mm=grid_mod.TOOL_WALL_FLARE,
+            tool_wall_reinforcement_h_mm=grid_mod.TOOL_WALL_REINFORCEMENT_H,
             magnet_hole_inset_from_edge_mm=grid_mod.MAGNET_HOLE_INSET_FROM_EDGE_MM,
         )
         assert explicit.volume() == pytest.approx(baseline.volume(), rel=1e-9)
@@ -79,32 +81,36 @@ class TestOverridesChangeGeometry:
         tall = grid_mod.bin_solid(2, 2, height_u=3, lip=True, lip_height_mm=8.0)
         assert tall.bounding_box()[5] > short.bounding_box()[5]
 
-    def test_thicker_corral_wall_removes_more_material(self):
+    def test_thicker_tool_wall_removes_more_material(self):
         thin = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral", corral_wall_mm=2.0,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0,
+            fill_height_pct=0, tool_wall_mm=2.0,
         )
         thick = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral", corral_wall_mm=6.0,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0,
+            fill_height_pct=0, tool_wall_mm=6.0,
         )
         assert thick.volume() > thin.volume()
 
-    def test_thicker_corral_floor_adds_material(self):
+    def test_thicker_floor_thickness_adds_material(self):
         thin = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral", corral_floor_mm=1.2,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0,
+            fill_height_pct=0, floor_thickness_mm=1.2,
         )
         thick = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral", corral_floor_mm=3.0,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0,
+            fill_height_pct=0, floor_thickness_mm=3.0,
         )
         assert thick.volume() > thin.volume()
 
-    def test_thicker_corral_base_reinforcement_adds_material(self):
+    def test_thicker_tool_wall_reinforcement_adds_material(self):
         thin = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral",
-            corral_base_reinforcement_h_mm=1.0,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, fill_height_pct=0,
+            tool_wall_reinforcement_h_mm=1.0,
         )
         thick = grid_mod.bin_solid(
-            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, style="corral",
-            corral_base_reinforcement_h_mm=3.0,
+            3, 3, height_u=4, pocket=TOOL_POCKET, pocket_depth=5.0, fill_height_pct=0,
+            tool_wall_reinforcement_h_mm=3.0,
         )
         assert thick.volume() > thin.volume()
 
@@ -122,8 +128,8 @@ class TestOverridesChangeGeometry:
         with pytest.raises(grid_mod.PocketTooDeepError):
             grid_mod.bin_solid(2, 2, height_u=3, pocket=TOOL_POCKET, pocket_depth=15.0, min_floor_mm=6.0)
 
-    def test_thinner_corral_wall_lets_a_narrower_bin_offer_more_grid_sockets(self):
+    def test_thinner_tool_wall_lets_a_narrower_bin_offer_more_grid_sockets(self):
         pockets = [(TOOL_POCKET, 5.0, ())]
-        thick_wall = grid_mod.grid_available_cells(4, 4, pockets, corral_wall_mm=6.0, corral_base_flare_mm=0.8)
-        thin_wall = grid_mod.grid_available_cells(4, 4, pockets, corral_wall_mm=2.0, corral_base_flare_mm=0.8)
+        thick_wall = grid_mod.grid_available_cells(4, 4, pockets, tool_wall_mm=6.0, tool_wall_flare_mm=0.8)
+        thin_wall = grid_mod.grid_available_cells(4, 4, pockets, tool_wall_mm=2.0, tool_wall_flare_mm=0.8)
         assert len(thin_wall) >= len(thick_wall)

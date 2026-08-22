@@ -62,7 +62,8 @@ class BinSettings:
     """Source settings that can change derived printable geometry."""
 
     clearance_mm: float = 1.0
-    bin_style: grid_mod.BinStyle = "pocket"
+    fill_height_pct: float = 100.0
+    live_grid: bool = False
     pocket_depth_mm: float | None = None
     height_u: int | None = None
     overall_height_mm: float | None = None
@@ -87,7 +88,8 @@ class DerivedBinSpec:
     sizing_poly: Poly
     grid: tuple[int, int]
     height_u: int
-    bin_style: grid_mod.BinStyle
+    fill_height_pct: float
+    live_grid: bool
     lip: bool
     pocket_depth_mm: float
     overall_height_mm: float
@@ -212,8 +214,10 @@ def derive_bin_spec(
         raise ValueError("clearance must be >= 0")
     if not math.isfinite(settings.finger_hole_offset_mm):
         raise ValueError("finger hole offset must be finite")
-    if settings.bin_style not in ("pocket", "corral", "grid"):
-        raise ValueError(f"unknown bin style: {settings.bin_style}")
+    if not (0.0 <= settings.fill_height_pct <= 100.0):
+        raise ValueError(
+            f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
+        )
     if settings.pocket_depth_mm is not None and (
         not math.isfinite(settings.pocket_depth_mm)
         or settings.pocket_depth_mm <= 0
@@ -242,13 +246,14 @@ def derive_bin_spec(
     # Mat/image coordinates use y down; CAD and print coordinates use y up.
     flip_pocket = shapely_scale(compensated_shape, yfact=-1.0, origin=(0, 0))
     flip_tool = shapely_scale(tool_shape, yfact=-1.0, origin=(0, 0))
+    fast_path = settings.fill_height_pct == 100.0 and not settings.live_grid
     wall = grid_mod.MIN_WALL_LIP if effective_lip else grid_mod.MIN_WALL
-    if settings.bin_style in ("corral", "grid"):
+    if not fast_path:
         wall = max(
             wall,
-            grid_mod.CORRAL_WALL
-            + grid_mod.CORRAL_BASE_FLARE
-            + grid_mod.CORRAL_EDGE_MARGIN,
+            grid_mod.TOOL_WALL
+            + grid_mod.TOOL_WALL_FLARE
+            + grid_mod.EDGE_MARGIN,
         )
     aligned, apply_rotation = _align_for_bin(flip_pocket, wall)
     aligned_tool = apply_rotation(flip_tool)
@@ -272,15 +277,15 @@ def derive_bin_spec(
                 f"legacy conservative estimate from silhouette height "
                 f"{silhouette_height_mm:.1f}mm; record full tool height to replace it"
             )
-        if settings.bin_style == "pocket":
+        if fast_path:
             warnings.append(
                 f"pocket depth defaulted to {depth:.1f}mm from {height_basis}; "
                 "the tool remains below the stacking plane"
             )
-        elif settings.bin_style == "corral":
+        elif not settings.live_grid:
             warnings.append(
-                f"corral recess defaulted to {depth:.1f}mm from {height_basis}; "
-                "the thin tool shelf and full-height separator retain the tool well"
+                f"recess defaulted to {depth:.1f}mm from {height_basis}; "
+                "the thin tool shelf and full-height wall retain the tool well"
             )
         else:
             warnings.append(
@@ -380,31 +385,25 @@ def derive_bin_spec(
     if settings.height_u is not None:
         height_u = settings.height_u
         if height_u < need_u:
-            requirement = f"a {depth:.1f}mm-deep {settings.bin_style} recess"
+            requirement = f"a {depth:.1f}mm-deep recess"
             raise ValueError(
                 f"height {height_u}u is too short for {requirement}; "
                 f"use at least {need_u}u"
             )
     elif settings.overall_height_mm is not None:
-        height_u = grid_mod.height_u_for_style_overall(
-            settings.overall_height_mm, effective_lip, settings.bin_style
+        height_u = grid_mod.height_u_for_overall(
+            settings.overall_height_mm, effective_lip
         )
         if height_u < need_u:
-            minimum = grid_mod.style_finished_height_mm(
-                need_u, effective_lip, settings.bin_style
-            )
-            requirement = f"a {depth:.1f}mm-deep {settings.bin_style} recess"
-            achieved = grid_mod.style_finished_height_mm(
-                height_u, effective_lip, settings.bin_style
-            )
+            minimum = grid_mod.finished_height_mm(need_u, effective_lip)
+            requirement = f"a {depth:.1f}mm-deep recess"
+            achieved = grid_mod.finished_height_mm(height_u, effective_lip)
             raise ValueError(
                 f"overall height {settings.overall_height_mm:.1f}mm rounds to {height_u}u "
                 f"= {achieved:.1f}mm, too short for {requirement} — set it to "
                 f"at least {minimum:.1f}mm"
             )
-        achieved = grid_mod.style_finished_height_mm(
-            height_u, effective_lip, settings.bin_style
-        )
+        achieved = grid_mod.finished_height_mm(height_u, effective_lip)
         if abs(achieved - settings.overall_height_mm) > 0.1:
             warnings.append(
                 f"overall height snapped to {achieved:.1f}mm "
@@ -416,7 +415,7 @@ def derive_bin_spec(
 
     reserved_cells: list[tuple[float, float]] = []
     available_cells: list[tuple[float, float]] = []
-    if settings.bin_style == "grid":
+    if settings.live_grid:
         cuts = [(contour_mod.from_shapely(pocket_shape), depth, fingers)]
         reserved_cells = grid_mod.grid_reserved_cells(
             gx, gy, cuts, lip=effective_lip
@@ -433,12 +432,11 @@ def derive_bin_spec(
         sizing_poly=contour_mod.from_shapely(sizing),
         grid=(gx, gy),
         height_u=height_u,
-        bin_style=settings.bin_style,
+        fill_height_pct=settings.fill_height_pct,
+        live_grid=settings.live_grid,
         lip=effective_lip,
         pocket_depth_mm=depth,
-        overall_height_mm=grid_mod.style_finished_height_mm(
-            height_u, effective_lip, settings.bin_style
-        ),
+        overall_height_mm=grid_mod.finished_height_mm(height_u, effective_lip),
         silhouette_height_mm=silhouette_height_mm,
         full_height_mm=full_height_mm,
         magnet_holes=settings.magnet_holes,

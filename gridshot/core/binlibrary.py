@@ -19,8 +19,9 @@ import uuid
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from . import gridfinity as grid_mod
 from .models import config_dir
 
 BIN_LIBRARY_SCHEMA_VERSION = "binlibrary.v1"
@@ -45,6 +46,17 @@ class SavedBinOverride(BaseModel):
 
 class SavedBin(BaseModel):
     schema_version: Literal["binlibrary.v1"] = BIN_LIBRARY_SCHEMA_VERSION
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_bin_style(cls, data):
+        """`bin_style: pocket|corral|grid` -> `fill_height_pct`/`live_grid` —
+        see docs/bin-profiles-v2-proposal.md. Self-heals on next load."""
+        if isinstance(data, dict) and "bin_style" in data and "fill_height_pct" not in data:
+            pct, live = grid_mod.LEGACY_STYLE_TO_FILL.get(data["bin_style"], (100.0, False))
+            data = {**data, "fill_height_pct": pct, "live_grid": live}
+        return data
+
     id: str
     label: str = ""
     created_ts: int = 0
@@ -53,7 +65,8 @@ class SavedBin(BaseModel):
     overrides: list[SavedBinOverride] = Field(default_factory=list)
     overall_height: Optional[float] = None
     lip: bool = True
-    bin_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = 100.0
+    live_grid: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = 6.5
     magnet_hole_depth_mm: float = 2.0
@@ -68,11 +81,11 @@ class SavedBin(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
     # Which Bin Profile the editor had applied when this was saved, purely
     # so reopening shows the same picker selection — a one-time copy like

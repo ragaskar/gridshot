@@ -37,7 +37,8 @@ class TraceResult:
     grid: tuple[int, int]
     height_u: int
     pocket_depth_mm: float
-    bin_style: grid_mod.BinStyle = "pocket"
+    fill_height_pct: float = 100.0
+    live_grid: bool = False
     overall_height_mm: float = 0.0
     lip: bool = True
     magnet_holes: bool = False
@@ -616,7 +617,8 @@ def run(
     photo2: Path | None = None,
     clearance_mm: float = 1.0,
     smooth_mm: float = 0.6,
-    bin_style: grid_mod.BinStyle = "pocket",
+    fill_height_pct: float = 100.0,
+    live_grid: bool = False,
     pocket_depth_mm: float | None = None,
     full_height_mm: float | None = None,
     height_u: int | None = None,
@@ -697,7 +699,8 @@ def run(
         corrected_override=corrected,
         reconstruction=reconstruction,
         round_tool=round_tool,
-        bin_style=bin_style,
+        fill_height_pct=fill_height_pct,
+        live_grid=live_grid,
         readiness=readiness, thickness_source=thickness_source,
     )
 
@@ -707,7 +710,8 @@ def finalize_bin(
     calibration: Calibration | None,
     thickness_mm: float,
     clearance_mm: float = 1.0,
-    bin_style: grid_mod.BinStyle = "pocket",
+    fill_height_pct: float = 100.0,
+    live_grid: bool = False,
     pocket_depth_mm: float | None = None,
     full_height_mm: float | None = None,
     height_u: int | None = None,
@@ -769,7 +773,8 @@ def finalize_bin(
         ),
         derive_mod.BinSettings(
             clearance_mm=clearance_mm,
-            bin_style=bin_style,
+            fill_height_pct=fill_height_pct,
+            live_grid=live_grid,
             pocket_depth_mm=pocket_depth_mm,
             height_u=height_u,
             overall_height_mm=overall_height_mm,
@@ -798,7 +803,8 @@ def finalize_bin(
         pocket_depth=depth,
         finger_holes=fingers,
         lip=spec.lip,
-        style=spec.bin_style,
+        fill_height_pct=spec.fill_height_pct,
+        live_grid=spec.live_grid,
         magnet_holes=spec.magnet_holes,
         magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
@@ -807,9 +813,8 @@ def finalize_bin(
     if not mesh.is_watertight:
         raise RuntimeError("generated mesh is not watertight — geometry bug, not printable")
 
-    retention_label = (
-        "pocket" if spec.bin_style == "pocket" else f"{spec.bin_style} recess"
-    )
+    fast_path = spec.fill_height_pct == 100 and not spec.live_grid
+    retention_label = "pocket" if fast_path else "recess"
     svg = export_mod.debug_svg(
         [
             ("raw outline (plane-mapped)", "#888888", smoothed),
@@ -864,7 +869,8 @@ def finalize_bin(
         grid=(gx, gy),
         height_u=height_u,
         pocket_depth_mm=depth,
-        bin_style=spec.bin_style,
+        fill_height_pct=spec.fill_height_pct,
+        live_grid=spec.live_grid,
         overall_height_mm=spec.overall_height_mm,
         lip=spec.lip,
         magnet_holes=spec.magnet_holes,

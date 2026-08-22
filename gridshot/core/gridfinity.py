@@ -14,7 +14,6 @@ pockets arrive with the full generator in M3.
 from __future__ import annotations
 
 import math
-from typing import Literal
 
 import numpy as np
 from manifold3d import CrossSection, FillRule, JoinType, Manifold, OpType
@@ -58,16 +57,35 @@ EPS = 1e-3
 
 CIRCULAR_SEGMENTS = 64
 
-BinStyle = Literal["pocket", "corral", "grid"]
+# Legacy (fill_height_pct, live_grid) mapping — exact and lossless. See
+# docs/bin-profiles-v2-proposal.md. Used both to translate old `style` values
+# at bin_solid() call sites that haven't migrated yet, and by each model's
+# backfill validator for on-disk records that predate these fields.
+LEGACY_STYLE_TO_FILL: dict[str, tuple[float, bool]] = {
+    "pocket": (100.0, False),
+    "corral": (0.0, False),
+    "grid": (0.0, True),
+}
 
-# Stackable corral/shadow-tray geometry. A thin bottom deck supports loose
-# parts. Each tool rests on a thin shelf at its requested recess depth, inside
-# a full-height separator that keeps loose parts out of the tool well.
-CORRAL_FLOOR = 1.2
-CORRAL_WALL = 2.0
-CORRAL_BASE_FLARE = 0.8
-CORRAL_BASE_REINFORCEMENT_H = 1.0
-CORRAL_EDGE_MARGIN = 1.0
+
+def style_to_fill_params(style: str) -> tuple[float, bool]:
+    """`(fill_height_pct, live_grid)` for a legacy `style` string."""
+    try:
+        return LEGACY_STYLE_TO_FILL[style]
+    except KeyError:
+        raise ValueError(f"unknown bin style: {style}") from None
+
+
+# General-fill/shadow-tray geometry. A thin bottom deck supports loose parts.
+# Each tool rests on a thin shelf at its requested recess depth, inside a
+# full-height wall that keeps loose parts out of the tool well. The general
+# floor area (everything outside every tool's own wall footprint) fills
+# upward from the deck by fill_height_pct of the remaining height.
+FLOOR_THICKNESS = 1.2
+TOOL_WALL = 2.0
+TOOL_WALL_FLARE = 0.8
+TOOL_WALL_REINFORCEMENT_H = 1.0
+EDGE_MARGIN = 1.0
 
 # Exact inverse socket profile from gridfinity-rebuilt's baseplate cutter.
 BASEPLATE_H = 5.0
@@ -350,20 +368,6 @@ def auto_height_u(pocket_depth: float, min_floor_mm: float = MIN_FLOOR) -> int:
     return max(1, math.ceil((BASE_H + min_floor_mm + pocket_depth) / UNIT_H))
 
 
-def style_finished_height_mm(
-    height_u: int, lip: bool, style: BinStyle, lip_height_mm: float = LIP_H,
-) -> float:
-    """Physical top height for any tool-retention style."""
-    return finished_height_mm(height_u, lip, lip_height_mm)
-
-
-def height_u_for_style_overall(
-    overall_mm: float, lip: bool, style: BinStyle, lip_height_mm: float = LIP_H,
-) -> int:
-    """Inverse of style_finished_height_mm, snapped to whole units."""
-    return height_u_for_overall(overall_mm, lip, lip_height_mm)
-
-
 def finished_height_mm(height_u: int, lip: bool, lip_height_mm: float = LIP_H) -> float:
     """Physical top-of-bin height: the unit stack plus the stacking lip.
 
@@ -439,8 +443,8 @@ def grid_candidate_cells(
 
 def _grid_retention_envelope(
     pockets: list[tuple],
-    corral_wall_mm: float = CORRAL_WALL,
-    corral_base_flare_mm: float = CORRAL_BASE_FLARE,
+    tool_wall_mm: float = TOOL_WALL,
+    tool_wall_flare_mm: float = TOOL_WALL_FLARE,
 ):
     envelopes = []
     for entry in pockets:
@@ -454,7 +458,7 @@ def _grid_retention_envelope(
             shape = unary_union([shape, *lobes])
         envelopes.append(
             shape.buffer(
-                corral_wall_mm + corral_base_flare_mm + GRID_SOCKET_GAP,
+                tool_wall_mm + tool_wall_flare_mm + GRID_SOCKET_GAP,
                 quad_segs=16,
             )
         )
@@ -464,10 +468,10 @@ def _grid_retention_envelope(
 def grid_reserved_cells(
     gx: int, gy: int, pockets: list[tuple], *, lip: bool = False,
     min_wall_mm: float = MIN_WALL, min_wall_lip_mm: float = MIN_WALL_LIP,
-    corral_wall_mm: float = CORRAL_WALL, corral_base_flare_mm: float = CORRAL_BASE_FLARE,
+    tool_wall_mm: float = TOOL_WALL, tool_wall_flare_mm: float = TOOL_WALL_FLARE,
 ) -> list[tuple[float, float]]:
     """Fully fitting socket positions blocked by the complete tool envelope."""
-    envelope = _grid_retention_envelope(pockets, corral_wall_mm, corral_base_flare_mm)
+    envelope = _grid_retention_envelope(pockets, tool_wall_mm, tool_wall_flare_mm)
     socket_shape = _rounded_rect_polygon(PITCH, PITCH, BASEPLATE_OUTER_R)
     return [
         (cx, cy)
@@ -479,10 +483,10 @@ def grid_reserved_cells(
 def grid_available_cells(
     gx: int, gy: int, pockets: list[tuple], *, lip: bool = False,
     min_wall_mm: float = MIN_WALL, min_wall_lip_mm: float = MIN_WALL_LIP,
-    corral_wall_mm: float = CORRAL_WALL, corral_base_flare_mm: float = CORRAL_BASE_FLARE,
+    tool_wall_mm: float = TOOL_WALL, tool_wall_flare_mm: float = TOOL_WALL_FLARE,
 ) -> list[tuple[float, float]]:
-    """Complete, unobstructed socket centres in the corral floor."""
-    envelope = _grid_retention_envelope(pockets, corral_wall_mm, corral_base_flare_mm)
+    """Complete, unobstructed socket centres in the general floor area."""
+    envelope = _grid_retention_envelope(pockets, tool_wall_mm, tool_wall_flare_mm)
     socket_shape = _rounded_rect_polygon(PITCH, PITCH, BASEPLATE_OUTER_R)
     return [
         (cx, cy)
@@ -500,7 +504,8 @@ def bin_solid(
     finger_holes: list[tuple[float, float, float]] = (),
     lip: bool = False,
     pockets: list[tuple[Poly, float]] | None = None,
-    style: BinStyle = "pocket",
+    fill_height_pct: float = 100.0,
+    live_grid: bool = False,
     magnet_holes: bool = False,
     magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
@@ -511,32 +516,49 @@ def bin_solid(
     lip_chamfer_bottom_mm: float = LIP_CH_BOT,
     min_wall_mm: float = MIN_WALL,
     min_floor_mm: float = MIN_FLOOR,
-    corral_floor_mm: float = CORRAL_FLOOR,
-    corral_wall_mm: float = CORRAL_WALL,
-    corral_base_flare_mm: float = CORRAL_BASE_FLARE,
-    corral_base_reinforcement_h_mm: float = CORRAL_BASE_REINFORCEMENT_H,
+    floor_thickness_mm: float = FLOOR_THICKNESS,
+    tool_wall_mm: float = TOOL_WALL,
+    tool_wall_flare_mm: float = TOOL_WALL_FLARE,
+    tool_wall_reinforcement_h_mm: float = TOOL_WALL_REINFORCEMENT_H,
     magnet_hole_inset_from_edge_mm: float = MAGNET_HOLE_INSET_FROM_EDGE_MM,
 ) -> Manifold:
-    """A Gridfinity pocket, corral, or live-grid tool holder.
+    """A Gridfinity tool holder, parameterized instead of style-branched — see
+    docs/bin-profiles-v2-proposal.md.
 
-    Grid keeps the complete corral and adds only fully fitting sockets to its
-    unused floor. Recess depth is measured below the stacking plane.
+    `fill_height_pct` (0-100) is how far up the general floor area (outside
+    every tool's own wall footprint, inside the outer wall, above the deck)
+    solid material rises, sized against the bin's own height. `100` (the
+    default — today's "pocket") takes an exact fast path: a single solid
+    extrusion with pockets cut directly into it, identical to the pre-
+    parameterization code. Anything else routes through the general
+    (deck + outer wall + per-tool wall/shelf) construction — `0` reproduces
+    today's "corral" exactly. Intermediate values aren't implemented yet
+    (Phase 3): they currently alias to `0` in the general path.
+
+    `live_grid` adds baseplate sockets to floor cells no tool's wall+
+    clearance envelope reaches, independent of `fill_height_pct` — today's
+    "grid" is `fill_height_pct=0, live_grid=True`.
 
     `included_cells`, when given, restricts the bin's footprint to a subset
     of the gx×gy grid — a "custom bin shape" (see
     `_rounded_polyomino_outline`/`validate_connected_shape`). Only supported
-    for `style == "pocket"`.
+    on the fast path (`fill_height_pct == 100 and not live_grid`) for now —
+    the general construction's deck/perimeter still build from a fixed outer
+    rect rather than the polyomino outline.
     """
-    if style not in ("pocket", "corral", "grid"):
-        raise ValueError(f"unknown bin style: {style}")
-    if included_cells is not None and len(included_cells) < gx * gy and style != "pocket":
-        raise ValueError("custom bin shape is only supported for pocket-style bins")
+    if not (0.0 <= fill_height_pct <= 100.0):
+        raise ValueError(f"fill_height_pct must be between 0 and 100, got {fill_height_pct}")
+    fast_path = fill_height_pct == 100.0 and not live_grid
+    if included_cells is not None and len(included_cells) < gx * gy and not fast_path:
+        raise ValueError(
+            "custom bin shape is only supported at fill_height_pct=100 with live_grid off"
+        )
     cuts = list(pockets) if pockets else (
-        [(pocket, pocket_depth, finger_holes if style != "pocket" else ())]
+        [(pocket, pocket_depth, finger_holes if not fast_path else ())]
         if pocket is not None and pocket_depth > 0 else []
     )
-    if style in ("corral", "grid") and not cuts:
-        raise ValueError(f"{style} style needs at least one tool footprint")
+    if not fast_path and not cuts:
+        raise ValueError("a non-fast-path bin needs at least one tool footprint")
 
     min_wall_lip_mm = lip_chamfer_top_mm + lip_chamfer_bottom_mm + 0.8
 
@@ -544,14 +566,14 @@ def bin_solid(
     outer_w = PITCH * gx - (PITCH - BIN_SIZE)
     outer_d = PITCH * gy - (PITCH - BIN_SIZE)
     outline = _rounded_polyomino_outline(gx, gy, included_cells)
-    if style == "pocket":
+    if fast_path:
         body = Manifold.extrude(
             outline, total_h - BASE_H
         ).translate((0, 0, BASE_H))
     else:
-        deck_top = BASE_H + corral_floor_mm
+        deck_top = BASE_H + floor_thickness_mm
         deck = Manifold.extrude(
-            _rounded_rect(outer_w, outer_d, CORNER_R), corral_floor_mm
+            _rounded_rect(outer_w, outer_d, CORNER_R), floor_thickness_mm
         ).translate((0, 0, BASE_H))
         outer = _rounded_rect(outer_w, outer_d, CORNER_R)
         inset = min_wall_lip_mm if lip else min_wall_mm
@@ -562,16 +584,16 @@ def bin_solid(
             outer - inner, total_h - deck_top + EPS
         ).translate((0, 0, deck_top - EPS))
         body = deck + perimeter
-        if style == "grid":
+        if live_grid:
             if total_h < deck_top + BASEPLATE_H - EPS:
                 raise ValueError(
-                    "grid style needs at least 2u so socket walls remain below "
+                    "live_grid needs at least 2u so socket walls remain below "
                     "the stacking plane"
                 )
             socket = _baseplate_socket().translate((0, 0, deck_top - EPS))
             for cx, cy in grid_available_cells(
                 gx, gy, cuts, lip=lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm,
-                corral_wall_mm=corral_wall_mm, corral_base_flare_mm=corral_base_flare_mm,
+                tool_wall_mm=tool_wall_mm, tool_wall_flare_mm=tool_wall_flare_mm,
             ):
                 body = body + socket.translate((cx, cy, 0))
     if lip:
@@ -617,14 +639,14 @@ def bin_solid(
     for entry in cuts:
         pk, depth = entry[0], entry[1]
         pk_fingers = entry[2] if len(entry) > 2 else ()
-        if style in ("corral", "grid"):
+        if not fast_path:
             if depth <= 0:
-                raise ValueError(f"{style} recess depth must be > 0")
+                raise ValueError("recess depth must be > 0")
             floor_z = total_h - depth
-            deck_top = BASE_H + corral_floor_mm
+            deck_top = BASE_H + floor_thickness_mm
             if floor_z < deck_top - EPS:
                 raise PocketTooDeepError(
-                    f"{style} recess depth {depth}mm needs "
+                    f"recess depth {depth}mm needs "
                     f"≥{deck_top + depth:.1f}mm of finished height; "
                     f"increase height_u (now {height_u})"
                 )
@@ -634,10 +656,10 @@ def bin_solid(
                     dia / 2, CIRCULAR_SEGMENTS
                 ).translate((fx, fy))
             outer = inner.offset(
-                corral_wall_mm, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
+                tool_wall_mm, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
             )
             reinforced = inner.offset(
-                corral_wall_mm + corral_base_flare_mm,
+                tool_wall_mm + tool_wall_flare_mm,
                 JoinType.Round,
                 circular_segments=CIRCULAR_SEGMENTS,
             )
@@ -645,9 +667,9 @@ def bin_solid(
                 outer - inner, total_h - deck_top + EPS
             ).translate((0, 0, deck_top - EPS))
             base = Manifold.extrude(
-                reinforced - inner, corral_base_reinforcement_h_mm + EPS
+                reinforced - inner, tool_wall_reinforcement_h_mm + EPS
             ).translate((0, 0, deck_top - EPS))
-            shelf_bottom = max(BASE_H, floor_z - corral_floor_mm)
+            shelf_bottom = max(BASE_H, floor_z - floor_thickness_mm)
             shelf = Manifold.extrude(
                 outer, floor_z - shelf_bottom + EPS
             ).translate((0, 0, shelf_bottom))
@@ -669,7 +691,7 @@ def bin_solid(
             ).translate((fx, fy, floor_z))
             solid = solid - cyl
 
-    if style == "pocket" and pocket is not None and pocket_depth > 0:
+    if fast_path and pocket is not None and pocket_depth > 0:
         floor_z = total_h - pocket_depth
         for fx, fy, dia in finger_holes:
             cyl = Manifold.cylinder(

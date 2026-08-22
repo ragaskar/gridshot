@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from fastapi import File, Form, HTTPException, UploadFile
 
@@ -42,7 +42,8 @@ async def trace(
     file2: Optional[UploadFile] = File(None),
     thickness: Optional[float] = Form(None),
     clearance: float = Form(1.0),
-    bin_style: Literal["pocket", "corral", "grid"] = Form("pocket"),
+    fill_height_pct: float = Form(100.0),
+    live_grid: bool = Form(False),
     depth: Optional[float] = Form(None),
     full_height: Optional[float] = Form(None),
     overall_height: Optional[float] = Form(None),
@@ -77,7 +78,8 @@ async def trace(
             thickness_mm=thickness,
             photo2=photo2_path,
             clearance_mm=clearance,
-            bin_style=bin_style,
+            fill_height_pct=fill_height_pct,
+            live_grid=live_grid,
             pocket_depth_mm=depth,
             full_height_mm=full_height,
             overall_height_mm=overall_height,

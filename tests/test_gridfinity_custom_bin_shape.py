@@ -51,13 +51,13 @@ class TestBinSolidCustomShape:
         default = grid_mod.bin_solid(2, 2, height_u=3, lip=True, included_cells=None)
         assert masked.volume() == pytest.approx(default.volume(), rel=1e-9)
 
-    def test_custom_shape_rejected_for_non_pocket_styles(self):
+    def test_custom_shape_rejected_off_the_fast_path(self):
         pocket = grid_mod.Poly(
             exterior=[(-10.0, -5.0), (10.0, -5.0), (10.0, 5.0), (-10.0, 5.0)]
         )
-        with pytest.raises(ValueError, match="pocket-style"):
+        with pytest.raises(ValueError, match="fill_height_pct=100"):
             grid_mod.bin_solid(
-                2, 2, height_u=3, style="corral",
+                2, 2, height_u=3, fill_height_pct=0,
                 pockets=[(pocket, 4.0, [])],
                 included_cells=frozenset({(0, 1), (1, 0), (1, 1)}),
             )

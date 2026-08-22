@@ -1,8 +1,9 @@
 """Custom bin shape: `removed_cells` on `CombineRequest` cuts individual
 gridfinity units out of a [forced-size](test_combine_force_size.py)
-pocket-style bin, rounding both the outer and notch corners. Requires
-force_gx/force_gy, pocket style, a single connected remaining shape, and no
-tool geometry crossing into a removed cell."""
+fast-path (fill_height_pct=100, live_grid off) bin, rounding both the outer
+and notch corners. Requires force_gx/force_gy, the fast path, a single
+connected remaining shape, and no tool geometry crossing into a removed
+cell."""
 
 from __future__ import annotations
 
@@ -92,12 +93,10 @@ class TestCustomBinShape:
 
         assert response.status_code == 422
 
-    def test_removed_cells_with_non_pocket_style_is_rejected(self, client, library_dir):
+    def test_removed_cells_off_the_fast_path_is_rejected(self, client, library_dir):
         _seed_two_tools()
 
-        response = _preview(
-            client, force_gx=2, force_gy=2, removed_cells=[[0, 0]], bin_style="corral",
-        )
+        response = _preview(client, **FAR_CELL_REMOVED, fill_height_pct=0)
 
         assert response.status_code == 422
 

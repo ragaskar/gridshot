@@ -71,19 +71,19 @@ class TestCrud:
         assert body["lip"] is False
         assert body["min_wall_mm"] == 3.0
 
-    def test_create_and_update_accept_corral_edge_margin_mm(self, client, profiles_dir):
+    def test_create_and_update_accept_edge_margin_mm(self, client, profiles_dir):
         created = client.post(
-            "/api/bin-profiles", json={"name": "Framed", "corral_edge_margin_mm": 1.5},
+            "/api/bin-profiles", json={"name": "Framed", "edge_margin_mm": 1.5},
         )
 
         assert created.status_code == 200
-        assert created.json()["corral_edge_margin_mm"] == 1.5
+        assert created.json()["edge_margin_mm"] == 1.5
 
         profile_id = created.json()["id"]
-        updated = client.patch(f"/api/bin-profiles/{profile_id}", json={"corral_edge_margin_mm": 2.5})
+        updated = client.patch(f"/api/bin-profiles/{profile_id}", json={"edge_margin_mm": 2.5})
 
         assert updated.status_code == 200
-        assert updated.json()["corral_edge_margin_mm"] == 2.5
+        assert updated.json()["edge_margin_mm"] == 2.5
 
     def test_update_rejects_renaming_to_an_existing_name(self, client, profiles_dir):
         client.post("/api/bin-profiles", json={"name": "Taken"})
@@ -167,14 +167,16 @@ class TestPreviewGlb:
         assert len(response.content) > 0
         assert response.content[:4] == b"glTF"
 
-    def test_corral_style_preview_returns_a_valid_glb(self, client, profiles_dir):
-        response = client.post("/api/bin-profiles/preview.glb", json={"base_style": "corral"})
+    def test_zero_fill_height_preview_returns_a_valid_glb(self, client, profiles_dir):
+        response = client.post("/api/bin-profiles/preview.glb", json={"fill_height_pct": 0})
 
         assert response.status_code == 200
         assert response.content[:4] == b"glTF"
 
-    def test_grid_style_preview_returns_a_valid_glb(self, client, profiles_dir):
-        response = client.post("/api/bin-profiles/preview.glb", json={"base_style": "grid"})
+    def test_live_grid_preview_returns_a_valid_glb(self, client, profiles_dir):
+        response = client.post(
+            "/api/bin-profiles/preview.glb", json={"fill_height_pct": 0, "live_grid": True},
+        )
 
         assert response.status_code == 200
         assert response.content[:4] == b"glTF"

@@ -822,7 +822,8 @@ def _result_payload(
         thickness_source=result.thickness_source,
     )
     result_lip = getattr(result, "lip", lip)
-    result_style = getattr(result, "bin_style", "pocket")
+    result_fill_height_pct = getattr(result, "fill_height_pct", 100.0)
+    result_live_grid = getattr(result, "live_grid", False)
     result_overall_height = getattr(
         result,
         "overall_height_mm",
@@ -834,7 +835,8 @@ def _result_payload(
             "grid": list(result.grid),
             "height_u": result.height_u,
             "overall_height_mm": round(result_overall_height, 1),
-            "bin_style": result_style,
+            "fill_height_pct": result_fill_height_pct,
+            "live_grid": result_live_grid,
             "pocket_depth_mm": round(result.pocket_depth_mm, 2),
             "pocket_depth_override_mm": pocket_depth_override_mm,
             "overall_height_override_mm": overall_height_override_mm,
@@ -1153,7 +1155,8 @@ def session_generate(
     sid: str,
     thickness: Optional[float] = Form(None),
     clearance: float = Form(1.0),
-    bin_style: Literal["pocket", "corral", "grid"] = Form("pocket"),
+    fill_height_pct: float = Form(100.0),
+    live_grid: bool = Form(False),
     depth: Optional[float] = Form(None),
     full_height: Optional[float] = Form(None),
     overall_height: Optional[float] = Form(None),
@@ -1172,8 +1175,6 @@ def session_generate(
         raise HTTPException(status_code=422, detail="add a second photo or a thickness")
     proj = PROJECTS / sid
     physical_override = _session_physical_override(sess)
-    if bin_style not in ("pocket", "corral", "grid"):
-        bin_style = "pocket"
     try:
         accepted_outline, outline_warnings, _cleanup, resolved, _source = (
             _accepted_editor_outline(sess, outline_variant)
@@ -1184,7 +1185,8 @@ def session_generate(
             thickness_mm=thickness,
             photo2=sess["photo2"],
             clearance_mm=clearance,
-            bin_style=bin_style,
+            fill_height_pct=fill_height_pct,
+            live_grid=live_grid,
             pocket_depth_mm=depth,
             full_height_mm=full_height,
             overall_height_mm=overall_height,
@@ -1234,7 +1236,8 @@ def session_add_to_library(
     sid: str,
     thickness: Optional[float] = Form(None),
     clearance: float = Form(1.0),
-    bin_style: Literal["pocket", "corral", "grid"] = Form("pocket"),
+    fill_height_pct: float = Form(100.0),
+    live_grid: bool = Form(False),
     depth: Optional[float] = Form(None),
     full_height: Optional[float] = Form(None),
     finger_hole: bool = Form(True),
@@ -1253,10 +1256,6 @@ def session_add_to_library(
         raise HTTPException(status_code=422, detail="add a second photo or a thickness")
 
     profile = mat_mod.load_profile(sess["mat_id"])
-    # FastAPI unwraps Form defaults for HTTP requests; direct Python callers see
-    # the FieldInfo object when they omit a newly-added optional argument.
-    if bin_style not in ("pocket", "corral", "grid"):
-        bin_style = "pocket"
     try:
         accepted_outline, outline_warnings, _cleanup, resolved, _source = (
             _accepted_editor_outline(sess, outline_variant)
@@ -1303,7 +1302,8 @@ def session_add_to_library(
             ),
             derive_mod.BinSettings(
                 clearance_mm=clearance,
-                bin_style=bin_style,
+                fill_height_pct=fill_height_pct,
+                live_grid=live_grid,
                 pocket_depth_mm=depth,
                 lip=lip,
                 finger_hole=finger_hole,
@@ -1336,7 +1336,8 @@ def session_add_to_library(
         outline=corrected,
         raw_outline=raw,
         clearance=clearance,
-        bin_style=bin_style,
+        fill_height_pct=fill_height_pct,
+        live_grid=live_grid,
         depth=depth,
         full_height=full_height,
         lip=lip,
@@ -1600,7 +1601,7 @@ def _render_thumb(points, path, size: int = 160, pad: int = 12) -> None:
 
 
 def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
-               outline=None, clearance=1.0, bin_style="pocket", depth=None,
+               outline=None, clearance=1.0, fill_height_pct=100.0, live_grid=False, depth=None,
                lip=True, calibration=None, photo_src=None,
                round_tool=False, finger_hole=True, full_height=None,
                raw_outline=None, readiness=None, provenance=None,
@@ -1619,7 +1620,7 @@ def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
         silhouette_height_mm=float(thickness or 0.0) or None,
         full_height_mm=full_height,
         raw_outline=raw_poly, outline=outline_poly,
-        clearance_mm=float(clearance or 1.0), bin_style=bin_style,
+        clearance_mm=float(clearance or 1.0), fill_height_pct=fill_height_pct, live_grid=live_grid,
         pocket_depth_mm=depth,
         round_tool=bool(round_tool), finger_hole=bool(finger_hole), lip=bool(lip),
         magnet_holes=bool(magnet_holes),
@@ -1676,10 +1677,14 @@ def library_add(project: str) -> dict:
                 detail=f"result is not ready: {readiness_mod.blocking_message(stored_readiness)}",
             )
         tid = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+        if "fill_height_pct" in b:
+            fill_height_pct, live_grid = b["fill_height_pct"], b.get("live_grid", False)
+        else:  # legacy result.json predating fill_height_pct/live_grid
+            fill_height_pct, live_grid = grid_mod.style_to_fill_params(b.get("bin_style", "pocket"))
         added.append(_add_entry(
             tid, b["grid"], b.get("thickness_mm"), project, "", r["tool_poly"]["exterior"],
             outline=r.get("corrected_poly"), clearance=b.get("clearance_mm", 1.0),
-            bin_style=b.get("bin_style", "pocket"),
+            fill_height_pct=fill_height_pct, live_grid=live_grid,
             depth=b.get("pocket_depth_override_mm"),
             full_height=b.get("full_height_mm"),
             lip=b.get("lip", True), raw_outline=r.get("raw_poly"),
@@ -1860,7 +1865,8 @@ def _library_editor_payload(sess: dict, score: float = 1.0) -> dict:
         ),
         derive_mod.BinSettings(
             clearance_mm=sess["clearance"],
-            bin_style=sess["bin_style"],
+            fill_height_pct=sess["fill_height_pct"],
+            live_grid=sess["live_grid"],
             pocket_depth_mm=sess["depth"],
             lip=sess["lip"],
             finger_hole=sess["finger_hole"],
@@ -1914,7 +1920,8 @@ def library_edit_start(tool_id: str) -> dict:
     _LIB_EDIT_SESSIONS[sid] = {
         "tool_id": tool_id, "image_id": image_id, "calibration": t.calibration,
         "thickness": t.thickness_mm, "clearance": t.clearance_mm,
-        "bin_style": t.bin_style, "depth": t.pocket_depth_mm, "lip": t.lip,
+        "fill_height_pct": t.fill_height_pct, "live_grid": t.live_grid,
+        "depth": t.pocket_depth_mm, "lip": t.lip,
         "finger_hole": t.finger_hole, "round_tool": t.round_tool,
         # current outline in photo px → SAM's mask prior, so clicks refine this
         # shape rather than re-segmenting from scratch; updated after each click
@@ -2056,7 +2063,8 @@ class LibraryUpdate(BaseModel):
     silhouette_height_mm: Optional[float] = Field(None, gt=0)
     full_height_mm: Optional[float] = Field(None, gt=0)
     clearance_mm: Optional[float] = Field(None, ge=0)
-    bin_style: Optional[Literal["pocket", "corral", "grid"]] = None
+    fill_height_pct: Optional[float] = Field(None, ge=0, le=100)
+    live_grid: Optional[bool] = None
     pocket_depth_mm: Optional[float] = Field(None, gt=0)  # null clears → auto
     round_tool: Optional[bool] = None  # domed/barrel → deeper auto pocket
     finger_hole: Optional[bool] = None  # scallop to lift a recessed tool out
@@ -2283,7 +2291,8 @@ def library_compose_preview_glb(req: ComposeRequest) -> Response:
             pocket_depth=spec.pocket_depth_mm,
             finger_holes=spec.finger_holes,
             lip=spec.lip,
-            style=spec.bin_style,
+            fill_height_pct=spec.fill_height_pct,
+            live_grid=spec.live_grid,
             magnet_holes=spec.magnet_holes,
             magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
@@ -2365,7 +2374,8 @@ def library_export(req: ComposeRequest) -> Response:
                 continue  # legacy entry without geometry — can't regenerate
             gen = lambda oh, t=t: trace_mod.finalize_bin(  # noqa: E731
                 t.outline, t.calibration, t.thickness_mm, clearance_mm=t.clearance_mm,
-                bin_style=t.bin_style, pocket_depth_mm=t.pocket_depth_mm,
+                fill_height_pct=t.fill_height_pct, live_grid=t.live_grid,
+                pocket_depth_mm=t.pocket_depth_mm,
                 overall_height_mm=oh, lip=t.lip,
                 finger_hole=t.finger_hole, out_dir=Path(tmp), stem=t.id,
                 pre_corrected=True, round_tool=t.round_tool,
@@ -2383,7 +2393,7 @@ def library_export(req: ComposeRequest) -> Response:
             except ValueError:  # requested height too short for this tool's pocket
                 res = gen(None)  # fall back to this bin's own (taller) auto height
                 manifest["warnings"].append(
-                    f"{t.label or t.id}: {t.bin_style} geometry does not fit a "
+                    f"{t.label or t.id}: this bin's geometry does not fit a "
                     f"{req.overall_height:.0f}mm drawer height — this bin is taller"
                 )
             fname = f"bins/{(t.label or t.id)}.3mf"
@@ -2397,7 +2407,7 @@ def library_export(req: ComposeRequest) -> Response:
                 "label": t.label, "col": p.col, "row": p.row,
                 "grid_x": p.grid_x, "grid_y": p.grid_y, "rotated": p.rotated,
                 "thickness_mm": t.thickness_mm, "height_u": res.height_u,
-                "bin_style": res.bin_style,
+                "fill_height_pct": res.fill_height_pct, "live_grid": res.live_grid,
                 "pocket_depth_mm": round(res.pocket_depth_mm, 2),
                 "overall_height_mm": round(res.overall_height_mm, 1),
                 "derivation_key": res.derivation_key,
@@ -2441,7 +2451,8 @@ class CombineRequest(BaseModel):
     ids: list[str]
     overall_height: Optional[float] = None
     lip: bool = True
-    bin_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = Field(default=100.0, ge=0, le=100)
+    live_grid: bool = False
     placements: Optional[list[Placement]] = None  # manual arrange; else auto-pack
     overrides: Optional[list[CombineToolOverride]] = None
     magnet_holes: bool = False
@@ -2466,11 +2477,11 @@ class CombineRequest(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
     @model_validator(mode="after")
@@ -2479,8 +2490,11 @@ class CombineRequest(BaseModel):
             raise ValueError("force_gx and force_gy must be set together")
         if self.removed_cells and self.force_gx is None:
             raise ValueError("removed_cells needs force_gx/force_gy to be set")
-        if self.removed_cells and self.bin_style != "pocket":
-            raise ValueError("custom bin shape is only supported for pocket-style bins")
+        fast_path = self.fill_height_pct == 100 and not self.live_grid
+        if self.removed_cells and not fast_path:
+            raise ValueError(
+                "custom bin shape is only supported at fill_height_pct=100 with live_grid off"
+            )
         return self
 
 
@@ -2512,18 +2526,18 @@ def _combine_layout(req: "CombineRequest") -> dict:
     )
     min_wall_mm = req.min_wall_mm if req.min_wall_mm is not None else grid_mod.MIN_WALL
     min_floor_mm = req.min_floor_mm if req.min_floor_mm is not None else grid_mod.MIN_FLOOR
-    corral_floor_mm = req.corral_floor_mm if req.corral_floor_mm is not None else grid_mod.CORRAL_FLOOR
-    corral_wall_mm = req.corral_wall_mm if req.corral_wall_mm is not None else grid_mod.CORRAL_WALL
-    corral_base_flare_mm = (
-        req.corral_base_flare_mm if req.corral_base_flare_mm is not None else grid_mod.CORRAL_BASE_FLARE
+    floor_thickness_mm = req.floor_thickness_mm if req.floor_thickness_mm is not None else grid_mod.FLOOR_THICKNESS
+    tool_wall_mm = req.tool_wall_mm if req.tool_wall_mm is not None else grid_mod.TOOL_WALL
+    tool_wall_flare_mm = (
+        req.tool_wall_flare_mm if req.tool_wall_flare_mm is not None else grid_mod.TOOL_WALL_FLARE
     )
-    corral_base_reinforcement_h_mm = (
-        req.corral_base_reinforcement_h_mm
-        if req.corral_base_reinforcement_h_mm is not None
-        else grid_mod.CORRAL_BASE_REINFORCEMENT_H
+    tool_wall_reinforcement_h_mm = (
+        req.tool_wall_reinforcement_h_mm
+        if req.tool_wall_reinforcement_h_mm is not None
+        else grid_mod.TOOL_WALL_REINFORCEMENT_H
     )
-    corral_edge_margin_mm = (
-        req.corral_edge_margin_mm if req.corral_edge_margin_mm is not None else grid_mod.CORRAL_EDGE_MARGIN
+    edge_margin_mm = (
+        req.edge_margin_mm if req.edge_margin_mm is not None else grid_mod.EDGE_MARGIN
     )
     magnet_hole_inset_from_edge_mm = (
         req.magnet_hole_inset_from_edge_mm
@@ -2532,9 +2546,10 @@ def _combine_layout(req: "CombineRequest") -> dict:
     )
     min_wall_lip_mm = lip_chamfer_top_mm + lip_chamfer_bottom_mm + 0.8
 
+    fast_path = req.fill_height_pct == 100 and not req.live_grid
     wall = min_wall_lip_mm if effective_lip else min_wall_mm
-    if req.bin_style in ("corral", "grid"):
-        wall = max(wall, corral_wall_mm + corral_base_flare_mm + corral_edge_margin_mm)
+    if not fast_path:
+        wall = max(wall, tool_wall_mm + tool_wall_flare_mm + edge_margin_mm)
     tools, specs, pack_stamps, pocket_stamps = [], [], [], []
     depths, fingers, inherited_fingers = [], [], []
     clearances, inherited_clearances = [], []
@@ -2575,7 +2590,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
         )
         effective_tool = t.model_copy(update={
             "finger_hole": finger,
-            "bin_style": req.bin_style,
+            "fill_height_pct": req.fill_height_pct,
+            "live_grid": req.live_grid,
             "clearance_mm": clearance,
             "finger_hole_side_flip": finger_hole_side_flip,
             "finger_hole_offset_mm": finger_hole_offset_mm,
@@ -2754,9 +2770,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     height_u = (
         max(
             need_u,
-            grid_mod.height_u_for_style_overall(
-                req.overall_height, effective_lip, req.bin_style, lip_height_mm,
-            ),
+            grid_mod.height_u_for_overall(req.overall_height, effective_lip, lip_height_mm),
         )
         if req.overall_height else need_u
     )
@@ -2766,15 +2780,15 @@ def _combine_layout(req: "CombineRequest") -> dict:
     ]
     grid_cell_kwargs = dict(
         lip=effective_lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm,
-        corral_wall_mm=corral_wall_mm, corral_base_flare_mm=corral_base_flare_mm,
+        tool_wall_mm=tool_wall_mm, tool_wall_flare_mm=tool_wall_flare_mm,
     )
     reserved_cells = (
         grid_mod.grid_reserved_cells(gx, gy, grid_cuts, **grid_cell_kwargs)
-        if req.bin_style == "grid" else []
+        if req.live_grid else []
     )
     available_cells = (
         grid_mod.grid_available_cells(gx, gy, grid_cuts, **grid_cell_kwargs)
-        if req.bin_style == "grid" else []
+        if req.live_grid else []
     )
     return {
         "tools": tools, "specs": specs,
@@ -2798,10 +2812,10 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "lip_chamfer_bottom_mm": lip_chamfer_bottom_mm,
         "min_wall_mm": min_wall_mm,
         "min_floor_mm": min_floor_mm,
-        "corral_floor_mm": corral_floor_mm,
-        "corral_wall_mm": corral_wall_mm,
-        "corral_base_flare_mm": corral_base_flare_mm,
-        "corral_base_reinforcement_h_mm": corral_base_reinforcement_h_mm,
+        "floor_thickness_mm": floor_thickness_mm,
+        "tool_wall_mm": tool_wall_mm,
+        "tool_wall_flare_mm": tool_wall_flare_mm,
+        "tool_wall_reinforcement_h_mm": tool_wall_reinforcement_h_mm,
         "magnet_hole_inset_from_edge_mm": magnet_hole_inset_from_edge_mm,
     }
 
@@ -2836,7 +2850,8 @@ def library_combine_preview(req: CombineRequest) -> dict:
         retention_override = t.pocket_depth_mm is not None
         spec = lay["specs"][i]
         tools_json.append({
-            "id": t.id, "label": t.label, "bin_style": req.bin_style,
+            "id": t.id, "label": t.label,
+            "fill_height_pct": req.fill_height_pct, "live_grid": req.live_grid,
             "depth_mm": round(lay["depths"][i], 2),
             "depth_mm_inherited": round(lay["inherited_depths"][i], 2),
             "depth_mm_override": requested_depth_override,
@@ -2869,13 +2884,11 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "rot": round(lay["tfs"][i]["rot"], 1),
         })
     return {
-        "bin_style": req.bin_style,
+        "fill_height_pct": req.fill_height_pct, "live_grid": req.live_grid,
         "gx": lay["gx"], "gy": lay["gy"],
         "outer_w": round(lay["outer_w"], 2), "outer_d": round(lay["outer_d"], 2),
         "overall_height_mm": round(
-            grid_mod.style_finished_height_mm(
-                lay["height_u"], lay["lip"], req.bin_style, lay["lip_height_mm"],
-            ), 1
+            grid_mod.finished_height_mm(lay["height_u"], lay["lip"], lay["lip_height_mm"]), 1
         ),
         "pitch": grid_mod.PITCH, "bin_size": grid_mod.BIN_SIZE, "wall": lay["wall"],
         "lip": lay["lip"],
@@ -2895,7 +2908,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
     try:
         return grid_mod.bin_solid(
             lay["gx"], lay["gy"], lay["height_u"], pockets=pockets,
-            lip=lay["lip"], style=req.bin_style,
+            lip=lay["lip"], fill_height_pct=req.fill_height_pct, live_grid=req.live_grid,
             magnet_holes=req.magnet_holes,
             magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
@@ -2906,10 +2919,10 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             lip_chamfer_bottom_mm=lay["lip_chamfer_bottom_mm"],
             min_wall_mm=lay["min_wall_mm"],
             min_floor_mm=lay["min_floor_mm"],
-            corral_floor_mm=lay["corral_floor_mm"],
-            corral_wall_mm=lay["corral_wall_mm"],
-            corral_base_flare_mm=lay["corral_base_flare_mm"],
-            corral_base_reinforcement_h_mm=lay["corral_base_reinforcement_h_mm"],
+            floor_thickness_mm=lay["floor_thickness_mm"],
+            tool_wall_mm=lay["tool_wall_mm"],
+            tool_wall_flare_mm=lay["tool_wall_flare_mm"],
+            tool_wall_reinforcement_h_mm=lay["tool_wall_reinforcement_h_mm"],
             magnet_hole_inset_from_edge_mm=lay["magnet_hole_inset_from_edge_mm"],
         )
     except ValueError as e:
@@ -2997,7 +3010,8 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         ids=saved.tool_ids,
         overall_height=saved.overall_height,
         lip=saved.lip,
-        bin_style=saved.bin_style,
+        fill_height_pct=saved.fill_height_pct,
+        live_grid=saved.live_grid,
         placements=[Placement(**p.model_dump()) for p in saved.placements],
         overrides=[CombineToolOverride(**o.model_dump()) for o in saved.overrides],
         magnet_holes=saved.magnet_holes,
@@ -3012,11 +3026,11 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         lip_chamfer_bottom_mm=saved.lip_chamfer_bottom_mm,
         min_wall_mm=saved.min_wall_mm,
         min_floor_mm=saved.min_floor_mm,
-        corral_floor_mm=saved.corral_floor_mm,
-        corral_wall_mm=saved.corral_wall_mm,
-        corral_base_flare_mm=saved.corral_base_flare_mm,
-        corral_base_reinforcement_h_mm=saved.corral_base_reinforcement_h_mm,
-        corral_edge_margin_mm=saved.corral_edge_margin_mm,
+        floor_thickness_mm=saved.floor_thickness_mm,
+        tool_wall_mm=saved.tool_wall_mm,
+        tool_wall_flare_mm=saved.tool_wall_flare_mm,
+        tool_wall_reinforcement_h_mm=saved.tool_wall_reinforcement_h_mm,
+        edge_margin_mm=saved.edge_margin_mm,
         magnet_hole_inset_from_edge_mm=saved.magnet_hole_inset_from_edge_mm,
     )
 
@@ -3038,7 +3052,8 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "overrides": [o.model_dump() for o in saved.overrides],
         "overall_height": saved.overall_height,
         "lip": saved.lip,
-        "bin_style": saved.bin_style,
+        "fill_height_pct": saved.fill_height_pct,
+        "live_grid": saved.live_grid,
         "magnet_holes": saved.magnet_holes,
         "magnet_hole_diameter_mm": saved.magnet_hole_diameter_mm,
         "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
@@ -3051,11 +3066,11 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "lip_chamfer_bottom_mm": saved.lip_chamfer_bottom_mm,
         "min_wall_mm": saved.min_wall_mm,
         "min_floor_mm": saved.min_floor_mm,
-        "corral_floor_mm": saved.corral_floor_mm,
-        "corral_wall_mm": saved.corral_wall_mm,
-        "corral_base_flare_mm": saved.corral_base_flare_mm,
-        "corral_base_reinforcement_h_mm": saved.corral_base_reinforcement_h_mm,
-        "corral_edge_margin_mm": saved.corral_edge_margin_mm,
+        "floor_thickness_mm": saved.floor_thickness_mm,
+        "tool_wall_mm": saved.tool_wall_mm,
+        "tool_wall_flare_mm": saved.tool_wall_flare_mm,
+        "tool_wall_reinforcement_h_mm": saved.tool_wall_reinforcement_h_mm,
+        "edge_margin_mm": saved.edge_margin_mm,
         "magnet_hole_inset_from_edge_mm": saved.magnet_hole_inset_from_edge_mm,
         "applied_profile_id": saved.applied_profile_id,
     }
@@ -3117,7 +3132,8 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
         ],
         overall_height=req.overall_height,
         lip=req.lip,
-        bin_style=req.bin_style,
+        fill_height_pct=req.fill_height_pct,
+        live_grid=req.live_grid,
         magnet_holes=req.magnet_holes,
         magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=req.magnet_hole_depth_mm,
@@ -3130,11 +3146,11 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
         lip_chamfer_bottom_mm=req.lip_chamfer_bottom_mm,
         min_wall_mm=req.min_wall_mm,
         min_floor_mm=req.min_floor_mm,
-        corral_floor_mm=req.corral_floor_mm,
-        corral_wall_mm=req.corral_wall_mm,
-        corral_base_flare_mm=req.corral_base_flare_mm,
-        corral_base_reinforcement_h_mm=req.corral_base_reinforcement_h_mm,
-        corral_edge_margin_mm=req.corral_edge_margin_mm,
+        floor_thickness_mm=req.floor_thickness_mm,
+        tool_wall_mm=req.tool_wall_mm,
+        tool_wall_flare_mm=req.tool_wall_flare_mm,
+        tool_wall_reinforcement_h_mm=req.tool_wall_reinforcement_h_mm,
+        edge_margin_mm=req.edge_margin_mm,
         magnet_hole_inset_from_edge_mm=req.magnet_hole_inset_from_edge_mm,
         applied_profile_id=req.applied_profile_id,
     )
@@ -3225,14 +3241,15 @@ def bins_export_slice(bin_id: str, req: BinSliceRequest) -> Response:
 
 _BIN_PROFILE_STRUCTURAL_FIELDS = (
     "lip_height_mm", "lip_chamfer_top_mm", "lip_straight_mm", "lip_chamfer_bottom_mm",
-    "min_wall_mm", "min_floor_mm", "corral_floor_mm", "corral_wall_mm",
-    "corral_base_flare_mm", "corral_base_reinforcement_h_mm", "magnet_hole_inset_from_edge_mm",
+    "min_wall_mm", "min_floor_mm", "floor_thickness_mm", "tool_wall_mm",
+    "tool_wall_flare_mm", "tool_wall_reinforcement_h_mm", "magnet_hole_inset_from_edge_mm",
 )
 
 
 class BinProfileCreate(BaseModel):
     name: str
-    base_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = Field(default=100.0, ge=0, le=100)
+    live_grid: bool = False
     lip: bool = True
     allow_custom_shape: bool = True
     magnet_holes_default: bool = False
@@ -3244,17 +3261,18 @@ class BinProfileCreate(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
 class BinProfileUpdate(BaseModel):
     name: Optional[str] = None
-    base_style: Optional[Literal["pocket", "corral", "grid"]] = None
+    fill_height_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    live_grid: Optional[bool] = None
     lip: Optional[bool] = None
     allow_custom_shape: Optional[bool] = None
     magnet_holes_default: Optional[bool] = None
@@ -3266,11 +3284,11 @@ class BinProfileUpdate(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
@@ -3278,7 +3296,8 @@ class BinProfilePreviewRequest(BaseModel):
     """Live in-progress profile-editor state, for the synthetic preview GLB —
     no id/name, since it previews a not-yet-saved profile too."""
 
-    base_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = Field(default=100.0, ge=0, le=100)
+    live_grid: bool = False
     lip: bool = True
     magnet_holes_default: bool = False
     magnet_hole_diameter_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
@@ -3289,11 +3308,11 @@ class BinProfilePreviewRequest(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
@@ -3381,7 +3400,7 @@ def bin_profiles_preview_glb(req: BinProfilePreviewRequest) -> Response:
 
     kwargs: dict = dict(
         gx=4, gy=4, height_u=height_u, pocket=square, pocket_depth=pocket_depth,
-        style=req.base_style, lip=req.lip,
+        fill_height_pct=req.fill_height_pct, live_grid=req.live_grid, lip=req.lip,
         magnet_holes=req.magnet_holes_default,
         magnet_hole_diameter_mm=req.magnet_hole_diameter_mm_default,
         magnet_hole_depth_mm=req.magnet_hole_depth_mm_default,

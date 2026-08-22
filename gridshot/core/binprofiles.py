@@ -27,8 +27,9 @@ import uuid
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
+from . import gridfinity as grid_mod
 from .models import config_dir
 
 BIN_PROFILE_SCHEMA_VERSION = "binprofiles.v1"
@@ -42,15 +43,28 @@ SEED_GRID_ID = "seed-grid"
 
 class BinProfile(BaseModel):
     schema_version: Literal["binprofiles.v1"] = BIN_PROFILE_SCHEMA_VERSION
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_base_style(cls, data):
+        """`base_style: pocket|corral|grid` -> `fill_height_pct`/`live_grid` —
+        see docs/bin-profiles-v2-proposal.md. Self-heals on next load."""
+        if isinstance(data, dict) and "base_style" in data and "fill_height_pct" not in data:
+            pct, live = grid_mod.LEGACY_STYLE_TO_FILL.get(data["base_style"], (100.0, False))
+            data = {**data, "fill_height_pct": pct, "live_grid": live}
+        return data
+
     id: str
     name: str
     created_ts: int = 0
-    base_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = 100.0
+    live_grid: bool = False
     lip: bool = True
-    # Independent of base_style — see gridfinity.py's bin_solid and
-    # CombineRequest's validator, both still keyed to the request's actual
-    # bin_style for the real geometric constraint. This flag only controls
-    # whether the combine editor offers the "Custom bin shape" control.
+    # Independent of fill_height_pct/live_grid — see gridfinity.py's
+    # bin_solid and CombineRequest's validator, both still keyed to the
+    # request's actual fill state for the real geometric constraint. This
+    # flag only controls whether the combine editor offers the "Custom bin
+    # shape" control.
     allow_custom_shape: bool = True
     magnet_holes_default: bool = False
     magnet_hole_diameter_mm_default: float = 6.5
@@ -64,11 +78,11 @@ class BinProfile(BaseModel):
     lip_chamfer_bottom_mm: Optional[float] = None
     min_wall_mm: Optional[float] = None
     min_floor_mm: Optional[float] = None
-    corral_floor_mm: Optional[float] = None
-    corral_wall_mm: Optional[float] = None
-    corral_base_flare_mm: Optional[float] = None
-    corral_base_reinforcement_h_mm: Optional[float] = None
-    corral_edge_margin_mm: Optional[float] = None
+    floor_thickness_mm: Optional[float] = None
+    tool_wall_mm: Optional[float] = None
+    tool_wall_flare_mm: Optional[float] = None
+    tool_wall_reinforcement_h_mm: Optional[float] = None
+    edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
@@ -154,9 +168,18 @@ def _default_seeds() -> tuple[BinProfile, ...]:
     they inherit gridfinity.py's module constants) — this is what guarantees
     they reproduce today's exact shipped geometry, unedited."""
     return (
-        BinProfile(id=SEED_POCKET_ID, name="Pocket", base_style="pocket", lip=True, allow_custom_shape=True),
-        BinProfile(id=SEED_CORRAL_ID, name="Corral", base_style="corral", lip=True, allow_custom_shape=False),
-        BinProfile(id=SEED_GRID_ID, name="Live Grid", base_style="grid", lip=True, allow_custom_shape=False),
+        BinProfile(
+            id=SEED_POCKET_ID, name="Pocket", fill_height_pct=100.0, live_grid=False,
+            lip=True, allow_custom_shape=True,
+        ),
+        BinProfile(
+            id=SEED_CORRAL_ID, name="Corral", fill_height_pct=0.0, live_grid=False,
+            lip=True, allow_custom_shape=False,
+        ),
+        BinProfile(
+            id=SEED_GRID_ID, name="Live Grid", fill_height_pct=0.0, live_grid=True,
+            lip=True, allow_custom_shape=False,
+        ),
     )
 
 

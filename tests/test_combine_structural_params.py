@@ -1,9 +1,9 @@
 """Bin Profiles Phase 3: the 12 structural overrides (lip profile, wall
-thickness, floor thickness, corral/grid deck dimensions, magnet hole edge
-inset) now flow all the way from CombineRequest through _combine_layout/
-_combine_solid, and round-trip through Bin Library save/reopen. See
-tests/test_gridfinity_profile_params.py for the geometry-layer guarantees
-this builds on."""
+thickness, floor thickness, general-fill/tool-wall dimensions, magnet hole
+edge inset) now flow all the way from CombineRequest through
+_combine_layout/_combine_solid, and round-trip through Bin Library
+save/reopen. See tests/test_gridfinity_profile_params.py for the
+geometry-layer guarantees this builds on."""
 
 from __future__ import annotations
 
@@ -50,11 +50,11 @@ STRUCTURAL_OVERRIDES = {
     "lip_chamfer_bottom_mm": 1.0,
     "min_wall_mm": 3.0,
     "min_floor_mm": 2.0,
-    "corral_floor_mm": 2.0,
-    "corral_wall_mm": 4.0,
-    "corral_base_flare_mm": 1.5,
-    "corral_base_reinforcement_h_mm": 2.0,
-    "corral_edge_margin_mm": 2.0,
+    "floor_thickness_mm": 2.0,
+    "tool_wall_mm": 4.0,
+    "tool_wall_flare_mm": 1.5,
+    "tool_wall_reinforcement_h_mm": 2.0,
+    "edge_margin_mm": 2.0,
     "magnet_hole_inset_from_edge_mm": 8.0,
 }
 
@@ -69,11 +69,11 @@ class TestPreviewReflectsStructuralOverrides:
             "lip_chamfer_bottom_mm": grid_mod.LIP_CH_BOT,
             "min_wall_mm": grid_mod.MIN_WALL,
             "min_floor_mm": grid_mod.MIN_FLOOR,
-            "corral_floor_mm": grid_mod.CORRAL_FLOOR,
-            "corral_wall_mm": grid_mod.CORRAL_WALL,
-            "corral_base_flare_mm": grid_mod.CORRAL_BASE_FLARE,
-            "corral_base_reinforcement_h_mm": grid_mod.CORRAL_BASE_REINFORCEMENT_H,
-            "corral_edge_margin_mm": grid_mod.CORRAL_EDGE_MARGIN,
+            "floor_thickness_mm": grid_mod.FLOOR_THICKNESS,
+            "tool_wall_mm": grid_mod.TOOL_WALL,
+            "tool_wall_flare_mm": grid_mod.TOOL_WALL_FLARE,
+            "tool_wall_reinforcement_h_mm": grid_mod.TOOL_WALL_REINFORCEMENT_H,
+            "edge_margin_mm": grid_mod.EDGE_MARGIN,
             "magnet_hole_inset_from_edge_mm": grid_mod.MAGNET_HOLE_INSET_FROM_EDGE_MM,
         }
         omitted = _preview(client, lip=True).json()
@@ -89,19 +89,19 @@ class TestPreviewReflectsStructuralOverrides:
 
         assert overridden["overall_height_mm"] > default["overall_height_mm"]
 
-    def test_thicker_corral_wall_increases_the_reported_wall(self, client, library_dir):
+    def test_thicker_tool_wall_increases_the_reported_wall(self, client, library_dir):
         _seed_two_tools()
-        default = _preview(client, bin_style="corral").json()
+        default = _preview(client, fill_height_pct=0).json()
         overridden = _preview(
-            client, bin_style="corral", corral_wall_mm=8.0, corral_base_flare_mm=2.0,
+            client, fill_height_pct=0, tool_wall_mm=8.0, tool_wall_flare_mm=2.0,
         ).json()
 
         assert overridden["wall"] > default["wall"]
 
-    def test_thicker_min_wall_increases_the_reported_wall_for_a_lipless_corral(self, client, library_dir):
+    def test_thicker_min_wall_increases_the_reported_wall_for_a_lipless_shell(self, client, library_dir):
         _seed_two_tools()
-        default = _preview(client, bin_style="corral", lip=False).json()
-        overridden = _preview(client, bin_style="corral", lip=False, min_wall_mm=10.0).json()
+        default = _preview(client, fill_height_pct=0, lip=False).json()
+        overridden = _preview(client, fill_height_pct=0, lip=False, min_wall_mm=10.0).json()
 
         assert overridden["wall"] > default["wall"]
 

@@ -63,6 +63,17 @@ class OutlineEditRevision(BaseModel):
 class LibraryTool(BaseModel):
     schema_version: Literal["library.v2"] = LIBRARY_SCHEMA_VERSION
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_bin_style(cls, data):
+        """`bin_style: pocket|corral|grid` -> `fill_height_pct`/`live_grid` —
+        see docs/bin-profiles-v2-proposal.md. Self-heals on next load; the
+        legacy key is never written back out."""
+        if isinstance(data, dict) and "bin_style" in data and "fill_height_pct" not in data:
+            pct, live = grid_mod.LEGACY_STYLE_TO_FILL.get(data["bin_style"], (100.0, False))
+            data = {**data, "fill_height_pct": pct, "live_grid": live}
+        return data
+
     @model_validator(mode="after")
     def _resolve_height_compatibility(self):
         if self.silhouette_height_mm is None and self.thickness_mm > 0:
@@ -95,7 +106,8 @@ class LibraryTool(BaseModel):
     # Kept as `outline` for backward compatibility with existing library JSON.
     outline: Poly | None = None
     clearance_mm: float = 1.0
-    bin_style: Literal["pocket", "corral", "grid"] = "pocket"
+    fill_height_pct: float = 100.0
+    live_grid: bool = False
     # Shared recess-depth override; effective value always comes from derivation.
     pocket_depth_mm: float | None = None
     round_tool: bool = False  # domed/barrel → auto depth off ~2× widest-outline height
@@ -266,7 +278,8 @@ def derive_tool_spec(
         ),
         derive_mod.BinSettings(
             clearance_mm=tool.clearance_mm,
-            bin_style=tool.bin_style,
+            fill_height_pct=tool.fill_height_pct,
+            live_grid=tool.live_grid,
             pocket_depth_mm=tool.pocket_depth_mm,
             overall_height_mm=overall_height_mm,
             lip=tool.lip if lip is None else lip,
