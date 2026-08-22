@@ -584,17 +584,62 @@ def bin_solid(
             outer - inner, total_h - deck_top + EPS
         ).translate((0, 0, deck_top - EPS))
         body = deck + perimeter
+
+        available_cells: list[tuple[float, float]] = []
         if live_grid:
             if total_h < deck_top + BASEPLATE_H - EPS:
                 raise ValueError(
                     "live_grid needs at least 2u so socket walls remain below "
                     "the stacking plane"
                 )
-            socket = _baseplate_socket().translate((0, 0, deck_top - EPS))
-            for cx, cy in grid_available_cells(
+            available_cells = grid_available_cells(
                 gx, gy, cuts, lip=lip, min_wall_mm=min_wall_mm, min_wall_lip_mm=min_wall_lip_mm,
                 tool_wall_mm=tool_wall_mm, tool_wall_flare_mm=tool_wall_flare_mm,
-            ):
+            )
+
+        # General floor fill: solid material rises from the deck by
+        # fill_height_pct of the remaining height, everywhere outside every
+        # tool's own wall footprint and any cell reserved for a live_grid
+        # socket (a socket needs a genuinely open cavity above it — filling
+        # that cell would seal it, defeating the socket). At 0% this is a
+        # no-op (byte-identical to the pre-fill-height corral/grid geometry);
+        # at 100% it fills the general area clear to the top, same as the
+        # solid-fill fast path does for a tool's own pocket.
+        if fill_height_pct > 0:
+            fill_top_z = deck_top + (fill_height_pct / 100.0) * (total_h - deck_top)
+            # Exclusion boundaries are shrunk by `ov` before subtracting, so
+            # the fill genuinely overlaps into the wall/socket material
+            # instead of exactly touching its boundary — an exact touch
+            # (zero-overlap, coincident boundary) between two independently
+            # unioned solids tessellates into a degenerate near-zero-volume
+            # phantom shell (same failure mode `_lip_ring`'s `ov` avoids).
+            ov = 0.05
+            tool_wall_union = CrossSection()
+            for entry in cuts:
+                pk, _depth = entry[0], entry[1]
+                pk_fingers = entry[2] if len(entry) > 2 else ()
+                tool_inner = _cross_section_from_poly(pk)
+                for fx, fy, dia in pk_fingers:
+                    tool_inner = tool_inner + CrossSection.circle(
+                        dia / 2, CIRCULAR_SEGMENTS
+                    ).translate((fx, fy))
+                tool_wall_union = tool_wall_union + tool_inner.offset(
+                    tool_wall_mm - ov, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
+                )
+            fill_area = outer - tool_wall_union
+            if available_cells:
+                socket_footprint = _rounded_rect(
+                    PITCH - 2 * ov, PITCH - 2 * ov, max(EPS, BASEPLATE_OUTER_R - ov)
+                )
+                for cx, cy in available_cells:
+                    fill_area = fill_area - socket_footprint.translate((cx, cy))
+            body = body + Manifold.extrude(
+                fill_area, fill_top_z - deck_top + EPS
+            ).translate((0, 0, deck_top - EPS))
+
+        if live_grid:
+            socket = _baseplate_socket().translate((0, 0, deck_top - EPS))
+            for cx, cy in available_cells:
                 body = body + socket.translate((cx, cy, 0))
     if lip:
         body = body + _lip_ring(
@@ -699,7 +744,38 @@ def bin_solid(
             ).translate((fx, fy, floor_z))
             solid = solid - cyl
 
-    return solid
+    return _drop_boolean_noise(solid)
+
+
+def _drop_boolean_noise(solid: Manifold) -> Manifold:
+    """Discard degenerate, inverted-normal fragments a chain of boolean ops
+    can leave behind — found via the general (shell) path's separator/base/
+    shelf construction: unioning a ring-with-a-hole against both an adjacent
+    plate below and a hole-filling disk above is a marginal case for
+    manifold3d's boolean kernel, and a tiny near-zero-volume phantom shell
+    can leak through even though the *intended* result is a single clean
+    solid (pre-existing in today's corral/grid geometry, not something this
+    parameterization introduced — just far more reachable now that the
+    general path is reachable at any fill_height_pct, not only 0%).
+
+    A real, intentional piece of geometry always has positive volume
+    (correct outward-facing normals); this only ever drops negative-volume
+    pieces, and only when a single positive-volume piece remains to return —
+    otherwise it raises, so an actual modelling bug surfaces loudly instead
+    of being silently swept away.
+    """
+    pieces = solid.decompose()
+    if len(pieces) == 1:
+        return solid
+    kept = [p for p in pieces if p.volume() > 0]
+    dropped = [p for p in pieces if p.volume() <= 0]
+    if len(kept) != 1 or not dropped:
+        raise RuntimeError(
+            f"bin_solid() produced {len(pieces)} disconnected pieces "
+            f"({len(kept)} with positive volume) — expected one solid "
+            "connected by design; this needs a real fix, not this cleanup"
+        )
+    return kept[0]
 
 
 SLICE_THICKNESS_MM = 1.0
