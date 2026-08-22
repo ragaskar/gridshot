@@ -6,17 +6,32 @@ under test is entirely "which engine is this, and what did it tell us".
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
 LIB = Path(__file__).resolve().parent.parent / "scripts" / "lib-compose.sh"
+BASH = shutil.which("bash")
+assert BASH, "bash not found on PATH — needed to run these tests at all"
+
+# lib-compose.sh only ever shells out to `mkdir`/`grep` (plus whatever engine
+# `command -v` finds) — real ones, symlinked into the stub dir below, so a
+# "no docker/podman" test stays true even on a dev box that actually has one
+# installed under /usr/bin. `bash` is here too: stub scripts below are
+# `#!/usr/bin/env bash`, and `env` resolves that via this same restricted PATH.
+REAL_TOOLS = ("mkdir", "grep", "bash")
 
 
 @pytest.fixture
 def workdir(tmp_path):
-    (tmp_path / "bin").mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in REAL_TOOLS:
+        real = shutil.which(tool)
+        assert real, f"{tool} not found on PATH — needed to run these tests at all"
+        (bin_dir / tool).symlink_to(real)
     return tmp_path
 
 
@@ -35,11 +50,14 @@ PODMAN_SHIM = "<no value>"
 
 def run(workdir, script: str, env: dict[str, str] | None = None):
     return subprocess.run(
-        ["bash", "-c", f"set -euo pipefail\nsource {LIB}\n{script}"],
+        [BASH, "-c", f"set -euo pipefail\nsource {LIB}\n{script}"],
         cwd=workdir,
         capture_output=True,
         text=True,
-        env={"PATH": f"{workdir / 'bin'}:/usr/bin:/bin", **(env or {})},
+        # PATH is *only* the stub dir — no real /usr/bin:/bin fallback — so a
+        # scenario that doesn't stub docker/podman means that engine is
+        # genuinely absent, regardless of what the host actually has installed.
+        env={"PATH": str(workdir / "bin"), **(env or {})},
     )
 
 
