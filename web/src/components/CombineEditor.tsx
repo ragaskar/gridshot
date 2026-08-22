@@ -1096,7 +1096,12 @@ export function CombineEditor({
    *  client's `tools` positionally) keeps this correct even if the server
    *  dropped a tool id along the way. Selection/locked-rotation state is
    *  remapped old→new only when the id count matches 1:1; otherwise it's
-   *  safer to just clear it than to guess a mapping. */
+   *  safer to just clear it than to guess a mapping.
+   *
+   *  Note: undoing back past this Save restores the pre-fork raw ids from
+   *  that snapshot (see `applySnapshot` below) — a later Save from there
+   *  re-forks fresh copies and orphans the ones minted here. Harmless (just
+   *  disk usage `gridshot bin-tools gc` reclaims), not worth guarding against. */
   async function adoptSavedBinIds(saved: SavedBin) {
     const oldIds = toolIds;
     const remap = oldIds.length === saved.tool_ids.length
