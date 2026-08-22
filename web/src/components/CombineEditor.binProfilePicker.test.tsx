@@ -53,7 +53,8 @@ const CUSTOM_PROFILE: BinProfile = {
   magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5,
   lip_height_mm: 8.0, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
   min_wall_mm: 3.0, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: 4.0,
-  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, magnet_hole_inset_from_edge_mm: null,
+  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  magnet_hole_inset_from_edge_mm: null,
   has_preview_image: false,
 };
 

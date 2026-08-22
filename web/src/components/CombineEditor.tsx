@@ -152,7 +152,7 @@ function structuralFromProfile(p: BinProfile): StructuralOverrides {
     corralWallMm: p.corral_wall_mm,
     corralBaseFlareMm: p.corral_base_flare_mm,
     corralBaseReinforcementHMm: p.corral_base_reinforcement_h_mm,
-    corralEdgeMarginMm: null, // not part of BinProfile (app.py-layer-only field)
+    corralEdgeMarginMm: p.corral_edge_margin_mm,
     magnetHoleInsetFromEdgeMm: p.magnet_hole_inset_from_edge_mm,
   };
 }

@@ -56,7 +56,8 @@ const POCKET_PROFILE = {
   magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
   min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, magnet_hole_inset_from_edge_mm: null,
+  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  magnet_hole_inset_from_edge_mm: null,
   has_preview_image: false,
 };
 const CORRAL_PROFILE = {

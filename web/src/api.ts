@@ -1276,6 +1276,7 @@ export interface BinProfile {
   corral_wall_mm: number | null;
   corral_base_flare_mm: number | null;
   corral_base_reinforcement_h_mm: number | null;
+  corral_edge_margin_mm: number | null;
   magnet_hole_inset_from_edge_mm: number | null;
   has_preview_image: boolean;
 }

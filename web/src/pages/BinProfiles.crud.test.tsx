@@ -32,7 +32,8 @@ function profile(overrides: Partial<BinProfile> = {}): BinProfile {
     magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
     lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
     min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-    corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, magnet_hole_inset_from_edge_mm: null,
+    corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+    magnet_hole_inset_from_edge_mm: null,
     has_preview_image: false,
     ...overrides,
   };
@@ -141,7 +142,6 @@ describe("BinProfiles page", () => {
     fireEvent.click(screen.getByText("New bin profile"));
     await screen.findByLabelText("Bin profile name");
 
-    fireEvent.click(screen.getByText("Advanced (structural)"));
     fireEvent.change(screen.getByLabelText("Pocket wall thickness"), { target: { value: "3.5" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -149,6 +149,48 @@ describe("BinProfiles page", () => {
     const sent = vi.mocked(createBinProfile).mock.calls[0][0];
     expect(sent.min_wall_mm).toBe(3.5);
     expect(sent.lip_height_mm).toBeNull();
+  });
+
+  it("shows every structural field without a hidden Advanced section", async () => {
+    render(<BinProfiles />);
+    await screen.findByText("Pocket");
+    fireEvent.click(screen.getByText("New bin profile"));
+    await screen.findByLabelText("Bin profile name");
+
+    expect(screen.queryByText("Advanced (structural)")).toBeNull();
+    expect(screen.getByLabelText("Lip height")).toBeTruthy();
+    expect(screen.getByLabelText("Pocket wall thickness")).toBeTruthy();
+    expect(screen.getByLabelText("Corral/grid edge margin")).toBeTruthy();
+  });
+
+  it("disables the stacking-lip fields unless the Stacking Lip box is checked", async () => {
+    render(<BinProfiles />);
+    await screen.findByText("Pocket");
+    fireEvent.click(screen.getByText("New bin profile"));
+    await screen.findByLabelText("Bin profile name");
+
+    // Pocket seeds with lip on, so its fields start enabled.
+    expect((screen.getByLabelText("Lip height") as HTMLInputElement).disabled).toBe(false);
+
+    const lipCheckbox = screen.getByText("Stacking Lip").previousElementSibling as HTMLInputElement;
+    fireEvent.click(lipCheckbox);
+
+    expect((screen.getByLabelText("Lip height") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Lip top chamfer") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("puts the magnet hole inset field inside the Magnet Holes section", async () => {
+    render(<BinProfiles />);
+    await screen.findByText("Pocket");
+    fireEvent.click(screen.getByText("New bin profile"));
+    await screen.findByLabelText("Bin profile name");
+
+    expect(screen.queryByLabelText("Magnet hole inset from edge")).toBeNull();
+
+    const magnetCheckbox = screen.getByText("Magnet Holes (default)").previousElementSibling as HTMLInputElement;
+    fireEvent.click(magnetCheckbox);
+
+    expect(screen.getByLabelText("Magnet hole inset from edge")).toBeTruthy();
   });
 
   it("deletes a profile after confirmation and removes it from the list", async () => {

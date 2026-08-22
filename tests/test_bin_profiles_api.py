@@ -71,6 +71,20 @@ class TestCrud:
         assert body["lip"] is False
         assert body["min_wall_mm"] == 3.0
 
+    def test_create_and_update_accept_corral_edge_margin_mm(self, client, profiles_dir):
+        created = client.post(
+            "/api/bin-profiles", json={"name": "Framed", "corral_edge_margin_mm": 1.5},
+        )
+
+        assert created.status_code == 200
+        assert created.json()["corral_edge_margin_mm"] == 1.5
+
+        profile_id = created.json()["id"]
+        updated = client.patch(f"/api/bin-profiles/{profile_id}", json={"corral_edge_margin_mm": 2.5})
+
+        assert updated.status_code == 200
+        assert updated.json()["corral_edge_margin_mm"] == 2.5
+
     def test_update_rejects_renaming_to_an_existing_name(self, client, profiles_dir):
         client.post("/api/bin-profiles", json={"name": "Taken"})
         profile_id = client.post("/api/bin-profiles", json={"name": "Mine"}).json()["id"]

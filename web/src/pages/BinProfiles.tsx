@@ -43,6 +43,7 @@ const DEFAULT_DRAFT: BinProfileFields = {
   corral_wall_mm: null,
   corral_base_flare_mm: null,
   corral_base_reinforcement_h_mm: null,
+  corral_edge_margin_mm: null,
   magnet_hole_inset_from_edge_mm: null,
 };
 
@@ -57,18 +58,26 @@ type StructuralKey = Exclude<
   | "magnet_hole_diameter_mm_default" | "magnet_hole_depth_mm_default"
 >;
 
-const STRUCTURAL_FIELDS: { key: StructuralKey; label: string; placeholder: string }[] = [
+/** Only meaningful while `lip` is on — rendered in the Stacking Lip section,
+ *  disabled (not hidden) when it's off, so the layout doesn't jump around. */
+const LIP_FIELDS: { key: StructuralKey; label: string; placeholder: string }[] = [
   { key: "lip_height_mm", label: "Lip height", placeholder: "4.4" },
   { key: "lip_chamfer_top_mm", label: "Lip top chamfer", placeholder: "1.9" },
   { key: "lip_straight_mm", label: "Lip straight section", placeholder: "1.8" },
   { key: "lip_chamfer_bottom_mm", label: "Lip bottom chamfer", placeholder: "0.7" },
+];
+
+/** Wall/floor thickness fields — apply regardless of base style (min_wall_mm/
+ *  min_floor_mm to a pocket bin, the corral_* fields to a corral/grid bin's
+ *  deck and separator walls). */
+const WALL_FIELDS: { key: StructuralKey; label: string; placeholder: string }[] = [
   { key: "min_wall_mm", label: "Pocket wall thickness", placeholder: "2.0" },
   { key: "min_floor_mm", label: "Floor thickness under a pocket", placeholder: "1.2" },
   { key: "corral_floor_mm", label: "Corral/grid deck floor", placeholder: "1.2" },
   { key: "corral_wall_mm", label: "Corral/grid wall thickness", placeholder: "2.0" },
   { key: "corral_base_flare_mm", label: "Corral/grid base flare", placeholder: "0.8" },
   { key: "corral_base_reinforcement_h_mm", label: "Corral/grid base reinforcement height", placeholder: "1.0" },
-  { key: "magnet_hole_inset_from_edge_mm", label: "Magnet hole inset from edge", placeholder: "4.8" },
+  { key: "corral_edge_margin_mm", label: "Corral/grid edge margin", placeholder: "1.0" },
 ];
 
 /** Named, saved presets of bin *style* parameters — lip, base geometry mode,
@@ -272,11 +281,6 @@ export function BinProfiles() {
               </div>
 
               <label className="flex items-center gap-2">
-                <input type="checkbox" checked={draft.lip} onChange={(e) => set("lip", e.target.checked)} />
-                <span className="font-mono text-[10px] uppercase text-muted">Stacking lip</span>
-              </label>
-
-              <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={draft.allow_custom_shape}
@@ -291,17 +295,40 @@ export function BinProfiles() {
                 </p>
               )}
 
-              <div>
+              <div className="border-t border-line pt-3">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={draft.lip} onChange={(e) => set("lip", e.target.checked)} />
+                  <span className="font-mono text-[10px] uppercase text-muted">Stacking Lip</span>
+                </label>
+                <div className="mt-2 space-y-2">
+                  {LIP_FIELDS.map(({ key, label, placeholder }) => (
+                    <label key={key} className="block">
+                      <span className="block font-mono text-[9px] uppercase text-muted">{label} (mm)</span>
+                      <input
+                        aria-label={label}
+                        className="mono-input mt-0.5 w-full !px-2 !py-1 !text-sm"
+                        type="number" step={0.1}
+                        placeholder={placeholder}
+                        disabled={!draft.lip}
+                        value={structuralValue(key)}
+                        onChange={(e) => setStructural(key, e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-line pt-3">
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={draft.magnet_holes_default}
                     onChange={(e) => set("magnet_holes_default", e.target.checked)}
                   />
-                  <span className="font-mono text-[10px] uppercase text-muted">Magnet holes (default)</span>
+                  <span className="font-mono text-[10px] uppercase text-muted">Magnet Holes (default)</span>
                 </label>
                 {draft.magnet_holes_default && (
-                  <div className="mt-1 grid grid-cols-2 gap-1">
+                  <div className="mt-2 grid grid-cols-2 gap-1">
                     <label className="min-w-0">
                       <span className="block font-mono text-[9px] uppercase text-muted">Diameter (mm)</span>
                       <input
@@ -322,16 +349,25 @@ export function BinProfiles() {
                         onChange={(e) => set("magnet_hole_depth_mm_default", Number(e.target.value))}
                       />
                     </label>
+                    <label className="col-span-2 min-w-0">
+                      <span className="block font-mono text-[9px] uppercase text-muted">Inset from edge (mm)</span>
+                      <input
+                        aria-label="Magnet hole inset from edge"
+                        className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                        type="number" step={0.1}
+                        placeholder="4.8"
+                        value={structuralValue("magnet_hole_inset_from_edge_mm")}
+                        onChange={(e) => setStructural("magnet_hole_inset_from_edge_mm", e.target.value)}
+                      />
+                    </label>
                   </div>
                 )}
               </div>
 
-              <details className="border-t border-line pt-3">
-                <summary className="cursor-pointer font-mono text-[10px] uppercase text-muted">
-                  Advanced (structural)
-                </summary>
+              <div className="border-t border-line pt-3">
+                <span className="font-mono text-[10px] uppercase text-muted">Wall &amp; Floor Thickness</span>
                 <div className="mt-2 space-y-2">
-                  {STRUCTURAL_FIELDS.map(({ key, label, placeholder }) => (
+                  {WALL_FIELDS.map(({ key, label, placeholder }) => (
                     <label key={key} className="block">
                       <span className="block font-mono text-[9px] uppercase text-muted">{label} (mm)</span>
                       <input
@@ -345,7 +381,7 @@ export function BinProfiles() {
                     </label>
                   ))}
                 </div>
-              </details>
+              </div>
 
               {saveErr && <p className="font-mono text-[10px] text-orange">{saveErr}</p>}
 

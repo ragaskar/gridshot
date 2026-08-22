@@ -3164,6 +3164,7 @@ class BinProfileCreate(BaseModel):
     corral_wall_mm: Optional[float] = None
     corral_base_flare_mm: Optional[float] = None
     corral_base_reinforcement_h_mm: Optional[float] = None
+    corral_edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
@@ -3185,6 +3186,7 @@ class BinProfileUpdate(BaseModel):
     corral_wall_mm: Optional[float] = None
     corral_base_flare_mm: Optional[float] = None
     corral_base_reinforcement_h_mm: Optional[float] = None
+    corral_edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
@@ -3207,6 +3209,7 @@ class BinProfilePreviewRequest(BaseModel):
     corral_wall_mm: Optional[float] = None
     corral_base_flare_mm: Optional[float] = None
     corral_base_reinforcement_h_mm: Optional[float] = None
+    corral_edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
 
 
