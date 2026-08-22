@@ -63,6 +63,46 @@ class TestBinLibrary:
         assert len(listed) == 1
         assert listed[0]["id"] == body["id"]
 
+    def test_save_stores_the_applied_profile_id(self, client, library_dir):
+        _seed_two_tools()
+
+        response = _save_bin(client, applied_profile_id="seed-corral")
+
+        assert response.status_code == 200
+        assert response.json()["applied_profile_id"] == "seed-corral"
+        listed = client.get("/api/bins").json()["bins"][0]
+        assert listed["applied_profile_id"] == "seed-corral"
+
+    def test_overwrite_replaces_the_recipe_keeping_the_same_id(self, client, library_dir):
+        _seed_two_tools()
+        original = _save_bin(client, label="Original", lip=True).json()
+        bin_id = original["id"]
+
+        response = client.put(
+            f"/api/bins/{bin_id}",
+            json={"ids": ["tool-a", "tool-b"], "label": "Original", "lip": False, "applied_profile_id": "p1"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == bin_id
+        assert body["created_ts"] == original["created_ts"]
+        assert body["lip"] is False
+        assert body["applied_profile_id"] == "p1"
+
+        listed = client.get("/api/bins").json()["bins"]
+        assert len(listed) == 1
+        assert listed[0]["lip"] is False
+
+    def test_overwrite_404s_for_a_nonexistent_bin(self, client, library_dir):
+        _seed_two_tools()
+
+        response = client.put(
+            "/api/bins/no-such-bin", json={"ids": ["tool-a", "tool-b"], "label": "X"},
+        )
+
+        assert response.status_code == 404
+
     def test_rename_updates_the_listing(self, client, library_dir):
         _seed_two_tools()
         bin_id = _save_bin(client, label="Original").json()["id"]

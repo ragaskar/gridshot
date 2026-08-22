@@ -390,6 +390,16 @@ Features added on top of the original public release, newest last:
   combine editor, single-tool capture, the result page's regenerate flow, and a tool's
   per-tool default — replacing the old hardcoded Pocket/Corral/Live Grid buttons (see
   [docs/bin-profiles.md](docs/bin-profiles.md))
+- Bin Profile editor: every field now sits in a visible section (Stacking Lip, Magnet
+  Holes, Wall & Floor Thickness) instead of behind a collapsed "Advanced" accordion, and
+  the previously-unwired `corral_edge_margin_mm` structural override is now editable
+  (see [docs/bin-profiles.md](docs/bin-profiles.md))
+- The multi-tool combine editor auto-applies the first Bin Profile when opening a fresh
+  combine, and remembers which profile was applied on a saved bin so reopening it shows
+  the same picker selection (see [docs/bin-profiles.md](docs/bin-profiles.md))
+- "💾 Save" in the multi-tool combine editor now overwrites a reopened (or
+  already-saved-this-session) Bin Library entry in place; "Save As…" keeps the old
+  always-create-a-new-entry behavior (see [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 

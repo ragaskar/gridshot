@@ -95,7 +95,7 @@ describe("CombineEditor export filenames", () => {
         overallHeight={null}
         onClose={() => {}}
         initial={{
-          label: "Workbench Drawer 3",
+          id: "bin-3", label: "Workbench Drawer 3", appliedProfileId: null,
           placements: [], overrides: [], binStyle: "pocket", lip: true,
           magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2,
           forceGx: null, forceGy: null, removedCells: null,
@@ -125,7 +125,7 @@ describe("CombineEditor export filenames", () => {
       lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
       min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
       corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
-      magnet_hole_inset_from_edge_mm: null,
+      magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
     });
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
@@ -135,7 +135,7 @@ describe("CombineEditor export filenames", () => {
     fireEvent.click(screen.getByText("💾 Save to Bin Library"));
     const nameInput = screen.getByLabelText("Bin Library entry name") as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: "Fresh Save" } });
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByText("Save As"));
     await waitFor(() => expect(saveBin).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("↓ Export bin (3MF)"));

@@ -7,16 +7,27 @@ later, independent of the Tool Library.
 
 ## Saving
 
-In the combine editor, click **"💾 Save to Bin Library"** (near the export buttons). It opens a
-small dialog with a name field, pre-filled with `"Combined Bin YYYY-MM-DD"` (today's date, in
-your browser's local time) — edit it to whatever you like, or leave it as-is. Naming works like
-tool-library entries: fully editable afterward, no uniqueness requirement.
+A fresh combine (not reopened from the Bin Library) shows one button, **"💾 Save to Bin
+Library"** (near the export buttons). It opens a small dialog with a name field, pre-filled
+with `"Combined Bin YYYY-MM-DD"` (today's date, in your browser's local time) — edit it to
+whatever you like, or leave it as-is. Naming works like tool-library entries: fully editable
+afterward, no uniqueness requirement.
+
+Once a bin has been saved this session (or the editor was reopened from an existing one), that
+single button becomes two:
+
+- **💾 Save** — overwrites that same Bin Library entry in place (same id, same name unless you
+  rename it elsewhere), no dialog.
+- **Save As…** — the original dialog, pre-filled with the current name; always creates a
+  **separate, new** entry rather than touching the one you started from.
 
 ## What gets saved
 
 A saved bin stores its **recipe**, not a frozen 3D snapshot: which tools, each tool's actual
 placed position/rotation, every per-tool override (clearance, finger access, side/position,
-pocket-depth), and the bin-wide settings (style, overall height, lip, magnet holes, forced size).
+pocket-depth), the bin-wide settings (style, overall height, lip, magnet holes, forced size),
+and which [Bin Profile](bin-profiles.md) (if any) the editor had applied when it was saved —
+purely so reopening shows the same picker selection, not a live link back to that profile.
 Exporting or reopening a saved bin always regenerates geometry from the tools' *current* library
 state — so if you edit a tool's outline or clearance later, a saved bin using that tool reflects
 the change next time you export or reopen it. If a tool is deleted entirely, the bin still lists
@@ -29,8 +40,8 @@ Each saved bin is a card: its name (editable in place, same as the Tool Library)
 bin style, and the tools it contains. Four actions:
 
 - **↻ Reopen** — opens the combine editor seeded with this bin's exact saved arrangement (not a
-  fresh auto-pack) so you can keep arranging it. Saving again from there always creates a **new**
-  Bin Library entry — there's no "save changes back to the same entry" yet.
+  fresh auto-pack) so you can keep arranging it. **💾 Save** from there overwrites this same
+  entry; **Save As…** creates a separate new one instead.
 - **↓ Export bin** / **↓ Export slice** — regenerate and download the 3MF directly from the list,
   without opening the editor.
 - **× Delete** — removes the saved bin (asks for confirmation first). This never touches the

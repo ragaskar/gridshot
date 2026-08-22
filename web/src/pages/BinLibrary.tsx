@@ -92,7 +92,9 @@ export function BinLibrary() {
 
   function reopenInitial(b: SavedBin): CombineEditorInitial {
     return {
+      id: b.id,
       label: b.label,
+      appliedProfileId: b.applied_profile_id,
       placements: b.placements,
       overrides: b.overrides,
       binStyle: b.bin_style,

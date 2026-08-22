@@ -2967,6 +2967,7 @@ def library_combine_slice(req: CombineRequest) -> Response:
 
 class SaveBinRequest(CombineRequest):
     label: str
+    applied_profile_id: Optional[str] = None
 
 
 class BinUpdate(BaseModel):
@@ -3042,21 +3043,23 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "corral_base_reinforcement_h_mm": saved.corral_base_reinforcement_h_mm,
         "corral_edge_margin_mm": saved.corral_edge_margin_mm,
         "magnet_hole_inset_from_edge_mm": saved.magnet_hole_inset_from_edge_mm,
+        "applied_profile_id": saved.applied_profile_id,
     }
 
 
-def bins_save(req: SaveBinRequest) -> dict:
-    """Persist the current combine-editor arrangement as a named Bin Library
-    entry. Validates the same way a live combine request does (>=2 ready
-    tools with outlines), then stores each surviving tool's *actual* placed
-    transform (auto-packed or manual, whichever the request produced) rather
-    than blindly trusting the request's own placements list."""
+def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> binlibrary_mod.SavedBin:
+    """Shared by `bins_save` (a new entry) and `bins_overwrite` (replacing an
+    existing one's recipe in place) — validates the same way a live combine
+    request does (>=2 ready tools with outlines), then stores each surviving
+    tool's *actual* placed transform (auto-packed or manual, whichever the
+    request produced) rather than blindly trusting the request's own
+    placements list."""
     lay = _combine_layout(req)
     tool_ids = [t.id for t in lay["tools"]]
-    saved = binlibrary_mod.SavedBin(
-        id=binlibrary_mod.new_bin_id(),
+    return binlibrary_mod.SavedBin(
+        id=bin_id,
         label=req.label,
-        created_ts=int(time.time()),
+        created_ts=created_ts,
         tool_ids=tool_ids,
         placements=[
             binlibrary_mod.SavedBinPlacement(
@@ -3090,7 +3093,26 @@ def bins_save(req: SaveBinRequest) -> dict:
         corral_base_reinforcement_h_mm=req.corral_base_reinforcement_h_mm,
         corral_edge_margin_mm=req.corral_edge_margin_mm,
         magnet_hole_inset_from_edge_mm=req.magnet_hole_inset_from_edge_mm,
+        applied_profile_id=req.applied_profile_id,
     )
+
+
+def bins_save(req: SaveBinRequest) -> dict:
+    """Persist the current combine-editor arrangement as a new named Bin
+    Library entry ("Save As")."""
+    saved = _build_saved_bin(req, bin_id=binlibrary_mod.new_bin_id(), created_ts=int(time.time()))
+    binlibrary_mod.save_bin(saved)
+    return _bin_json(saved)
+
+
+def bins_overwrite(bin_id: str, req: SaveBinRequest) -> dict:
+    """Replace an existing Bin Library entry's recipe in place ("Save") —
+    same id, same created_ts, everything else taken fresh from the request."""
+    try:
+        existing = binlibrary_mod.load_bin(bin_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such bin")
+    saved = _build_saved_bin(req, bin_id=bin_id, created_ts=existing.created_ts)
     binlibrary_mod.save_bin(saved)
     return _bin_json(saved)
 

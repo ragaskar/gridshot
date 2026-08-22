@@ -1047,6 +1047,12 @@ export interface CombineOptions {
   corralBaseReinforcementHMm?: number | null;
   corralEdgeMarginMm?: number | null;
   magnetHoleInsetFromEdgeMm?: number | null;
+  /** Purely which profile the combine editor's picker shows as applied —
+   *  cosmetic bookkeeping only, not consulted by geometry. Ignored by the
+   *  preview/export/slice routes (only SaveBinRequest declares the field);
+   *  carried on `CombineOptions` anyway so `saveBin`/`overwriteBin` can
+   *  reuse the same options object as every other combine call. */
+  appliedProfileId?: string | null;
 }
 
 function combineRequestBody(ids: string[], options: CombineOptions): Record<string, unknown> {
@@ -1076,6 +1082,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     corral_base_reinforcement_h_mm: options.corralBaseReinforcementHMm ?? undefined,
     corral_edge_margin_mm: options.corralEdgeMarginMm ?? undefined,
     magnet_hole_inset_from_edge_mm: options.magnetHoleInsetFromEdgeMm ?? undefined,
+    applied_profile_id: options.appliedProfileId ?? undefined,
   };
 }
 
@@ -1174,6 +1181,7 @@ export interface SavedBin {
   corral_base_reinforcement_h_mm: number | null;
   corral_edge_margin_mm: number | null;
   magnet_hole_inset_from_edge_mm: number | null;
+  applied_profile_id: string | null;
 }
 
 export async function saveBin(
@@ -1187,6 +1195,23 @@ export async function saveBin(
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
     throw new Error(d.detail ?? "save bin failed");
+  }
+  return r.json();
+}
+
+/** "Save" (as opposed to `saveBin`'s "Save As") — replaces an existing Bin
+ *  Library entry's recipe in place, keeping its id and created_ts. */
+export async function overwriteBin(
+  id: string, label: string, ids: string[], options: CombineOptions = {},
+): Promise<SavedBin> {
+  const r = await fetch(`/api/bins/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...combineRequestBody(ids, options), label }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "save failed");
   }
   return r.json();
 }

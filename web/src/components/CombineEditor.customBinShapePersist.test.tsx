@@ -86,8 +86,10 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     const profileSelect = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
     await waitFor(() => expect(profileSelect.options.length).toBe(3)); // placeholder + 2 profiles
 
+    // 1 initial auto-pack + 1 auto-applied default profile (Pocket, first in
+    // the list) + 1 for this click.
     fireEvent.click(screen.getByText("Force bin size"));
-    await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(3));
 
     fireEvent.click(screen.getByText("Custom bin shape"));
     const removeCell = await screen.findByLabelText("Grid cell column 1, row 1");

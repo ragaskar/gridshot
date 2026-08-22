@@ -4,6 +4,7 @@ import {
   combineLibrarySlice,
   combinePreview,
   combinePreviewGlb,
+  overwriteBin,
   saveBin,
   type BinProfile,
   type CombinePreview,
@@ -73,7 +74,9 @@ function defaultBinName(): string {
  *  along only so exports from this reopened session are named after the
  *  saved bin, same as exporting it directly from the Bin Library list. */
 export interface CombineEditorInitial {
+  id: string;
   label: string;
+  appliedProfileId: string | null;
   placements: Placement[];
   overrides: CombineToolOverride[];
   binStyle: BinStyle;
@@ -263,7 +266,17 @@ export function CombineEditor({
   // Purely which profile the dropdown displays as picked — cosmetic only.
   // Fields copied from a profile are independently editable afterward, so
   // this can go stale relative to the live style state; that's expected.
-  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
+  const [appliedProfileId, setAppliedProfileId] = useState<string | null>(initial?.appliedProfileId ?? null);
+  // Set once the auto-pack from the initial mount `load()` resolves — gates
+  // the "apply the first bin profile automatically" effect below so it never
+  // races that load with a stale/empty placements array.
+  const [autoPacked, setAutoPacked] = useState(false);
+  const defaultProfileApplied = useRef(false);
+  // The Bin Library entry this editor is reopened from, if any — lets
+  // "Save" overwrite it in place instead of always creating a new entry
+  // ("Save As"). Updated once a fresh combine is saved for the first time,
+  // so a subsequent Save overwrites *that* new entry.
+  const [savedBinId, setSavedBinId] = useState<string | null>(initial?.id ?? null);
   const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
@@ -435,9 +448,53 @@ export function CombineEditor({
         initial.removedCells,
       );
     } else {
-      load(); // auto-pack on open
+      void load().then(() => setAutoPacked(true)); // auto-pack on open
     }
   }, []); // eslint-disable-line
+
+  /** Copies a profile's fields into local state and reloads with them —
+   *  shared by the picker's onChange (a discrete, undo-able user action) and
+   *  the auto-default effect below (silent, not undo-able: it's the starting
+   *  state, not something the user did). Every field is a one-time copy, not
+   *  a live link — editing or deleting the profile later never changes this
+   *  bin. */
+  function applyProfile(profile: BinProfile, { snapshot = true }: { snapshot?: boolean } = {}) {
+    if (snapshot) pushSnapshot();
+    setAppliedProfileId(profile.id);
+    setBinStyle(profile.base_style);
+    setLip(profile.lip);
+    setAllowCustomShape(profile.allow_custom_shape);
+    setMagnetHoles(profile.magnet_holes_default);
+    setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
+    setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
+    const nextStructural = structuralFromProfile(profile);
+    setStructural(nextStructural);
+    void load(
+      placementsFor(tools), overridesFor(tools), profile.base_style, undefined,
+      effectiveRemovedCells(profile.base_style, profile.allow_custom_shape),
+      profile.lip, nextStructural,
+      profile.magnet_holes_default,
+      String(profile.magnet_hole_diameter_mm_default),
+      String(profile.magnet_hole_depth_mm_default),
+    );
+  }
+
+  // Opening a fresh combine (no `initial`) with no profile explicitly
+  // applied yet: default the picker to the first Bin Profile, same as a
+  // manual pick but without an undo step — this is the starting state, not
+  // a user action. Gated on `autoPacked` so it never races the initial
+  // auto-pack `load()` with a stale/empty placements array; gated on the ref
+  // (not just `appliedProfileId`) so a manual pick before profiles finish
+  // loading can't be clobbered once they do.
+  useEffect(() => {
+    if (initial) return;
+    if (!autoPacked) return;
+    if (defaultProfileApplied.current) return;
+    if (binProfiles.length === 0) return;
+    defaultProfileApplied.current = true;
+    applyProfile(binProfiles[0], { snapshot: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPacked, binProfiles]);
 
   const UNDO_HISTORY_LIMIT = 50;
   const NUDGE_BURST_MS = 1000;
@@ -972,28 +1029,57 @@ export function CombineEditor({
     }
   }
 
+  function saveOptions() {
+    const force = forceSize && forceGx && forceGy;
+    return {
+      placements: placementsFor(tools),
+      overrides: overridesFor(tools),
+      overallHeight,
+      lip,
+      binStyle,
+      magnetHoles,
+      magnetHoleDiameterMm: Number(magnetHoleDiameter),
+      magnetHoleDepthMm: Number(magnetHoleDepth),
+      forceGx: force ? Number(forceGx) : null,
+      forceGy: force ? Number(forceGy) : null,
+      removedCells: effectiveRemovedCells(binStyle),
+      appliedProfileId,
+      ...structural,
+    };
+  }
+
+  /** "Save As": always creates a new Bin Library entry, even when reopened
+   *  from an existing one — the dialog's Name field. Once it succeeds, this
+   *  editor is now "attached" to the new entry, so a later plain Save
+   *  overwrites *that* one, not the one this session started from. */
   async function saveToBinLibrary() {
     setSaveBusy(true);
     setSaveErr(null);
     try {
-      const force = forceSize && forceGx && forceGy;
       const label = saveName.trim() || defaultBinName();
-      await saveBin(label, ids, {
-        placements: placementsFor(tools),
-        overrides: overridesFor(tools),
-        overallHeight,
-        lip,
-        binStyle,
-        magnetHoles,
-        magnetHoleDiameterMm: Number(magnetHoleDiameter),
-        magnetHoleDepthMm: Number(magnetHoleDepth),
-        forceGx: force ? Number(forceGx) : null,
-        forceGy: force ? Number(forceGy) : null,
-        removedCells: effectiveRemovedCells(binStyle),
-        ...structural,
-      });
+      const saved = await saveBin(label, ids, saveOptions());
+      setSavedBinId(saved.id);
       setSavedLabel(label);
       setSaveDialogOpen(false);
+      setSaveDone(true);
+      window.setTimeout(() => setSaveDone(false), 3000);
+    } catch (e) {
+      setSaveErr((e as Error).message);
+    } finally {
+      setSaveBusy(false);
+    }
+  }
+
+  /** "Save": overwrites the Bin Library entry this editor was reopened from
+   *  (or already saved once this session), keeping its id/name. Only
+   *  reachable once `savedBinId` is set. */
+  async function saveInPlace() {
+    if (!savedBinId) return;
+    setSaveBusy(true);
+    setSaveErr(null);
+    try {
+      const label = savedLabel || defaultBinName();
+      await overwriteBin(savedBinId, label, ids, saveOptions());
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
@@ -1280,27 +1366,7 @@ export function CombineEditor({
               onChange={(e) => {
                 const profile = binProfiles.find((p) => p.id === e.target.value);
                 if (!profile) return;
-                pushSnapshot();
-                setAppliedProfileId(profile.id);
-                setBinStyle(profile.base_style);
-                setLip(profile.lip);
-                setAllowCustomShape(profile.allow_custom_shape);
-                setMagnetHoles(profile.magnet_holes_default);
-                setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
-                setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
-                const nextStructural = structuralFromProfile(profile);
-                setStructural(nextStructural);
-                // Every field a profile carries is a one-time copy — applying
-                // it doesn't create a live link, so editing or deleting the
-                // profile later never changes this bin.
-                void load(
-                  placementsFor(tools), overridesFor(tools), profile.base_style, undefined,
-                  effectiveRemovedCells(profile.base_style, profile.allow_custom_shape),
-                  profile.lip, nextStructural,
-                  profile.magnet_holes_default,
-                  String(profile.magnet_hole_diameter_mm_default),
-                  String(profile.magnet_hole_depth_mm_default),
-                );
+                applyProfile(profile);
               }}
             >
               <option value="" disabled>Apply a bin profile…</option>
@@ -1809,17 +1875,40 @@ export function CombineEditor({
               </div>
             </div>
           )}
-          <button
-            className="btn w-full text-xs"
-            disabled={busy || !tools.length || Boolean(err)}
-            onClick={() => {
-              setSaveName(defaultBinName());
-              setSaveErr(null);
-              setSaveDialogOpen(true);
-            }}
-          >
-            💾 Save to Bin Library
-          </button>
+          {savedBinId ? (
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                className="btn text-xs"
+                disabled={busy || saveBusy || !tools.length || Boolean(err)}
+                onClick={() => void saveInPlace()}
+              >
+                💾 Save
+              </button>
+              <button
+                className="btn btn-ghost text-xs"
+                disabled={busy || !tools.length || Boolean(err)}
+                onClick={() => {
+                  setSaveName(savedLabel ?? defaultBinName());
+                  setSaveErr(null);
+                  setSaveDialogOpen(true);
+                }}
+              >
+                Save As…
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn w-full text-xs"
+              disabled={busy || !tools.length || Boolean(err)}
+              onClick={() => {
+                setSaveName(defaultBinName());
+                setSaveErr(null);
+                setSaveDialogOpen(true);
+              }}
+            >
+              💾 Save to Bin Library
+            </button>
+          )}
           {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
           {saveDialogOpen && (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
@@ -1848,7 +1937,7 @@ export function CombineEditor({
                   disabled={saveBusy}
                   onClick={() => void saveToBinLibrary()}
                 >
-                  Save
+                  Save As
                 </button>
               </div>
             </div>

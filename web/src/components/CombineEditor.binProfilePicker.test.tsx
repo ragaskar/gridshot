@@ -47,6 +47,21 @@ function buildResponse(placements: Placement[] | null | undefined, binStyle: "po
   };
 }
 
+// index 0 in the mocked profile list — auto-applied when the editor opens
+// fresh, before any user interaction. Distinguishable from the hardcoded
+// pre-Bin-Profiles defaults (pocket/lip on/magnet off) by using "grid" as
+// its base style, so a test can tell whether the auto-apply effect ran.
+const DEFAULT_PROFILE: BinProfile = {
+  id: "p0", name: "Default", created_ts: 0,
+  base_style: "grid", lip: true, allow_custom_shape: true,
+  magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
+  lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
+  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
+  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  magnet_hole_inset_from_edge_mm: null,
+  has_preview_image: false,
+};
+
 const CUSTOM_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
   base_style: "corral", lip: false, allow_custom_shape: false,
@@ -68,18 +83,28 @@ describe("CombineEditor bin profile picker", () => {
       (_ids, options) => Promise.resolve(buildResponse(options?.placements, options?.binStyle ?? "pocket")),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
-    vi.mocked(listBinProfiles).mockResolvedValue([CUSTOM_PROFILE]);
+    vi.mocked(listBinProfiles).mockResolvedValue([DEFAULT_PROFILE, CUSTOM_PROFILE]);
   });
 
   afterEach(() => {
     cleanup();
   });
 
+  it("applies the first bin profile automatically when opening a fresh combine", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    const select = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
+
+    await waitFor(() => expect(select.value).toBe("p0"));
+    const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+    expect(last[1]?.binStyle).toBe("grid");
+  });
+
   it("applies every field from the picked profile to the next combine request", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     const select = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(select.options.length).toBe(3));
 
     fireEvent.change(select, { target: { value: "p1" } });
 
@@ -104,7 +129,7 @@ describe("CombineEditor bin profile picker", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     const select = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(select.value).toBe("p0")); // auto-applied default
 
     fireEvent.change(select, { target: { value: "p1" } });
     await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(true));
@@ -113,7 +138,7 @@ describe("CombineEditor bin profile picker", () => {
 
     await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(false));
     const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
-    expect(last[1]?.binStyle).toBe("pocket");
+    expect(last[1]?.binStyle).toBe("grid"); // back to the auto-applied default profile
     expect(last[1]?.lip).toBe(true);
   });
 
@@ -121,7 +146,7 @@ describe("CombineEditor bin profile picker", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     const select = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(select.value).toBe("p0"));
 
     fireEvent.change(select, { target: { value: "p1" } });
     await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(true));

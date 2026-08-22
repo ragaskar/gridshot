@@ -74,6 +74,11 @@ class SavedBin(BaseModel):
     corral_base_reinforcement_h_mm: Optional[float] = None
     corral_edge_margin_mm: Optional[float] = None
     magnet_hole_inset_from_edge_mm: Optional[float] = None
+    # Which Bin Profile the editor had applied when this was saved, purely
+    # so reopening shows the same picker selection — a one-time copy like
+    # every other profile-derived field above, not a live reference; None
+    # for bins saved before Bin Profiles existed, or with no profile applied.
+    applied_profile_id: Optional[str] = None
 
 
 def bins_dir() -> Path:

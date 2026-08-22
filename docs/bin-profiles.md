@@ -21,7 +21,12 @@ Every place that used to offer a hardcoded Pocket/Corral/Live Grid button group 
 offers a **Bin profile** dropdown instead:
 
 - The multi-tool **combine editor** — applies base style, lip, allow-custom-shape,
-  magnet-hole defaults, and every structural override.
+  magnet-hole defaults, and every structural override. A fresh combine (not reopened
+  from the Bin Library) auto-applies the first profile in the list as soon as it loads —
+  no undo step, since it's the starting state rather than something you did. Reopening a
+  saved bin instead shows whichever profile was applied when it was last saved (or no
+  selection, for bins saved before this existed) — the picker's selection is stored on
+  the saved bin as `applied_profile_id`, alongside the fields it set.
 - **Upload** (single-tool capture) — applies base style and lip (this page already had
   its own independent lip toggle, kept as-is).
 - The **Result** page's regenerate flow — applies base style, lip (a control this page
@@ -43,13 +48,23 @@ name, base style, lip on/off), plus a **"+ New bin profile"** tile. Three are se
 you — Pocket, Corral, Live Grid — reproducing today's hardcoded styles exactly.
 
 Clicking a card (or "+ New") opens its editor: a live 3D preview of the synthetic
-4×4-unit/2×2-pocket bin next to every field — name, base style, stacking lip, magnet-hole
-defaults, and "Allow custom grid shape" (an independent checkbox, not derived from base
-style — checking it for Corral/Live Grid shows a note that cell removal isn't supported
-there yet, since the underlying geometry can't do it regardless of the checkbox). An
-"Advanced (structural)" section holds the 12 dimensional overrides described below, each
-starting blank (inheriting gridfinity.py's constant) with its default shown as a
-placeholder.
+4×4-unit/2×2-pocket bin next to every field — name, base style, and "Allow custom grid
+shape" (an independent checkbox, not derived from base style — checking it for
+Corral/Live Grid shows a note that cell removal isn't supported there yet, since the
+underlying geometry can't do it regardless of the checkbox), followed by three visible
+sections (no accordion — these are the values you're actually here to edit, not hidden
+extras):
+
+- **Stacking Lip** — the on/off checkbox plus the lip's own dimensional overrides
+  (height, both chamfers, straight section). The four dimensional fields are always
+  shown, disabled (not hidden) while the checkbox is off, each starting blank
+  (inheriting gridfinity.py's constant) with its default shown as a placeholder.
+- **Magnet Holes (default)** — the on/off checkbox plus diameter, depth, and inset-from-edge,
+  shown together once it's checked.
+- **Wall & Floor Thickness** — pocket wall/floor thickness and the corral/live-grid
+  deck's floor, wall, base flare, base reinforcement height, and edge margin; applies
+  regardless of base style (the pocket fields to a pocket bin, the corral/grid fields to
+  a corral or live-grid bin).
 
 Saving uploads a snapshot of the live preview as the card's thumbnail. The page is
 deep-linkable: `/bin-profiles/:id` opens straight to that profile's editor.
@@ -73,16 +88,22 @@ takes the in-progress editor form state directly and returns a GLB of a syntheti
 calling `bin_solid` directly. This is what a future profile editor page renders live
 as you adjust fields, before you've saved anything.
 
-## Structural parameters (advanced)
+## Structural parameters
 
 Beyond the lip/style/magnet-hole fields above, a profile can also override the
 dimensional constants that used to be hardcoded in `gridshot/core/gridfinity.py`:
-the lip's own profile (height, both chamfers), pocket wall thickness, the
-floor thickness under a pocket, and the corral/live-grid deck's floor, wall,
-base flare, and base reinforcement thickness. Every one of these defaults to
-`None`, meaning "use gridfinity.py's built-in constant" — which is what
-guarantees the seeded Pocket/Corral/Live Grid profiles reproduce today's exact
-geometry, unedited.
+the lip's own profile (height, both chamfers, straight section), pocket wall
+thickness, the floor thickness under a pocket, the magnet hole's inset from the
+foot's edge, and the corral/live-grid deck's floor, wall, base flare, base
+reinforcement thickness, and edge margin. Every one of these defaults to `None`,
+meaning "use gridfinity.py's built-in constant" — which is what guarantees the
+seeded Pocket/Corral/Live Grid profiles reproduce today's exact geometry,
+unedited.
+
+`corral_edge_margin_mm` only affects auto-pack footprint sizing (`_combine_layout`
+in `gridshot/server/app.py`), not `bin_solid()`'s geometry directly — editing it in
+the profile editor won't visibly change the live 3D preview, only a real combine's
+footprint.
 
 Deliberately **not** adjustable, on any profile: the 42mm pitch, 41.5mm bin
 footprint, 7mm height unit, and foot/chamfer profile. These are the dimensions
