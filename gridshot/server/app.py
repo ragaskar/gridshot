@@ -33,6 +33,7 @@ from gridshot.core import batch as batch_mod
 from gridshot.core import bench as bench_mod
 from gridshot.core import binlibrary as binlibrary_mod
 from gridshot.core import binprofiles as binprofiles_mod
+from gridshot.core import bintools as bintools_mod
 from gridshot.core import calibrate as calibrate_mod
 from gridshot.core import contour as contour_mod
 from gridshot.core import devices as devices_mod
@@ -2527,7 +2528,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     inherited_depths = []
     for tid in req.ids:
         try:
-            t = library_mod.load(tid)
+            t = bintools_mod.resolve_tool(tid)
         except KeyError:
             continue
         _require_tool_ready(t)
@@ -3011,7 +3012,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
     tool_labels: list[Optional[str]] = []
     for tid in saved.tool_ids:
         try:
-            tool_labels.append(library_mod.load(tid).label or tid)
+            tool_labels.append(bintools_mod.resolve_tool(tid).label or tid)
         except KeyError:
             tool_labels.append(None)
     return {

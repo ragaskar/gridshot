@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from gridshot.core import bintools as bintools_mod
 from gridshot.core import library as library_mod
 from gridshot.core.models import Poly
 from gridshot.server import app as app_module
@@ -43,6 +44,37 @@ def _seed_two_tools():
 
 def _save_bin(client, label="My Bin", **body):
     return client.post("/api/bins", json={"ids": ["tool-a", "tool-b"], "label": label, **body})
+
+
+class TestBinToolResolution:
+    """The combine pipeline resolves a `bintool-` id from the bin-tools store
+    exactly like a library id, everywhere a saved bin touches a tool
+    (gridshot/core/bintools.py's resolve_tool, wired into _combine_layout and
+    _bin_json — this test exercises those two call sites without needing the
+    fork-at-save or Duplicate endpoint that will start producing such ids)."""
+
+    def test_combine_preview_and_save_and_export_work_with_a_bin_tool_id(self, client, library_dir):
+        library_mod.save(library_mod.LibraryTool(
+            id="tool-a", label="Wrench", outline=TOOL_A_OUTLINE, thickness_mm=4.0,
+        ))
+        bintools_mod.save(library_mod.LibraryTool(
+            id="bintool-1-aaaaaa", label="Pliers copy", outline=TOOL_B_OUTLINE, thickness_mm=3.0,
+        ))
+
+        preview = client.post(
+            "/api/library/combine/preview", json={"ids": ["tool-a", "bintool-1-aaaaaa"]},
+        )
+        assert preview.status_code == 200
+        assert {t["id"] for t in preview.json()["tools"]} == {"tool-a", "bintool-1-aaaaaa"}
+
+        saved = client.post(
+            "/api/bins", json={"ids": ["tool-a", "bintool-1-aaaaaa"], "label": "Mixed"},
+        ).json()
+        assert saved["tool_labels"] == ["Wrench", "Pliers copy"]
+
+        export = client.post(f"/api/bins/{saved['id']}/export")
+        assert export.status_code == 200
+
 
 
 class TestBinLibrary:
