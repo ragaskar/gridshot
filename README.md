@@ -400,6 +400,10 @@ Features added on top of the original public release, newest last:
 - "💾 Save" in the multi-tool combine editor now overwrites a reopened (or
   already-saved-this-session) Bin Library entry in place; "Save As…" keeps the old
   always-create-a-new-entry behavior (see [docs/bin-library.md](docs/bin-library.md))
+- Saving a Bin Library entry now forks each tool into a private "bin tool" copy, frozen
+  to its state at save time — editing or deleting the original Tool Library entry
+  afterward no longer affects a bin already saved with it (see
+  [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 

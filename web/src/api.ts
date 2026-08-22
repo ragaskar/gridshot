@@ -799,6 +799,19 @@ export async function cloneLibraryTool(id: string): Promise<LibraryTool> {
   return r.json();
 }
 
+/** Fork a tool (library or bin-tool) into a private bin-tool copy — the
+ *  Combine editor's "⧉ Duplicate", for using the same tool twice in one
+ *  bin. Unlike `cloneLibraryTool`, the copy never appears in the Tool
+ *  Library. See gridshot/core/bintools.py. */
+export async function duplicateTool(id: string): Promise<LibraryTool> {
+  const r = await fetch(`/api/bin-tools/${id}/duplicate`, { method: "POST" });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "duplicate failed");
+  }
+  return r.json();
+}
+
 export interface LibraryEditResult extends OutlineEditSession {
   raw: Poly;
   corrected: Poly;

@@ -2037,6 +2037,19 @@ def library_clone(tool_id: str) -> dict:
     return _lib_json(cloned)
 
 
+def bin_tools_duplicate(tool_id: str) -> dict:
+    """Fork a tool (library or bin-tool) into a private bin-tool copy, for
+    the Combine editor's "⧉ Duplicate" — a second, independently-editable
+    instance of the same geometry within one bin, without touching the Tool
+    Library. See gridshot/core/bintools.py."""
+    try:
+        source = bintools_mod.resolve_tool(tool_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such tool")
+    duplicated = bintools_mod.duplicate(source, bintools_mod.new_bin_tool_id())
+    return _lib_json(duplicated)
+
+
 class LibraryUpdate(BaseModel):
     label: Optional[str] = None
     thickness_mm: Optional[float] = None
@@ -3048,15 +3061,44 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
     }
 
 
+def _fork_new_tools(tool_ids: list[str]) -> dict[str, str]:
+    """Fork every tool id that isn't already a bin-tool into a fresh, private
+    bin-tool copy — geometry/settings only, no photo/calibration/provenance
+    (see bintools.duplicate). Returns old id -> new id for just the ones that
+    were forked; an id already `bintool-`-prefixed is left alone (already
+    frozen from an earlier save) and has no entry, so `remap.get(tid, tid)`
+    is the right way to apply this everywhere an id appears.
+
+    This is what makes a saved bin stop referencing the Tool Library at all:
+    once forked, its geometry is frozen to this moment, immune to later
+    edits or deletion of the source tool. Forking is idempotent per tool —
+    the first save of a bin mints one private copy per tool; every save
+    after that (including from a reopened session, once the client has
+    adopted the forked ids) reuses those same ids rather than forking again."""
+    remap: dict[str, str] = {}
+    for tid in tool_ids:
+        if bintools_mod.is_bin_tool_id(tid):
+            continue
+        source = bintools_mod.resolve_tool(tid)
+        new_id = bintools_mod.new_bin_tool_id()
+        bintools_mod.freeze(source, new_id)
+        remap[tid] = new_id
+    return remap
+
+
 def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> binlibrary_mod.SavedBin:
     """Shared by `bins_save` (a new entry) and `bins_overwrite` (replacing an
     existing one's recipe in place) — validates the same way a live combine
     request does (>=2 ready tools with outlines), then stores each surviving
     tool's *actual* placed transform (auto-packed or manual, whichever the
     request produced) rather than blindly trusting the request's own
-    placements list."""
+    placements list. Every tool is forked into a private bin-tool copy here
+    (see `_fork_new_tools`) — `tool_ids`, `placements`, and `overrides` are
+    remapped together, since `overrides` is keyed by tool id too."""
     lay = _combine_layout(req)
     tool_ids = [t.id for t in lay["tools"]]
+    remap = _fork_new_tools(tool_ids)
+    tool_ids = [remap.get(tid, tid) for tid in tool_ids]
     return binlibrary_mod.SavedBin(
         id=bin_id,
         label=req.label,
@@ -3070,7 +3112,7 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
             for i in range(len(tool_ids))
         ],
         overrides=[
-            binlibrary_mod.SavedBinOverride(**o.model_dump())
+            binlibrary_mod.SavedBinOverride(**{**o.model_dump(), "id": remap.get(o.id, o.id)})
             for o in (req.overrides or [])
         ],
         overall_height=req.overall_height,
@@ -5050,6 +5092,7 @@ def get_file(project: str, name: str) -> FileResponse:
 # this module while service extraction can proceed independently of HTTP wiring.
 from gridshot.server.routes import batch as batch_routes
 from gridshot.server.routes import bin_profiles as bin_profiles_routes
+from gridshot.server.routes import bin_tools as bin_tools_routes
 from gridshot.server.routes import bins as bins_routes
 from gridshot.server.routes import capture as capture_routes
 from gridshot.server.routes import export as export_routes
@@ -5083,6 +5126,7 @@ for _router_factory in (
     library_routes.build_router,
     bins_routes.build_router,
     bin_profiles_routes.build_router,
+    bin_tools_routes.build_router,
     export_routes.build_router,
     batch_routes.build_router,
 ):

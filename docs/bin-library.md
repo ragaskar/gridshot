@@ -23,16 +23,19 @@ single button becomes two:
 
 ## What gets saved
 
-A saved bin stores its **recipe**, not a frozen 3D snapshot: which tools, each tool's actual
-placed position/rotation, every per-tool override (clearance, finger access, side/position,
+A saved bin stores its **recipe**, not a frozen 3D snapshot: each tool's actual placed
+position/rotation, every per-tool override (clearance, finger access, side/position,
 pocket-depth), the bin-wide settings (style, overall height, lip, magnet holes, forced size),
 and which [Bin Profile](bin-profiles.md) (if any) the editor had applied when it was saved —
 purely so reopening shows the same picker selection, not a live link back to that profile.
-Exporting or reopening a saved bin always regenerates geometry from the tools' *current* library
-state — so if you edit a tool's outline or clearance later, a saved bin using that tool reflects
-the change next time you export or reopen it. If a tool is deleted entirely, the bin still lists
-(showing "(deleted tool)" in its place) and exports with whatever tools remain, degrading exactly
-the way the live combine editor already does when a tool disappears mid-session.
+
+**Each tool itself is frozen at save time.** Saving forks every tool into a private copy (a
+"bin tool" — see [Duplicating a tool](#duplicating-a-tool) below) that lives independently of
+the Tool Library from that moment on. So editing a tool's outline or clearance in the Tool
+Library, or deleting it entirely, has **no effect** on any bin already saved using it — the bin
+keeps exporting and reopening exactly as it looked when you saved it. (Bins saved before this
+existed still reference the live library tool the old way, including the "(deleted tool)" label
+if it's since been removed — this only applies going forward.)
 
 ## The Bin Library page
 

@@ -93,6 +93,20 @@ class TestDuplicate:
         assert forked.outline == source.outline
 
 
+class TestFreeze:
+    def test_freeze_copies_geometry_but_keeps_the_original_label(self, config_dir):
+        source = library_mod.save(_library_tool(label="Wrench", clearance_mm=2.5))
+
+        frozen = bintools_mod.freeze(source, "bintool-1-aaaaaa")
+
+        assert frozen.id == "bintool-1-aaaaaa"
+        assert frozen.label == "Wrench"  # not "Wrench (copy)" — see duplicate() for that
+        assert frozen.outline == source.outline
+        assert frozen.clearance_mm == 2.5
+        assert frozen.has_photo is False
+        assert frozen.calibration is None
+
+
 class TestResolveTool:
     def test_resolves_a_plain_id_from_the_library(self, config_dir):
         library_mod.save(_library_tool(id="tool-a"))

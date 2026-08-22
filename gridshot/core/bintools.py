@@ -89,14 +89,14 @@ def delete(tool_id: str) -> bool:
     return True
 
 
-def duplicate(source: LibraryTool, new_id: str) -> LibraryTool:
-    """Fork a tool (library or bin-tool) into a fresh, independent bin tool —
-    geometry and settings only. No photo, calibration, provenance, or outline
-    history: those describe how the *source* was captured/edited, not
-    anything a combined bin needs downstream."""
+def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
+    """Shared by `duplicate()` and `freeze()` — geometry and settings only.
+    No photo, calibration, provenance, or outline history: those describe
+    how the *source* was captured/edited, not anything a combined bin needs
+    downstream."""
     forked = LibraryTool(
         id=new_id,
-        label=f"{source.label} (copy)" if source.label else source.label,
+        label=label,
         thickness_mm=source.thickness_mm,
         silhouette_height_mm=source.silhouette_height_mm,
         full_height_mm=source.full_height_mm,
@@ -116,6 +116,23 @@ def duplicate(source: LibraryTool, new_id: str) -> LibraryTool:
         created_ts=int(time.time()),
     )
     return save(forked)
+
+
+def duplicate(source: LibraryTool, new_id: str) -> LibraryTool:
+    """Fork a tool into a second, independent bin tool the user explicitly
+    asked for (the Combine editor's "⧉ Duplicate") — labeled "{label}
+    (copy)", same convention as `library.clone()`."""
+    label = f"{source.label} (copy)" if source.label else source.label
+    return _fork(source, new_id, label=label)
+
+
+def freeze(source: LibraryTool, new_id: str) -> LibraryTool:
+    """Fork a tool into a private bin-tool copy that *represents the same
+    tool*, not a duplicate of it — used when saving a bin freezes every one
+    of its tools (see `_fork_new_tools` in app.py). Keeps the original
+    label unchanged; unlike `duplicate()`, this isn't a second instance the
+    user asked for."""
+    return _fork(source, new_id, label=source.label)
 
 
 def resolve_tool(tool_id: str) -> LibraryTool:
