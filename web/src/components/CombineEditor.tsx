@@ -13,6 +13,7 @@ import {
   type CombineToolOverride,
   type BinStyle,
   type Placement,
+  type SavedBin,
 } from "../api";
 import { BinViewer } from "./BinViewer";
 import { commitOnChange } from "../domEvents";
@@ -1087,6 +1088,34 @@ export function CombineEditor({
     };
   }
 
+  /** Adopts a just-saved bin's (possibly just-forked) ids into local state.
+   *  Saving can fork every tool id (see `_build_saved_bin` in app.py), so
+   *  `toolIds` alone isn't enough to update — `tools`, `selectedIds`, and
+   *  `lockedRotations` all key off the *old* ids too. Reloading with the
+   *  server's own `placements`/`overrides` (rather than remapping this
+   *  client's `tools` positionally) keeps this correct even if the server
+   *  dropped a tool id along the way. Selection/locked-rotation state is
+   *  remapped old→new only when the id count matches 1:1; otherwise it's
+   *  safer to just clear it than to guess a mapping. */
+  async function adoptSavedBinIds(saved: SavedBin) {
+    const oldIds = toolIds;
+    const remap = oldIds.length === saved.tool_ids.length
+      ? new Map(oldIds.map((id, i) => [id, saved.tool_ids[i]]))
+      : null;
+    setSelectedIds((current) => (
+      remap ? new Set([...current].map((id) => remap.get(id) ?? id)) : new Set()
+    ));
+    setLockedRotations((current) => (
+      remap ? new Set([...current].map((id) => remap.get(id) ?? id)) : new Set()
+    ));
+    setToolIds(saved.tool_ids);
+    await load(
+      saved.placements, saved.overrides, binStyle, undefined, undefined,
+      lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth,
+      saved.tool_ids,
+    );
+  }
+
   /** "Save As": always creates a new Bin Library entry, even when reopened
    *  from an existing one — the dialog's Name field. Once it succeeds, this
    *  editor is now "attached" to the new entry, so a later plain Save
@@ -1099,10 +1128,7 @@ export function CombineEditor({
       const saved = await saveBin(label, toolIds, saveOptions());
       setSavedBinId(saved.id);
       setSavedLabel(label);
-      // Adopt the (possibly just-forked) ids the server returned — a second
-      // Save in this session must reuse them, not re-fork the still-raw ids
-      // this client was holding.
-      setToolIds(saved.tool_ids);
+      await adoptSavedBinIds(saved);
       setSaveDialogOpen(false);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
@@ -1123,7 +1149,7 @@ export function CombineEditor({
     try {
       const label = savedLabel || defaultBinName();
       const saved = await overwriteBin(savedBinId, label, toolIds, saveOptions());
-      setToolIds(saved.tool_ids);
+      await adoptSavedBinIds(saved);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
