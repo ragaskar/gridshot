@@ -293,12 +293,25 @@ def _lip_ring(
     a rounded rect by `t` shrinks each side by `2t` and the corner radius by
     `t`), it's just expressed as a generic offset instead."""
     lip_inset = lip_chamfer_top_mm + lip_chamfer_bottom_mm
-    ring = Manifold.extrude(outline, lip_height_mm).translate((0, 0, z_top))
-
     z_hi = z_top + lip_height_mm
     f = LIP_RIM_FLAT
     ov = 0.05  # segments interpenetrate by a real overlap — plate-to-plate
     # seams at EPS thickness tessellate into sub-float32 sliver faces
+
+    # The ring's own bottom face would otherwise sit exactly at z_top,
+    # perfectly coincident with the body's top face below it — the same
+    # zero-overlap seam this function's `ov` trick already guards against
+    # internally, but here between the ring and the body it's unioned onto.
+    # manifold3d's boolean kernel doesn't reliably fuse an exactly-coincident
+    # plate-to-plate seam between two independently-built solids: it can
+    # leave the ring as a genuinely disconnected piece, floating just above
+    # the body ("floating artifacts above the lip"). Extending the ring
+    # down by `ov` makes it truly penetrate into the body's outer wall
+    # (always solid there, in both the fast and general paths) instead of
+    # just touching it. The cavity cut below reaches further down still
+    # (`lower`, to z_top - 0.2), so this extra sliver is cut away wherever
+    # the cavity applies and only remains as overlap in the outer wall.
+    ring = Manifold.extrude(outline, lip_height_mm + ov).translate((0, 0, z_top - ov))
 
     def rr(inset: float) -> CrossSection:
         return outline.offset(-inset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)

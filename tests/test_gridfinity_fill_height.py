@@ -7,19 +7,29 @@ grid -> (0, True). This file pins that mapping to mesh digests, so any
 accidental geometry drift in the fast path (fill_height_pct=100) or the
 general path (everything else) fails loudly.
 
-The `fill_height_pct=100` (pocket) reference is byte-identical to the
-pre-refactor code, as intended. The `fill_height_pct=0` (corral/grid)
-references are NOT — investigating a user-reported "floating artifacts"
-rendering bug surfaced a real, pre-existing defect in the general path's
-separator/base/shelf construction: unioning a ring-with-a-hole against both
-an adjacent plate below (the deck) and a hole-filling disk above (the
-shelf) is a marginal case for manifold3d's boolean kernel, and a tiny
-negative-volume (inverted-normal) phantom shell could leak through even
-though the intended result is one clean solid. `_drop_boolean_noise` in
-gridfinity.py fixes it (decompose, keep the positive-volume piece, raise
-instead of guessing if that heuristic doesn't cleanly apply) — these
-reference values were recaptured after that fix, so they pin the corrected
-geometry rather than reproducing the bug.
+The lipless `fill_height_pct=100` (pocket) reference is byte-identical to
+the pre-refactor code, as intended. Every other reference value here is
+NOT — investigating a user-reported "floating artifacts" rendering bug
+surfaced two real, pre-existing defects, both fixed in this pass:
+
+1. The general path's separator/base/shelf construction: unioning a
+   ring-with-a-hole against both an adjacent plate below (the deck) and a
+   hole-filling disk above (the shelf) is a marginal case for manifold3d's
+   boolean kernel, and a tiny negative-volume (inverted-normal) phantom
+   shell could leak through even though the intended result is one clean
+   solid. `_drop_boolean_noise` in gridfinity.py fixes it (decompose, keep
+   the positive-volume piece, raise instead of guessing if that heuristic
+   doesn't cleanly apply).
+2. `_lip_ring`'s ring sat with its bottom face exactly coincident with the
+   body's top face (zero overlap) — manifold3d's boolean kernel doesn't
+   reliably fuse that seam, and for some grid layouts the entire lip came
+   out as a genuinely disconnected floating piece rather than fused to the
+   body. Fixed by extending the ring `ov` below the body's top face so it
+   truly penetrates into the (always-solid there) outer wall.
+
+Every `lip=True` reference value and every `fill_height_pct=0` reference
+value were recaptured after these fixes, so they pin the corrected
+geometry rather than reproducing either bug.
 """
 
 from __future__ import annotations
@@ -37,18 +47,21 @@ TOOL_POCKET = grid_mod.Poly(
 )
 
 # (fill_height_pct, live_grid, lip, height_u) -> (volume, nverts, digest).
-# The (100, False, *, *) rows are byte-identical to the pre-refactor code;
-# the (0, *, *, *) rows pin the geometry *after* the boolean-noise fix (see
-# module docstring) — their vertex counts are lower and volumes higher than
-# the original pre-refactor capture, because a negative-volume phantom shell
-# no longer gets tessellated into the mesh.
+# Only (100, False, False, *) is byte-identical to the pre-refactor code.
+# Every (0, *, *, *) row pins the geometry after the boolean-noise fix (see
+# module docstring) — lower vertex count, slightly higher volume, since a
+# negative-volume phantom shell no longer gets tessellated into the mesh.
+# Every (*, *, True, *) [lip] row pins the geometry after the lip-ring
+# overlap fix — vertex count is higher (the ring's extra `ov` slice adds
+# faces) but volume is unchanged (the overlap lands entirely inside
+# material that was already solid).
 LEGACY_REFERENCE = {
     (100, False, False, 3): (139560.49815429433, 1708, "e2ed2778deaa4ff1"),
     (0, False, False, 3): (49545.59723894811, 2572, "f079125c43b39eea"),
     (0, True, False, 4): (56370.93483053047, 2572, "ddd0254f353941fb"),
-    (100, False, True, 3): (141774.27519762123, 2657, "f271db57c62d841b"),
-    (0, False, True, 3): (58303.43713631049, 3629, "35b61a2c8c28e474"),
-    (0, True, True, 4): (68172.52489256053, 3629, "b4ad4ad9a79bca87"),
+    (100, False, True, 3): (141774.27519762123, 2694, "abdbecc903a8ebd3"),
+    (0, False, True, 3): (58303.43713631163, 3685, "bf2d5e322e1b34b9"),
+    (0, True, True, 4): (68172.52489256168, 3685, "a6c81aba60169c23"),
 }
 
 
@@ -96,6 +109,22 @@ class TestLegacyStylesMatchTheirReference:
         pieces = solid.decompose()
         assert len(pieces) == 1
         assert all(p.volume() > 0 for p in pieces)
+
+    def test_lip_is_never_a_disconnected_floating_piece(self):
+        """Regression test for the second bug this file's docstring
+        describes: for some grid layouts, `_lip_ring`'s zero-overlap seam
+        against the body's top face left the entire lip as a genuinely
+        disconnected piece — not a phantom sliver, a real floating shell,
+        matching a user report of "floating artifacts above the lip" that
+        produced a slicer warning. 3x2 at height_u=6 reproduced it; this
+        pins that exact case plus a small parameter sweep."""
+        for gx, gy, height_u in [(3, 2, 6), (2, 3, 6), (4, 3, 5), (2, 2, 3)]:
+            solid = grid_mod.bin_solid(
+                gx, gy, height_u, pocket=TOOL_POCKET, pocket_depth=5.0,
+                fill_height_pct=0, live_grid=False, lip=True,
+            )
+            pieces = solid.decompose()
+            assert len(pieces) == 1, (gx, gy, height_u, len(pieces))
 
     def test_default_fill_height_pct_is_100(self):
         """Omitting fill_height_pct/live_grid entirely still means pocket."""
