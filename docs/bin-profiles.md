@@ -25,11 +25,12 @@ derivation. In short:
   clearance envelope reaches, independent of `fill_height_pct`. Today's **Live Grid**
   preset is `fill_height_pct=0, live_grid=true`.
 
-As of this writing, only `fill_height_pct=100` and `fill_height_pct=0` actually build
-distinct geometry (the exact pre-existing Pocket and Corral/Live-Grid code paths,
-respectively) — intermediate values are accepted by the API and the editor's slider, but
-don't yet produce different geometry from `0`. Building the actual partial-fill
-geometry is tracked separately.
+`fill_height_pct=100` and `fill_height_pct=0` reproduce the exact pre-existing Pocket
+and Corral/Live-Grid code paths, respectively. Intermediate values build real geometry
+too: a "general floor fill" that rises solid from the deck to `fill_top_z = deck_top +
+(fill_height_pct/100) * (total_h - deck_top)`, everywhere outside every tool's own wall
+footprint and any `live_grid` socket cell (a socket needs a genuinely open cavity above
+it, so its cell is excluded from the fill regardless of `fill_height_pct`).
 
 ## Where you apply a profile
 

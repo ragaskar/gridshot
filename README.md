@@ -414,6 +414,11 @@ Features added on top of the original public release, newest last:
   height slider and live grid checkbox instead of a 3-way style picker (see
   [docs/bin-profiles.md](docs/bin-profiles.md) and
   [docs/bin-profiles-v2-proposal.md](docs/bin-profiles-v2-proposal.md) for the design)
+- Intermediate `fill_height_pct` values (between the old Pocket/Corral extremes) now
+  build real geometry — a general floor fill that rises solid from the deck to a
+  height scaled by the given percentage, everywhere outside each tool's own wall and
+  any `live_grid` socket cell — instead of just falling back to `0`'s geometry (see
+  [docs/bin-profiles.md](docs/bin-profiles.md))
 
 ## License
 

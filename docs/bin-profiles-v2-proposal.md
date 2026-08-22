@@ -1,7 +1,8 @@
 # Bin Profiles v2: parameterized bin geometry (proposal)
 
-**Status: proposal, not implemented.** This document is the design spec to build from,
-not a description of shipped behavior — for that, see [bin-profiles.md](bin-profiles.md).
+**Status: implemented.** This document is the design spec this was built from, kept as
+the historical design record — for shipped behavior, see
+[bin-profiles.md](bin-profiles.md).
 
 ## Motivation
 
