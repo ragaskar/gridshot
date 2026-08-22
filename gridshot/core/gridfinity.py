@@ -545,8 +545,9 @@ def bin_solid(
     extrusion with pockets cut directly into it, identical to the pre-
     parameterization code. Anything else routes through the general
     (deck + outer wall + per-tool wall/shelf) construction — `0` reproduces
-    today's "corral" exactly. Intermediate values aren't implemented yet
-    (Phase 3): they currently alias to `0` in the general path.
+    today's "corral" exactly. Intermediate values rise from the deck to a
+    height scaled by the percentage, filling the general floor area (outside
+    every tool's own wall footprint and any live_grid socket cell).
 
     `live_grid` adds baseplate sockets to floor cells no tool's wall+
     clearance envelope reaches, independent of `fill_height_pct` — today's
