@@ -19,7 +19,7 @@ const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
 function baseTool(id: string, label: string, tx: number) {
   return {
-    id, label, bin_style: "pocket" as const,
+    id, label, fill_height_pct: 100, live_grid: false,
     depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_mode: "automatic" as const,
     clearance_mm: 1.0, clearance_mm_inherited: 1.0, clearance_mm_override: null,
     round_tool: false,
@@ -50,7 +50,7 @@ function buildResponse(overrides: CombineToolOverride[] | null | undefined, plac
     };
   });
   return {
-    bin_style: "pocket" as const, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
+    fill_height_pct: 100, live_grid: false, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
     overall_height_mm: 25.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
     reserved_cells: [], available_cells: [], tools,
   };
@@ -96,12 +96,12 @@ describe("CombineEditor export filenames", () => {
         onClose={() => {}}
         initial={{
           id: "bin-3", label: "Workbench Drawer 3", appliedProfileId: null,
-          placements: [], overrides: [], binStyle: "pocket", lip: true,
+          placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
           magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2,
           forceGx: null, forceGy: null, removedCells: null,
           lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
-          minWallMm: null, minFloorMm: null, corralFloorMm: null, corralWallMm: null,
-          corralBaseFlareMm: null, corralBaseReinforcementHMm: null, corralEdgeMarginMm: null,
+          minWallMm: null, minFloorMm: null, floorThicknessMm: null, toolWallMm: null,
+          toolWallFlareMm: null, toolWallReinforcementHMm: null, edgeMarginMm: null,
           magnetHoleInsetFromEdgeMm: null,
         }}
       />,
@@ -119,12 +119,12 @@ describe("CombineEditor export filenames", () => {
     vi.mocked(saveBin).mockResolvedValue({
       id: "bin-1", label: "Fresh Save", created_ts: 0,
       tool_ids: ["tool-a", "tool-b"], tool_labels: ["Wrench", "Pliers"],
-      placements: [], overrides: [], overall_height: null, lip: true, bin_style: "pocket",
+      placements: [], overrides: [], overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
       magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
       force_gx: null, force_gy: null, removed_cells: null,
       lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-      min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-      corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+      min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+      tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
       magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
     });
     render(

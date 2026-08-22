@@ -33,7 +33,7 @@ function readiness(status: ReadinessReport["status"]): ReadinessReport {
 function tool(id: string, label: string, status: ReadinessReport["status"] = "pass"): LibraryTool {
   return {
     id, label, grid_x: 2, grid_y: 1, thickness_mm: 4, silhouette_height_mm: 20,
-    full_height_mm: null, clearance_mm: 1, bin_style: "pocket",
+    full_height_mm: null, clearance_mm: 1, fill_height_pct: 100, live_grid: false,
     pocket_depth_mm: null, derived_pocket_depth_mm: 10, derived_height_u: 3,
     derived_overall_height_mm: 25.4, derived_key: `${id}-key`,
     derived_reserved_cells: [], derived_available_cells: [],

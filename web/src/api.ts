@@ -118,15 +118,14 @@ export interface FootprintReconstruction {
   physical_area_mm2?: number;
 }
 
-export type BinStyle = "pocket" | "corral" | "grid";
-
 export interface TraceResult {
   project: string;
   bin: {
     grid: [number, number];
     height_u: number;
     overall_height_mm: number;
-    bin_style: BinStyle;
+    fill_height_pct: number;
+    live_grid: boolean;
     pocket_depth_mm: number;
     pocket_depth_override_mm: number | null;
     overall_height_override_mm: number | null;
@@ -677,7 +676,8 @@ export interface LibraryTool {
   silhouette_height_mm: number;
   full_height_mm: number | null;
   clearance_mm: number;
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   pocket_depth_mm: number | null;
   derived_pocket_depth_mm: number | null;
   derived_height_u: number | null;
@@ -914,7 +914,8 @@ export async function updateLibraryTool(
     silhouette_height_mm?: number;
     full_height_mm?: number | null;
     clearance_mm?: number;
-    bin_style?: BinStyle;
+    fill_height_pct?: number;
+    live_grid?: boolean;
     pocket_depth_mm?: number | null;
     round_tool?: boolean;
     finger_hole?: boolean;
@@ -990,7 +991,8 @@ export type FingerHoleSide = "top" | "bottom" | "left" | "right" | "center";
 
 export interface CombineTool extends Placement {
   label: string;
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   depth_mm: number;
   depth_mm_inherited: number;
   depth_mm_override: number | null;
@@ -1014,7 +1016,8 @@ export interface CombineTool extends Placement {
 }
 
 export interface CombinePreview {
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   gx: number;
   gy: number;
   outer_w: number;
@@ -1040,7 +1043,8 @@ export interface CombineOptions {
   overallHeight?: number | null;
   lip?: boolean;
   overrides?: CombineToolOverride[] | null;
-  binStyle?: BinStyle;
+  fillHeightPct?: number;
+  liveGrid?: boolean;
   magnetHoles?: boolean;
   magnetHoleDiameterMm?: number | null;
   magnetHoleDepthMm?: number | null;
@@ -1054,11 +1058,11 @@ export interface CombineOptions {
   lipChamferBottomMm?: number | null;
   minWallMm?: number | null;
   minFloorMm?: number | null;
-  corralFloorMm?: number | null;
-  corralWallMm?: number | null;
-  corralBaseFlareMm?: number | null;
-  corralBaseReinforcementHMm?: number | null;
-  corralEdgeMarginMm?: number | null;
+  floorThicknessMm?: number | null;
+  toolWallMm?: number | null;
+  toolWallFlareMm?: number | null;
+  toolWallReinforcementHMm?: number | null;
+  edgeMarginMm?: number | null;
   magnetHoleInsetFromEdgeMm?: number | null;
   /** Purely which profile the combine editor's picker shows as applied —
    *  cosmetic bookkeeping only, not consulted by geometry. Ignored by the
@@ -1075,7 +1079,8 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     overall_height: options.overallHeight ?? null,
     lip: options.lip ?? true,
     overrides: options.overrides ?? null,
-    bin_style: options.binStyle ?? "pocket",
+    fill_height_pct: options.fillHeightPct ?? 100,
+    live_grid: options.liveGrid ?? false,
     magnet_holes: options.magnetHoles ?? false,
     magnet_hole_diameter_mm: options.magnetHoleDiameterMm ?? undefined,
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
@@ -1089,11 +1094,11 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     lip_chamfer_bottom_mm: options.lipChamferBottomMm ?? undefined,
     min_wall_mm: options.minWallMm ?? undefined,
     min_floor_mm: options.minFloorMm ?? undefined,
-    corral_floor_mm: options.corralFloorMm ?? undefined,
-    corral_wall_mm: options.corralWallMm ?? undefined,
-    corral_base_flare_mm: options.corralBaseFlareMm ?? undefined,
-    corral_base_reinforcement_h_mm: options.corralBaseReinforcementHMm ?? undefined,
-    corral_edge_margin_mm: options.corralEdgeMarginMm ?? undefined,
+    floor_thickness_mm: options.floorThicknessMm ?? undefined,
+    tool_wall_mm: options.toolWallMm ?? undefined,
+    tool_wall_flare_mm: options.toolWallFlareMm ?? undefined,
+    tool_wall_reinforcement_h_mm: options.toolWallReinforcementHMm ?? undefined,
+    edge_margin_mm: options.edgeMarginMm ?? undefined,
     magnet_hole_inset_from_edge_mm: options.magnetHoleInsetFromEdgeMm ?? undefined,
     applied_profile_id: options.appliedProfileId ?? undefined,
   };
@@ -1175,7 +1180,8 @@ export interface SavedBin {
   overrides: CombineToolOverride[];
   overall_height: number | null;
   lip: boolean;
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   magnet_holes: boolean;
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
@@ -1188,11 +1194,11 @@ export interface SavedBin {
   lip_chamfer_bottom_mm: number | null;
   min_wall_mm: number | null;
   min_floor_mm: number | null;
-  corral_floor_mm: number | null;
-  corral_wall_mm: number | null;
-  corral_base_flare_mm: number | null;
-  corral_base_reinforcement_h_mm: number | null;
-  corral_edge_margin_mm: number | null;
+  floor_thickness_mm: number | null;
+  tool_wall_mm: number | null;
+  tool_wall_flare_mm: number | null;
+  tool_wall_reinforcement_h_mm: number | null;
+  edge_margin_mm: number | null;
   magnet_hole_inset_from_edge_mm: number | null;
   applied_profile_id: string | null;
 }
@@ -1298,7 +1304,8 @@ export interface BinProfile {
   id: string;
   name: string;
   created_ts: number;
-  base_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   lip: boolean;
   allow_custom_shape: boolean;
   magnet_holes_default: boolean;
@@ -1310,11 +1317,11 @@ export interface BinProfile {
   lip_chamfer_bottom_mm: number | null;
   min_wall_mm: number | null;
   min_floor_mm: number | null;
-  corral_floor_mm: number | null;
-  corral_wall_mm: number | null;
-  corral_base_flare_mm: number | null;
-  corral_base_reinforcement_h_mm: number | null;
-  corral_edge_margin_mm: number | null;
+  floor_thickness_mm: number | null;
+  tool_wall_mm: number | null;
+  tool_wall_flare_mm: number | null;
+  tool_wall_reinforcement_h_mm: number | null;
+  edge_margin_mm: number | null;
   magnet_hole_inset_from_edge_mm: number | null;
   has_preview_image: boolean;
 }
@@ -1425,7 +1432,8 @@ export interface GenerateParams {
   thickness?: number | null;
   full_height?: number | null;
   clearance: number;
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   depth?: number | null;
   overall_height?: number | null;
   finger_hole: boolean;
@@ -1527,7 +1535,8 @@ export async function sessionAddToLibrary(
   if (params.thickness != null) fd.append("thickness", String(params.thickness));
   if (params.full_height != null) fd.append("full_height", String(params.full_height));
   fd.append("clearance", String(params.clearance));
-  fd.append("bin_style", params.bin_style);
+  fd.append("fill_height_pct", String(params.fill_height_pct));
+  fd.append("live_grid", String(params.live_grid));
   if (params.depth != null) fd.append("depth", String(params.depth));
   fd.append("finger_hole", String(params.finger_hole));
   fd.append("lip", String(params.lip));
@@ -1555,7 +1564,8 @@ export async function sessionGenerate(
   if (params.thickness != null) fd.append("thickness", String(params.thickness));
   if (params.full_height != null) fd.append("full_height", String(params.full_height));
   fd.append("clearance", String(params.clearance));
-  fd.append("bin_style", params.bin_style);
+  fd.append("fill_height_pct", String(params.fill_height_pct));
+  fd.append("live_grid", String(params.live_grid));
   if (params.depth != null) fd.append("depth", String(params.depth));
   if (params.overall_height != null)
     fd.append("overall_height", String(params.overall_height));
@@ -1581,7 +1591,8 @@ export interface TraceParams {
   thickness?: number | null;
   full_height?: number | null;
   clearance: number;
-  bin_style: BinStyle;
+  fill_height_pct: number;
+  live_grid: boolean;
   depth?: number | null;
   overall_height?: number | null;
   finger_hole: boolean;
@@ -1600,7 +1611,8 @@ export async function postTrace(
   if (params.thickness != null) fd.append("thickness", String(params.thickness));
   if (params.full_height != null) fd.append("full_height", String(params.full_height));
   fd.append("clearance", String(params.clearance));
-  fd.append("bin_style", params.bin_style);
+  fd.append("fill_height_pct", String(params.fill_height_pct));
+  fd.append("live_grid", String(params.live_grid));
   if (params.depth != null) fd.append("depth", String(params.depth));
   if (params.overall_height != null)
     fd.append("overall_height", String(params.overall_height));

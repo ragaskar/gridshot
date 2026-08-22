@@ -97,11 +97,11 @@ describe("Bin Profiles API client", () => {
     const blob = new Blob([new Uint8Array([1])]);
     fetchMock.mockResolvedValue({ ok: true, blob: async () => blob } as Response);
 
-    const result = await previewBinProfileGlb({ base_style: "corral", lip_height_mm: 8 });
+    const result = await previewBinProfileGlb({ fill_height_pct: 0, lip_height_mm: 8 });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/bin-profiles/preview.glb");
-    expect(JSON.parse(init.body)).toEqual({ base_style: "corral", lip_height_mm: 8 });
+    expect(JSON.parse(init.body)).toEqual({ fill_height_pct: 0, lip_height_mm: 8 });
     expect(result).toBe(blob);
   });
 
@@ -109,28 +109,30 @@ describe("Bin Profiles API client", () => {
     fetchMock.mockResolvedValue(jsonResponse({ tools: [] }));
 
     await combinePreview(["tool-a"], {
-      lip: false, binStyle: "corral",
-      lipHeightMm: 8.0, corralWallMm: 4.0, magnetHoleInsetFromEdgeMm: 6.0,
+      lip: false, fillHeightPct: 0, liveGrid: true,
+      lipHeightMm: 8.0, toolWallMm: 4.0, magnetHoleInsetFromEdgeMm: 6.0,
     });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/library/combine/preview");
     const body = JSON.parse(init.body);
     expect(body.lip).toBe(false);
-    expect(body.bin_style).toBe("corral");
+    expect(body.fill_height_pct).toBe(0);
+    expect(body.live_grid).toBe(true);
     expect(body.lip_height_mm).toBe(8.0);
-    expect(body.corral_wall_mm).toBe(4.0);
+    expect(body.tool_wall_mm).toBe(4.0);
     expect(body.magnet_hole_inset_from_edge_mm).toBe(6.0);
   });
 
-  it("combinePreview defaults lip to true and bin_style to pocket when options is omitted", async () => {
+  it("combinePreview defaults lip to true and fill_height_pct to 100 when options is omitted", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ tools: [] }));
 
     await combinePreview(["tool-a"]);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.lip).toBe(true);
-    expect(body.bin_style).toBe("pocket");
+    expect(body.fill_height_pct).toBe(100);
+    expect(body.live_grid).toBe(false);
     expect(body.lip_height_mm).toBeUndefined();
   });
 });

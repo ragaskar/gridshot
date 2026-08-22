@@ -97,7 +97,8 @@ export function BinLibrary() {
       appliedProfileId: b.applied_profile_id,
       placements: b.placements,
       overrides: b.overrides,
-      binStyle: b.bin_style,
+      fillHeightPct: b.fill_height_pct,
+      liveGrid: b.live_grid,
       lip: b.lip,
       magnetHoles: b.magnet_holes,
       magnetHoleDiameterMm: b.magnet_hole_diameter_mm,
@@ -111,11 +112,11 @@ export function BinLibrary() {
       lipChamferBottomMm: b.lip_chamfer_bottom_mm,
       minWallMm: b.min_wall_mm,
       minFloorMm: b.min_floor_mm,
-      corralFloorMm: b.corral_floor_mm,
-      corralWallMm: b.corral_wall_mm,
-      corralBaseFlareMm: b.corral_base_flare_mm,
-      corralBaseReinforcementHMm: b.corral_base_reinforcement_h_mm,
-      corralEdgeMarginMm: b.corral_edge_margin_mm,
+      floorThicknessMm: b.floor_thickness_mm,
+      toolWallMm: b.tool_wall_mm,
+      toolWallFlareMm: b.tool_wall_flare_mm,
+      toolWallReinforcementHMm: b.tool_wall_reinforcement_h_mm,
+      edgeMarginMm: b.edge_margin_mm,
       magnetHoleInsetFromEdgeMm: b.magnet_hole_inset_from_edge_mm,
     };
   }
@@ -172,8 +173,8 @@ export function BinLibrary() {
                     <dd className="text-right text-field">
                       {new Date(b.created_ts * 1000).toLocaleDateString()}
                     </dd>
-                    <dt>Bin style</dt>
-                    <dd className="text-right text-field">{b.bin_style}</dd>
+                    <dt>Fill height</dt>
+                    <dd className="text-right text-field">{b.fill_height_pct}%{b.live_grid ? " + live grid" : ""}</dd>
                   </dl>
                   <div className="font-mono text-[10px] text-muted">
                     <span className="uppercase">Tools</span>

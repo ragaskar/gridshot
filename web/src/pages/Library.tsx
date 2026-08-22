@@ -563,16 +563,17 @@ export function Library() {
                             if (!profile) return;
                             // lip isn't editable per-tool via this control today —
                             // updateLibraryTool's PATCH doesn't accept it — so only
-                            // base style and magnet-hole defaults apply here.
+                            // fill height/live grid and magnet-hole defaults apply here.
                             patch(t.id, {
-                              bin_style: profile.base_style,
+                              fill_height_pct: profile.fill_height_pct,
+                              live_grid: profile.live_grid,
                               magnet_holes: profile.magnet_holes_default,
                               magnet_hole_diameter_mm: profile.magnet_hole_diameter_mm_default,
                               magnet_hole_depth_mm: profile.magnet_hole_depth_mm_default,
                             }).catch(() => {});
                           }}
                         >
-                          <option value="" disabled>{t.bin_style === "pocket" ? "Pocket" : t.bin_style === "corral" ? "Corral" : "Live grid"}</option>
+                          <option value="" disabled>fill {t.fill_height_pct}%{t.live_grid ? " + live grid" : ""}</option>
                           {binProfiles.map((p) => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
@@ -581,12 +582,12 @@ export function Library() {
                       <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-muted">
                         <span>
                           {t.grid_x}×{t.grid_y}u · {t.derived_overall_height_mm ?? "—"}mm tall
-                          {t.bin_style === "grid" ? ` · ${t.derived_available_cells.length} live` : ""}
+                          {t.live_grid ? ` · ${t.derived_available_cells.length} live` : ""}
                         </span>
                         <button
                           className={`px-2 py-1 border ${t.finger_hole ? "text-teal border-teal" : "text-muted border-line"}`}
                           style={{ borderRadius: 2 }}
-                          title={t.bin_style !== "pocket"
+                          title={t.fill_height_pct !== 100 || t.live_grid
                             ? "enclosed access lobe inside the separator for easier tool removal"
                             : "finger scallop to lift the recessed tool out (full-depth pockets need it)"}
                           onClick={() => patch(t.id, { finger_hole: !t.finger_hole }).catch(() => {})}
@@ -653,7 +654,7 @@ export function Library() {
                         </label>
                         <label className="min-w-0">
                           <span className="block font-mono text-[9px] uppercase text-muted">
-                            {t.bin_style === "pocket" ? "Depth" : "Recess"}
+                            {t.fill_height_pct === 100 && !t.live_grid ? "Depth" : "Recess"}
                           </span>
                           <input
                             key={`d-${t.id}-${t.derived_key}`}

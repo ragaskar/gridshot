@@ -29,7 +29,7 @@ import { listBinProfiles, listLibrary, updateLibraryTool } from "../api";
 function tool(id: string, label: string): LibraryTool {
   return {
     id, label, grid_x: 2, grid_y: 1, thickness_mm: 4, silhouette_height_mm: 20,
-    full_height_mm: null, clearance_mm: 1, bin_style: "pocket",
+    full_height_mm: null, clearance_mm: 1, fill_height_pct: 100, live_grid: false,
     pocket_depth_mm: null, derived_pocket_depth_mm: 10, derived_height_u: 3,
     derived_overall_height_mm: 25.4, derived_key: `${id}-key`,
     derived_reserved_cells: [], derived_available_cells: [],
@@ -43,11 +43,11 @@ function tool(id: string, label: string): LibraryTool {
 
 const CORRAL_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
-  base_style: "corral", lip: false, allow_custom_shape: false,
+  fill_height_pct: 0, live_grid: false, lip: false, allow_custom_shape: false,
   magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+  tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
   magnet_hole_inset_from_edge_mm: null,
   has_preview_image: false,
 };
@@ -66,7 +66,7 @@ describe("Library per-tool bin profile picker", () => {
     cleanup();
   });
 
-  it("applies a profile's base style and magnet-hole defaults to the tool", async () => {
+  it("applies a profile's fill height/live grid and magnet-hole defaults to the tool", async () => {
     render(<Library />);
     await screen.findByDisplayValue("Wrench");
 
@@ -77,7 +77,8 @@ describe("Library per-tool bin profile picker", () => {
 
     await waitFor(() => {
       expect(updateLibraryTool).toHaveBeenCalledWith("t-a", {
-        bin_style: "corral",
+        fill_height_pct: 0,
+        live_grid: false,
         magnet_holes: true,
         magnet_hole_diameter_mm: 5.0,
         magnet_hole_depth_mm: 1.5,

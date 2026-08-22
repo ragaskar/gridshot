@@ -10,7 +10,6 @@ import {
   uploadBinProfilePreview,
   type BinProfile,
   type BinProfileFields,
-  type BinStyle,
 } from "../api";
 import { BinViewer } from "../components/BinViewer";
 import { decodeUrlState, pathForBinProfileEdit, pathForView } from "../urlState";
@@ -27,7 +26,8 @@ function defaultProfileName(): string {
 
 const DEFAULT_DRAFT: BinProfileFields = {
   name: "",
-  base_style: "pocket",
+  fill_height_pct: 100,
+  live_grid: false,
   lip: true,
   allow_custom_shape: true,
   magnet_holes_default: false,
@@ -39,11 +39,11 @@ const DEFAULT_DRAFT: BinProfileFields = {
   lip_chamfer_bottom_mm: null,
   min_wall_mm: null,
   min_floor_mm: null,
-  corral_floor_mm: null,
-  corral_wall_mm: null,
-  corral_base_flare_mm: null,
-  corral_base_reinforcement_h_mm: null,
-  corral_edge_margin_mm: null,
+  floor_thickness_mm: null,
+  tool_wall_mm: null,
+  tool_wall_flare_mm: null,
+  tool_wall_reinforcement_h_mm: null,
+  edge_margin_mm: null,
   magnet_hole_inset_from_edge_mm: null,
 };
 
@@ -54,7 +54,7 @@ function profileToFields(p: BinProfile): BinProfileFields {
 
 type StructuralKey = Exclude<
   keyof BinProfileFields,
-  "name" | "base_style" | "lip" | "allow_custom_shape" | "magnet_holes_default"
+  "name" | "fill_height_pct" | "live_grid" | "lip" | "allow_custom_shape" | "magnet_holes_default"
   | "magnet_hole_diameter_mm_default" | "magnet_hole_depth_mm_default"
 >;
 
@@ -67,17 +67,17 @@ const LIP_FIELDS: { key: StructuralKey; label: string; placeholder: string }[] =
   { key: "lip_chamfer_bottom_mm", label: "Lip bottom chamfer", placeholder: "0.7" },
 ];
 
-/** Wall/floor thickness fields — apply regardless of base style (min_wall_mm/
- *  min_floor_mm to a pocket bin, the corral_* fields to a corral/grid bin's
- *  deck and separator walls). */
+/** Wall/floor thickness fields — apply regardless of fill height (min_wall_mm/
+ *  min_floor_mm to a fully-filled bin, the rest to the general floor area's
+ *  deck and tool walls below 100% fill). */
 const WALL_FIELDS: { key: StructuralKey; label: string; placeholder: string }[] = [
   { key: "min_wall_mm", label: "Pocket wall thickness", placeholder: "2.0" },
   { key: "min_floor_mm", label: "Floor thickness under a pocket", placeholder: "1.2" },
-  { key: "corral_floor_mm", label: "Corral/grid deck floor", placeholder: "1.2" },
-  { key: "corral_wall_mm", label: "Corral/grid wall thickness", placeholder: "2.0" },
-  { key: "corral_base_flare_mm", label: "Corral/grid base flare", placeholder: "0.8" },
-  { key: "corral_base_reinforcement_h_mm", label: "Corral/grid base reinforcement height", placeholder: "1.0" },
-  { key: "corral_edge_margin_mm", label: "Corral/grid edge margin", placeholder: "1.0" },
+  { key: "floor_thickness_mm", label: "General floor deck thickness", placeholder: "1.2" },
+  { key: "tool_wall_mm", label: "Tool wall thickness", placeholder: "2.0" },
+  { key: "tool_wall_flare_mm", label: "Tool wall base flare", placeholder: "0.8" },
+  { key: "tool_wall_reinforcement_h_mm", label: "Tool wall base reinforcement height", placeholder: "1.0" },
+  { key: "edge_margin_mm", label: "Edge margin", placeholder: "1.0" },
 ];
 
 /** Named, saved presets of bin *style* parameters — lip, base geometry mode,
@@ -216,7 +216,7 @@ export function BinProfiles() {
   }
 
   if (editingId !== null) {
-    const showCustomShapeWarning = draft.allow_custom_shape && draft.base_style !== "pocket";
+    const showCustomShapeWarning = draft.allow_custom_shape && (draft.fill_height_pct !== 100 || draft.live_grid);
     return (
       <div className="mx-auto max-w-container px-4 py-8 sm:px-6 sm:py-12">
         <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -264,21 +264,31 @@ export function BinProfiles() {
               </label>
 
               <div>
-                <span className="font-mono text-[10px] uppercase text-muted">Base style</span>
-                <div className="mt-1 grid grid-cols-3 gap-1">
-                  {(["pocket", "corral", "grid"] as BinStyle[]).map((style) => (
-                    <button
-                      key={style}
-                      type="button"
-                      aria-pressed={draft.base_style === style}
-                      className={`btn !px-1 !py-2 text-[10px] ${draft.base_style === style ? "border-teal text-teal" : "btn-ghost"}`}
-                      onClick={() => set("base_style", style)}
-                    >
-                      {style === "pocket" ? "Pocket" : style === "corral" ? "Corral" : "Live grid"}
-                    </button>
-                  ))}
-                </div>
+                <label className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10px] uppercase text-muted">Fill height</span>
+                  <span className="font-mono text-[10px] text-field">{draft.fill_height_pct}%</span>
+                </label>
+                <input
+                  aria-label="Fill height percent"
+                  type="range" min={0} max={100} step={5}
+                  className="mt-1 w-full"
+                  value={draft.fill_height_pct}
+                  onChange={(e) => set("fill_height_pct", Number(e.target.value))}
+                />
+                <p className="font-mono text-[9px] text-muted">
+                  How far up the general floor area (outside every tool's own wall) solid material
+                  rises — 0% is a fully hollow shell, 100% is fully solid.
+                </p>
               </div>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={draft.live_grid}
+                  onChange={(e) => set("live_grid", e.target.checked)}
+                />
+                <span className="font-mono text-[10px] uppercase text-muted">Live grid</span>
+              </label>
 
               <label className="flex items-center gap-2">
                 <input
@@ -290,8 +300,8 @@ export function BinProfiles() {
               </label>
               {showCustomShapeWarning && (
                 <p className="font-mono text-[9px] text-orange">
-                  Corral/Live grid don't yet support cell removal — this profile's checkbox has no
-                  effect until that's built.
+                  Custom bin shape only works at 100% fill height with live grid off — this
+                  profile's checkbox has no effect until that's built for other fill levels.
                 </p>
               )}
 
@@ -443,8 +453,8 @@ export function BinProfiles() {
               <div className="p-3 space-y-2 text-field">
                 <div className="font-mono text-sm text-field">{p.name}</div>
                 <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 font-mono text-[10px] text-muted">
-                  <dt>Base style</dt>
-                  <dd className="text-right text-field">{p.base_style}</dd>
+                  <dt>Fill height</dt>
+                  <dd className="text-right text-field">{p.fill_height_pct}%{p.live_grid ? " + live grid" : ""}</dd>
                   <dt>Lip</dt>
                   <dd className="text-right text-field">{p.lip ? "on" : "off"}</dd>
                 </dl>

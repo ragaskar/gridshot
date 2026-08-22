@@ -19,7 +19,7 @@ const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
 function baseTool(id: string, label: string, tx: number) {
   return {
-    id, label, bin_style: "pocket" as const,
+    id, label, fill_height_pct: 100, live_grid: false,
     depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_mode: "automatic" as const,
     clearance_mm: 1.0, clearance_mm_inherited: 1.0, clearance_mm_override: null,
     round_tool: false,
@@ -36,7 +36,7 @@ function baseTool(id: string, label: string, tx: number) {
 
 function buildResponse(
   placements: Placement[] | null | undefined,
-  binStyle: "pocket" | "corral" | "grid",
+  fillHeightPct: number,
 ) {
   const bases = [baseTool("tool-a", "Wrench", -15), baseTool("tool-b", "Pliers", 15)];
   const tools = bases.map((base) => {
@@ -44,7 +44,7 @@ function buildResponse(
     return { ...base, tx: placement?.tx ?? base.tx, ty: placement?.ty ?? base.ty, rot: placement?.rot ?? base.rot };
   });
   return {
-    bin_style: binStyle, gx: 4, gy: 4, outer_w: 168, outer_d: 168,
+    fill_height_pct: fillHeightPct, live_grid: false, gx: 4, gy: 4, outer_w: 168, outer_d: 168,
     overall_height_mm: 25.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
     reserved_cells: [], available_cells: [], tools,
   };
@@ -52,23 +52,23 @@ function buildResponse(
 
 const POCKET_PROFILE = {
   id: "seed-pocket", name: "Pocket", created_ts: 0,
-  base_style: "pocket" as const, lip: true, allow_custom_shape: true,
+  fill_height_pct: 100, live_grid: false, lip: true, allow_custom_shape: true,
   magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+  tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
   magnet_hole_inset_from_edge_mm: null,
   has_preview_image: false,
 };
 const CORRAL_PROFILE = {
-  ...POCKET_PROFILE, id: "seed-corral", name: "Corral", base_style: "corral" as const, allow_custom_shape: false,
+  ...POCKET_PROFILE, id: "seed-corral", name: "Corral", fill_height_pct: 0, allow_custom_shape: false,
 };
 
 describe("CombineEditor custom bin shape persistence across bin profile switches", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
       (_ids, options) =>
-        Promise.resolve(buildResponse(options?.placements, options?.binStyle ?? "pocket")),
+        Promise.resolve(buildResponse(options?.placements, options?.fillHeightPct ?? 100)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([POCKET_PROFILE, CORRAL_PROFILE]);
@@ -101,7 +101,7 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     fireEvent.change(profileSelect, { target: { value: "seed-corral" } });
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
-      expect(last[1]?.binStyle).toBe("corral");
+      expect(last[1]?.fillHeightPct).toBe(0);
       expect(last[1]?.removedCells).toBeNull();
     });
     expect(screen.queryByText("Custom bin shape")).toBeNull();
@@ -111,7 +111,7 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     fireEvent.change(profileSelect, { target: { value: "seed-pocket" } });
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
-      expect(last[1]?.binStyle).toBe("pocket");
+      expect(last[1]?.fillHeightPct).toBe(100);
       expect(last[1]?.removedCells).toEqual([[0, 0]]);
     });
     const checkbox = screen.getByText("Custom bin shape").previousElementSibling as HTMLInputElement;

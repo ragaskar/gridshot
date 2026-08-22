@@ -28,11 +28,11 @@ import {
 function profile(overrides: Partial<BinProfile> = {}): BinProfile {
   return {
     id: "p1", name: "Pocket", created_ts: 0,
-    base_style: "pocket", lip: true, allow_custom_shape: true,
+    fill_height_pct: 100, live_grid: false, lip: true, allow_custom_shape: true,
     magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
     lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-    min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-    corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+    min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+    tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
     magnet_hole_inset_from_edge_mm: null,
     has_preview_image: false,
     ...overrides,
@@ -41,7 +41,7 @@ function profile(overrides: Partial<BinProfile> = {}): BinProfile {
 
 const PROFILES = [
   profile({ id: "p1", name: "Pocket" }),
-  profile({ id: "p2", name: "Corral", base_style: "corral", allow_custom_shape: false }),
+  profile({ id: "p2", name: "Corral", fill_height_pct: 0, allow_custom_shape: false }),
 ];
 
 function setPath(path: string) {
@@ -83,7 +83,7 @@ describe("BinProfiles page", () => {
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     expect(nameInput.value).toBe(`Bin Profile ${today}`);
-    expect(screen.getByRole("button", { name: "Pocket" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("Fill height percent") as HTMLInputElement).value).toBe("100");
   });
 
   it("opens the editor pre-filled with an existing profile's fields", async () => {
@@ -94,18 +94,18 @@ describe("BinProfiles page", () => {
 
     const nameInput = (await screen.findByLabelText("Bin profile name")) as HTMLInputElement;
     expect(nameInput.value).toBe("Corral");
-    expect(screen.getByRole("button", { name: "Corral" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("Fill height percent") as HTMLInputElement).value).toBe("0");
   });
 
-  it("shows a warning when allow-custom-shape is checked but the base style isn't pocket", async () => {
+  it("shows a warning when allow-custom-shape is checked but fill height isn't 100", async () => {
     render(<BinProfiles />);
     await screen.findByText("Pocket");
     fireEvent.click(screen.getByText("Pocket")); // opens the Pocket profile (allow_custom_shape: true)
     await screen.findByLabelText("Bin profile name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Corral" }));
+    fireEvent.change(screen.getByLabelText("Fill height percent"), { target: { value: "0" } });
 
-    expect(screen.getByText(/don't yet support cell removal/)).toBeTruthy();
+    expect(screen.getByText(/only works at 100% fill height/)).toBeTruthy();
   });
 
   it("saves a new profile and returns to the list", async () => {
@@ -121,7 +121,8 @@ describe("BinProfiles page", () => {
     await waitFor(() => expect(createBinProfile).toHaveBeenCalled());
     const sent = vi.mocked(createBinProfile).mock.calls[0][0];
     expect(sent.name).toBe("My Style");
-    expect(sent.base_style).toBe("pocket");
+    expect(sent.fill_height_pct).toBe(100);
+    expect(sent.live_grid).toBe(false);
     await waitFor(() => expect(screen.queryByLabelText("Bin profile name")).toBeNull());
   });
 
@@ -164,7 +165,7 @@ describe("BinProfiles page", () => {
     expect(screen.queryByText("Advanced (structural)")).toBeNull();
     expect(screen.getByLabelText("Lip height")).toBeTruthy();
     expect(screen.getByLabelText("Pocket wall thickness")).toBeTruthy();
-    expect(screen.getByLabelText("Corral/grid edge margin")).toBeTruthy();
+    expect(screen.getByLabelText("Edge margin")).toBeTruthy();
   });
 
   it("disables the stacking-lip fields unless the Stacking Lip box is checked", async () => {

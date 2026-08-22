@@ -21,7 +21,7 @@ const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
 function baseTool(id: string, label: string, tx: number) {
   return {
-    id, label, bin_style: "pocket" as const,
+    id, label, fill_height_pct: 100, live_grid: false,
     depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_mode: "automatic" as const,
     clearance_mm: 1.0, clearance_mm_inherited: 1.0, clearance_mm_override: null,
     round_tool: false,
@@ -42,14 +42,14 @@ const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
   "bintool-1-aaaaaa": baseTool("bintool-1-aaaaaa", "Wrench (copy)", 45),
 };
 
-function buildResponse(ids: string[], placements: Placement[] | null | undefined, binStyle: "pocket" | "corral" | "grid") {
+function buildResponse(ids: string[], placements: Placement[] | null | undefined, fillHeightPct: number) {
   const tools = ids.map((id) => {
     const base = TOOL_POOL[id] ?? baseTool(id, id, 0);
     const placement = placements?.find((p) => p.id === id);
     return { ...base, tx: placement?.tx ?? base.tx, ty: placement?.ty ?? base.ty, rot: placement?.rot ?? base.rot };
   });
   return {
-    bin_style: binStyle, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
+    fill_height_pct: fillHeightPct, live_grid: false, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
     overall_height_mm: 25.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
     reserved_cells: [], available_cells: [], tools,
   };
@@ -62,7 +62,7 @@ function readiness(): ReadinessReport {
 const DUPLICATED_TOOL: LibraryTool = {
   id: "bintool-1-aaaaaa", label: "Wrench (copy)", grid_x: 2, grid_y: 1,
   thickness_mm: 4, silhouette_height_mm: 20, full_height_mm: null, clearance_mm: 1,
-  bin_style: "pocket", pocket_depth_mm: null, derived_pocket_depth_mm: 10,
+  fill_height_pct: 100, live_grid: false, pocket_depth_mm: null, derived_pocket_depth_mm: 10,
   derived_height_u: 3, derived_overall_height_mm: 25.4, derived_key: "bintool-1-aaaaaa-key",
   derived_reserved_cells: [], derived_available_cells: [],
   lip: true, round_tool: false, finger_hole: false, magnet_holes: false,
@@ -75,7 +75,7 @@ const DUPLICATED_TOOL: LibraryTool = {
 describe("CombineEditor Duplicate", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation(
-      (ids, options) => Promise.resolve(buildResponse(ids, options?.placements, options?.binStyle ?? "pocket")),
+      (ids, options) => Promise.resolve(buildResponse(ids, options?.placements, options?.fillHeightPct ?? 100)),
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([]);
@@ -133,12 +133,12 @@ describe("CombineEditor Duplicate", () => {
       id: "bin-1", label: "My Bin", created_ts: 0,
       tool_ids: ["tool-a", "tool-b", "bintool-1-aaaaaa"],
       tool_labels: ["Wrench", "Pliers", "Wrench (copy)"],
-      placements: [], overrides: [], overall_height: null, lip: true, bin_style: "pocket",
+      placements: [], overrides: [], overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
       magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
       force_gx: null, force_gy: null, removed_cells: null,
       lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-      min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-      corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+      min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+      tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
       magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
     });
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);

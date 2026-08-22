@@ -11,7 +11,6 @@ import {
   type CombinePreview,
   type CombineTool,
   type CombineToolOverride,
-  type BinStyle,
   type Placement,
   type SavedBin,
 } from "../api";
@@ -81,7 +80,8 @@ export interface CombineEditorInitial {
   appliedProfileId: string | null;
   placements: Placement[];
   overrides: CombineToolOverride[];
-  binStyle: BinStyle;
+  fillHeightPct: number;
+  liveGrid: boolean;
   lip: boolean;
   magnetHoles: boolean;
   magnetHoleDiameterMm: number;
@@ -95,18 +95,18 @@ export interface CombineEditorInitial {
   lipChamferBottomMm: number | null;
   minWallMm: number | null;
   minFloorMm: number | null;
-  corralFloorMm: number | null;
-  corralWallMm: number | null;
-  corralBaseFlareMm: number | null;
-  corralBaseReinforcementHMm: number | null;
-  corralEdgeMarginMm: number | null;
+  floorThicknessMm: number | null;
+  toolWallMm: number | null;
+  toolWallFlareMm: number | null;
+  toolWallReinforcementHMm: number | null;
+  edgeMarginMm: number | null;
   magnetHoleInsetFromEdgeMm: number | null;
 }
 
 type StructuralOverrideKey =
   | "lipHeightMm" | "lipChamferTopMm" | "lipStraightMm" | "lipChamferBottomMm"
-  | "minWallMm" | "minFloorMm" | "corralFloorMm" | "corralWallMm"
-  | "corralBaseFlareMm" | "corralBaseReinforcementHMm" | "corralEdgeMarginMm"
+  | "minWallMm" | "minFloorMm" | "floorThicknessMm" | "toolWallMm"
+  | "toolWallFlareMm" | "toolWallReinforcementHMm" | "edgeMarginMm"
   | "magnetHoleInsetFromEdgeMm";
 
 /** The 12 Bin Profile structural overrides — set only by picking a profile
@@ -117,16 +117,16 @@ type StructuralOverrides = { [K in StructuralOverrideKey]: number | null };
 
 const BLANK_STRUCTURAL: StructuralOverrides = {
   lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
-  minWallMm: null, minFloorMm: null, corralFloorMm: null, corralWallMm: null,
-  corralBaseFlareMm: null, corralBaseReinforcementHMm: null, corralEdgeMarginMm: null,
+  minWallMm: null, minFloorMm: null, floorThicknessMm: null, toolWallMm: null,
+  toolWallFlareMm: null, toolWallReinforcementHMm: null, edgeMarginMm: null,
   magnetHoleInsetFromEdgeMm: null,
 };
 
 function structuralFrom(source: {
   lipHeightMm: number | null; lipChamferTopMm: number | null; lipStraightMm: number | null;
   lipChamferBottomMm: number | null; minWallMm: number | null; minFloorMm: number | null;
-  corralFloorMm: number | null; corralWallMm: number | null; corralBaseFlareMm: number | null;
-  corralBaseReinforcementHMm: number | null; corralEdgeMarginMm: number | null;
+  floorThicknessMm: number | null; toolWallMm: number | null; toolWallFlareMm: number | null;
+  toolWallReinforcementHMm: number | null; edgeMarginMm: number | null;
   magnetHoleInsetFromEdgeMm: number | null;
 }): StructuralOverrides {
   return {
@@ -136,11 +136,11 @@ function structuralFrom(source: {
     lipChamferBottomMm: source.lipChamferBottomMm,
     minWallMm: source.minWallMm,
     minFloorMm: source.minFloorMm,
-    corralFloorMm: source.corralFloorMm,
-    corralWallMm: source.corralWallMm,
-    corralBaseFlareMm: source.corralBaseFlareMm,
-    corralBaseReinforcementHMm: source.corralBaseReinforcementHMm,
-    corralEdgeMarginMm: source.corralEdgeMarginMm,
+    floorThicknessMm: source.floorThicknessMm,
+    toolWallMm: source.toolWallMm,
+    toolWallFlareMm: source.toolWallFlareMm,
+    toolWallReinforcementHMm: source.toolWallReinforcementHMm,
+    edgeMarginMm: source.edgeMarginMm,
     magnetHoleInsetFromEdgeMm: source.magnetHoleInsetFromEdgeMm,
   };
 }
@@ -153,11 +153,11 @@ function structuralFromProfile(p: BinProfile): StructuralOverrides {
     lipChamferBottomMm: p.lip_chamfer_bottom_mm,
     minWallMm: p.min_wall_mm,
     minFloorMm: p.min_floor_mm,
-    corralFloorMm: p.corral_floor_mm,
-    corralWallMm: p.corral_wall_mm,
-    corralBaseFlareMm: p.corral_base_flare_mm,
-    corralBaseReinforcementHMm: p.corral_base_reinforcement_h_mm,
-    corralEdgeMarginMm: p.corral_edge_margin_mm,
+    floorThicknessMm: p.floor_thickness_mm,
+    toolWallMm: p.tool_wall_mm,
+    toolWallFlareMm: p.tool_wall_flare_mm,
+    toolWallReinforcementHMm: p.tool_wall_reinforcement_h_mm,
+    edgeMarginMm: p.edge_margin_mm,
     magnetHoleInsetFromEdgeMm: p.magnet_hole_inset_from_edge_mm,
   };
 }
@@ -169,7 +169,8 @@ function structuralFromProfile(p: BinProfile): StructuralOverrides {
 interface Snapshot {
   toolIds: string[];
   tools: CombineTool[];
-  binStyle: BinStyle;
+  fillHeightPct: number;
+  liveGrid: boolean;
   lip: boolean;
   allowCustomShape: boolean;
   structural: StructuralOverrides;
@@ -261,13 +262,15 @@ export function CombineEditor({
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
-  const [binStyle, setBinStyle] = useState<BinStyle>(initial?.binStyle ?? "pocket");
+  const [fillHeightPct, setFillHeightPct] = useState<number>(initial?.fillHeightPct ?? 100);
+  const [liveGrid, setLiveGrid] = useState<boolean>(initial?.liveGrid ?? false);
   const [lip, setLip] = useState(initial?.lip ?? true);
-  // Independent of binStyle — not derived from it. Set only by picking a
-  // profile (or true by default, matching every style's behaviour before
-  // Bin Profiles existed); the "Custom bin shape" control still separately
-  // requires binStyle === "pocket", since the geometry itself can't do
-  // custom shapes on corral/grid regardless of this flag.
+  // Independent of fillHeightPct/liveGrid — not derived from them. Set only
+  // by picking a profile (or true by default, matching every style's
+  // behaviour before Bin Profiles existed); the "Custom bin shape" control
+  // still separately requires fillHeightPct === 100 && !liveGrid, since the
+  // geometry itself can't do custom shapes off that fast path regardless of
+  // this flag.
   const [allowCustomShape, setAllowCustomShape] = useState(true);
   const [structural, setStructural] = useState<StructuralOverrides>(
     () => (initial ? structuralFrom(initial) : BLANK_STRUCTURAL),
@@ -397,14 +400,14 @@ export function CombineEditor({
     return [...cells].map((k) => k.split(",").map(Number) as [number, number]);
   }
 
-  // Custom bin shape only applies to pocket bins, and only when the active
-  // profile allows it — the checkbox state and removed cells stay intact
-  // across a style/profile switch (so they reappear if you switch back),
-  // but are ignored otherwise.
+  // Custom bin shape only applies on the fast path (fill_height_pct=100,
+  // live_grid off), and only when the active profile allows it — the
+  // checkbox state and removed cells stay intact across a style/profile
+  // switch (so they reappear if you switch back), but are ignored otherwise.
   function effectiveRemovedCells(
-    style: BinStyle, allow: boolean = allowCustomShape,
+    fillPct: number, liveGridVal: boolean = liveGrid, allow: boolean = allowCustomShape,
   ): [number, number][] | null {
-    return style === "pocket" && allow && customShape && removedCells.size > 0
+    return fillPct === 100 && !liveGridVal && allow && customShape && removedCells.size > 0
       ? removedCellsArray(removedCells)
       : null;
   }
@@ -412,11 +415,11 @@ export function CombineEditor({
   async function load(
     placements?: Placement[],
     overrides: CombineToolOverride[] = overridesFor(tools),
-    style: BinStyle = binStyle,
+    fillHeightPctOverride: number = fillHeightPct,
     force: [number, number] | null = forceSize && forceGx && forceGy
       ? [Number(forceGx), Number(forceGy)]
       : null,
-    removed: [number, number][] | null = effectiveRemovedCells(style),
+    removed: [number, number][] | null = effectiveRemovedCells(fillHeightPctOverride),
     lipOverride: boolean = lip,
     structuralOverride: StructuralOverrides = structural,
     magnetHolesOverride: boolean = magnetHoles,
@@ -425,6 +428,7 @@ export function CombineEditor({
     // Only Duplicate needs this — it must load with the just-appended id
     // immediately, before React re-renders with the new `toolIds` state.
     idsOverride: string[] = toolIds,
+    liveGridOverride: boolean = liveGrid,
   ) {
     setBusy(true);
     setErr(null);
@@ -434,7 +438,8 @@ export function CombineEditor({
         overallHeight,
         lip: lipOverride,
         overrides,
-        binStyle: style,
+        fillHeightPct: fillHeightPctOverride,
+        liveGrid: liveGridOverride,
         magnetHoles: magnetHolesOverride,
         magnetHoleDiameterMm: Number(magnetHoleDiameterOverride),
         magnetHoleDepthMm: Number(magnetHoleDepthOverride),
@@ -457,9 +462,10 @@ export function CombineEditor({
       // Reopening a saved bin: honour its placements as a manual arrangement,
       // not a fresh auto-pack.
       void load(
-        initial.placements, initial.overrides, initial.binStyle,
+        initial.placements, initial.overrides, initial.fillHeightPct,
         initial.forceGx && initial.forceGy ? [initial.forceGx, initial.forceGy] : null,
         initial.removedCells,
+        undefined, undefined, undefined, undefined, undefined, toolIds, initial.liveGrid,
       );
     } else {
       void load().then(() => setAutoPacked(true)); // auto-pack on open
@@ -475,7 +481,8 @@ export function CombineEditor({
   function applyProfile(profile: BinProfile, { snapshot = true }: { snapshot?: boolean } = {}) {
     if (snapshot) pushSnapshot();
     setAppliedProfileId(profile.id);
-    setBinStyle(profile.base_style);
+    setFillHeightPct(profile.fill_height_pct);
+    setLiveGrid(profile.live_grid);
     setLip(profile.lip);
     setAllowCustomShape(profile.allow_custom_shape);
     setMagnetHoles(profile.magnet_holes_default);
@@ -484,12 +491,13 @@ export function CombineEditor({
     const nextStructural = structuralFromProfile(profile);
     setStructural(nextStructural);
     void load(
-      placementsFor(tools), overridesFor(tools), profile.base_style, undefined,
-      effectiveRemovedCells(profile.base_style, profile.allow_custom_shape),
+      placementsFor(tools), overridesFor(tools), profile.fill_height_pct, undefined,
+      effectiveRemovedCells(profile.fill_height_pct, profile.live_grid, profile.allow_custom_shape),
       profile.lip, nextStructural,
       profile.magnet_holes_default,
       String(profile.magnet_hole_diameter_mm_default),
       String(profile.magnet_hole_depth_mm_default),
+      toolIds, profile.live_grid,
     );
   }
 
@@ -521,7 +529,8 @@ export function CombineEditor({
     return {
       toolIds: [...toolIds],
       tools: tools.map((t) => ({ ...t })),
-      binStyle,
+      fillHeightPct,
+      liveGrid,
       lip,
       allowCustomShape,
       structural: { ...structural },
@@ -563,7 +572,8 @@ export function CombineEditor({
   function applySnapshot(s: Snapshot) {
     setToolIds(s.toolIds);
     setTools(s.tools);
-    setBinStyle(s.binStyle);
+    setFillHeightPct(s.fillHeightPct);
+    setLiveGrid(s.liveGrid);
     setLip(s.lip);
     setAllowCustomShape(s.allowCustomShape);
     setStructural(s.structural);
@@ -579,12 +589,12 @@ export function CombineEditor({
     const force: [number, number] | null = s.forceSize && s.forceGx && s.forceGy
       ? [Number(s.forceGx), Number(s.forceGy)]
       : null;
-    const removed = s.binStyle === "pocket" && s.allowCustomShape && s.customShape && s.removedCells.size > 0
+    const removed = s.fillHeightPct === 100 && !s.liveGrid && s.allowCustomShape && s.customShape && s.removedCells.size > 0
       ? removedCellsArray(s.removedCells)
       : null;
     void load(
-      placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.binStyle, force, removed,
-      s.lip, s.structural, s.magnetHoles, s.magnetHoleDiameter, s.magnetHoleDepth, s.toolIds,
+      placementsFor(s.tools), overridesFor(s.tools, s.lockedRotations), s.fillHeightPct, force, removed,
+      s.lip, s.structural, s.magnetHoles, s.magnetHoleDiameter, s.magnetHoleDepth, s.toolIds, s.liveGrid,
     );
   }
 
@@ -680,7 +690,7 @@ export function CombineEditor({
     // Custom bin shape: a tool crossing into a removed cell is exactly as
     // invalid as crossing the locked bin's outer edge — same warning colour,
     // same export/preview gate.
-    if (locked && binStyle === "pocket" && customShape && removedCells.size > 0) {
+    if (locked && fillHeightPct === 100 && !liveGrid && customShape && removedCells.size > 0) {
       const half = bin_size / 2;
       const removedRects = [...removedCells].map((k) => {
         const [ix, iy] = k.split(",").map(Number);
@@ -715,7 +725,7 @@ export function CombineEditor({
     const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
 
     return { polys, fingerCircles, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
-  }, [tools, meta, forceSize, forceGx, forceGy, binStyle, customShape, removedCells]);
+  }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
 
@@ -735,10 +745,10 @@ export function CombineEditor({
     setPreviewErr(null);
     const forceGxVal = forceSize && forceGx && forceGy ? Number(forceGx) : null;
     const forceGyVal = forceSize && forceGx && forceGy ? Number(forceGy) : null;
-    const removedVal = effectiveRemovedCells(binStyle);
+    const removedVal = effectiveRemovedCells(fillHeightPct);
     const timer = window.setTimeout(() => {
       combinePreviewGlb(toolIds, {
-        placements, overallHeight, lip, overrides, binStyle,
+        placements, overallHeight, lip, overrides, fillHeightPct, liveGrid,
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
         ...structural,
@@ -760,7 +770,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, binStyle, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -1002,13 +1012,13 @@ export function CombineEditor({
         overallHeight,
         lip,
         overrides: overridesFor(tools),
-        binStyle,
+        fillHeightPct, liveGrid,
         magnetHoles,
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
-        removedCells: effectiveRemovedCells(binStyle),
+        removedCells: effectiveRemovedCells(fillHeightPct),
         ...structural,
       }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
@@ -1028,14 +1038,14 @@ export function CombineEditor({
         overallHeight,
         lip,
         overrides: overridesFor(tools),
-        binStyle,
+        fillHeightPct, liveGrid,
         magnetHoles,
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
         sliceThicknessMm: thicknessMm,
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
-        removedCells: effectiveRemovedCells(binStyle),
+        removedCells: effectiveRemovedCells(fillHeightPct),
         ...structural,
       }, binExportName(savedLabel, tools.map((t) => t.label)));
     } catch (e) {
@@ -1060,7 +1070,7 @@ export function CombineEditor({
       pushSnapshot();
       const nextIds = [...toolIds, duplicated.id];
       setToolIds(nextIds);
-      await load(placementsFor(tools), overridesFor(tools), binStyle, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      await load(placementsFor(tools), overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
       setSelectedIds(new Set([duplicated.id]));
     } catch (e) {
       setDuplicateErr((e as Error).message);
@@ -1076,13 +1086,13 @@ export function CombineEditor({
       overrides: overridesFor(tools),
       overallHeight,
       lip,
-      binStyle,
+      fillHeightPct, liveGrid,
       magnetHoles,
       magnetHoleDiameterMm: Number(magnetHoleDiameter),
       magnetHoleDepthMm: Number(magnetHoleDepth),
       forceGx: force ? Number(forceGx) : null,
       forceGy: force ? Number(forceGy) : null,
-      removedCells: effectiveRemovedCells(binStyle),
+      removedCells: effectiveRemovedCells(fillHeightPct),
       appliedProfileId,
       ...structural,
     };
@@ -1115,9 +1125,9 @@ export function CombineEditor({
     ));
     setToolIds(saved.tool_ids);
     await load(
-      saved.placements, saved.overrides, binStyle, undefined, undefined,
+      saved.placements, saved.overrides, fillHeightPct, undefined, undefined,
       lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth,
-      saved.tool_ids,
+      saved.tool_ids, liveGrid,
     );
   }
 
@@ -1276,8 +1286,8 @@ export function CombineEditor({
         </span>
         {layout && (
           <span className="text-muted">
-            {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · {binStyle}
-            {binStyle === "grid" ? ` · ${meta!.available_cells.length} live sockets` : ""}
+            {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · fill {fillHeightPct}%
+            {liveGrid ? ` · ${meta!.available_cells.length} live sockets` : ""}
           </span>
         )}
       </div>
@@ -1357,7 +1367,7 @@ export function CombineEditor({
                   const y = layout.cy - layout.od / 2 + (i + 1) * meta!.pitch;
                   return <line key={"h" + i} x1={layout.cx - layout.ow / 2} y1={y} x2={layout.cx + layout.ow / 2} y2={y} stroke="#3a4046" strokeWidth={0.4} />;
                 })}
-                {binStyle === "grid" && meta!.available_cells.map(([cellX, cellY]) => {
+                {liveGrid && meta!.available_cells.map(([cellX, cellY]) => {
                   const x = layout.cx + cellX - meta!.pitch / 2;
                   const y = layout.cy + cellY - meta!.pitch / 2;
                   return <rect
@@ -1459,7 +1469,7 @@ export function CombineEditor({
                 pushSnapshot();
                 const checked = e.target.checked;
                 setLip(checked);
-                void load(placementsFor(tools), overridesFor(tools), binStyle, undefined, undefined, checked);
+                void load(placementsFor(tools), overridesFor(tools), fillHeightPct, undefined, undefined, checked);
               }}
             />
             <span className="font-mono text-[10px] uppercase text-muted">Stacking lip</span>
@@ -1486,7 +1496,7 @@ export function CombineEditor({
                     setForceGy(gy);
                   }
                   void load(
-                    placementsFor(tools), overridesFor(tools), binStyle,
+                    placementsFor(tools), overridesFor(tools), fillHeightPct,
                     checked && gx && gy ? [Number(gx), Number(gy)] : null,
                     checked ? undefined : null,
                   );
@@ -1520,7 +1530,7 @@ export function CombineEditor({
                 </label>
               </div>
             )}
-            {forceSize && binStyle === "pocket" && allowCustomShape && (
+            {forceSize && fillHeightPct === 100 && !liveGrid && allowCustomShape && (
               <div className="mt-2">
                 <label className="flex items-center gap-2">
                   <input
@@ -1533,7 +1543,7 @@ export function CombineEditor({
                       setCustomShape(checked);
                       if (!checked) {
                         setRemovedCells(new Set());
-                        void load(placementsFor(tools), overridesFor(tools), binStyle, undefined, null);
+                        void load(placementsFor(tools), overridesFor(tools), fillHeightPct, undefined, null);
                       }
                     }}
                   />
@@ -1695,7 +1705,7 @@ export function CombineEditor({
                 </div>
               )}
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                <dt>{binStyle === "corral" ? "Tool recess" : "Pocket depth"}</dt>
+                <dt>{fillHeightPct === 100 ? "Pocket depth" : "Tool recess"}</dt>
                 <dd className="text-knockout">{depthMmLabel}</dd>
                 <dt>Depth source</dt>
                 <dd className="text-right text-knockout">{depthModeLabel}</dd>
@@ -1919,7 +1929,7 @@ export function CombineEditor({
               A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
             </p>
           )}
-          <button className="btn w-full text-xs" disabled={busy} onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), binStyle); }}>↻ Auto-pack</button>
+          <button className="btn w-full text-xs" disabled={busy} onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}>↻ Auto-pack</button>
           <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>

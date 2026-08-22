@@ -5,7 +5,6 @@ import {
   getSession,
   sessionGenerate,
   sessionSetPhysicalOutline,
-  type BinStyle,
   type GenerateParams,
   type Poly,
 } from "../api";
@@ -38,8 +37,11 @@ export function Result() {
   const [pocketDepth, setPocketDepth] = useState(
     result?.bin.pocket_depth_override_mm?.toString() ?? "",
   );
-  const [binStyle, setBinStyle] = useState<BinStyle>(
-    result?.bin.bin_style ?? "pocket",
+  const [fillHeightPct, setFillHeightPct] = useState<number>(
+    result?.bin.fill_height_pct ?? 100,
+  );
+  const [liveGrid, setLiveGrid] = useState<boolean>(
+    result?.bin.live_grid ?? false,
   );
   const [lip, setLip] = useState(result?.bin.lip ?? true);
   const [appliedProfileId, setAppliedProfileId] = useState<string | null>(null);
@@ -96,7 +98,8 @@ export function Result() {
     try {
       const nextParams: GenerateParams = {
         ...params,
-        bin_style: binStyle,
+        fill_height_pct: fillHeightPct,
+        live_grid: liveGrid,
         lip,
         clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
@@ -129,7 +132,8 @@ export function Result() {
       await sessionSetPhysicalOutline(session.session, polygon);
       const nextParams: GenerateParams = {
         ...params,
-        bin_style: binStyle,
+        fill_height_pct: fillHeightPct,
+        live_grid: liveGrid,
         lip,
         clearance: parseRequiredNonNegative(clearance, "Clearance"),
         depth: parseOptionalPositive(pocketDepth, "Tool recess depth"),
@@ -223,16 +227,16 @@ export function Result() {
               <tbody>
                 <Row k="Grid" v={`${bin.grid[0]} × ${bin.grid[1]} u`} />
                 <Row
-                  k="Style"
-                  v={bin.bin_style === "pocket" ? "Pocket" : bin.bin_style === "corral" ? "Stackable corral" : "Live grid"}
+                  k="Fill height"
+                  v={`${bin.fill_height_pct}%${bin.live_grid ? " + live grid" : ""}`}
                 />
                 <Row k="Height" v={`${bin.height_u}u${bin.lip ? " + lip" : ""}`} />
                 <Row k="Overall height" v={`${bin.overall_height_mm} mm`} />
                 <Row
-                  k={bin.bin_style === "pocket" ? "Pocket depth" : "Tool recess"}
+                  k={bin.fill_height_pct === 100 && !bin.live_grid ? "Pocket depth" : "Tool recess"}
                   v={`${bin.pocket_depth_mm} mm`}
                 />
-                {bin.bin_style === "grid" && (
+                {bin.live_grid && (
                   <Row
                     k="Live sockets"
                     v={`${bin.available_cells.length} usable · ${bin.reserved_cells.length} tool`}
@@ -345,7 +349,8 @@ export function Result() {
                     const profile = binProfiles.find((p) => p.id === event.target.value);
                     if (!profile) return;
                     setAppliedProfileId(profile.id);
-                    setBinStyle(profile.base_style);
+                    setFillHeightPct(profile.fill_height_pct);
+                    setLiveGrid(profile.live_grid);
                     setLip(profile.lip);
                     setMagnetHoles(profile.magnet_holes_default);
                     setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
@@ -378,7 +383,7 @@ export function Result() {
               </label>
               <label className="block">
                 <span className="grp-label block mb-2">
-                  {binStyle === "pocket" ? "Pocket depth override (mm)" : "Tool recess depth override (mm)"}
+                  {fillHeightPct === 100 && !liveGrid ? "Pocket depth override (mm)" : "Tool recess depth override (mm)"}
                 </span>
                 <input
                   aria-label="Tool recess depth override"

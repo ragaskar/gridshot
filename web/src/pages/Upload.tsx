@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getHealth, startSession, type BinStyle, type Health } from "../api";
+import { getHealth, startSession, type Health } from "../api";
 import { useApp } from "../state";
 import { InfoTip, ParallaxDiagram } from "../components/InfoTip";
 import { useBinProfiles } from "../useBinProfiles";
@@ -18,7 +18,8 @@ export function Upload() {
   const [thickness, setThickness] = useState<number | "">("");
   const [fullHeight, setFullHeight] = useState<number | "">("");
   const [clearance, setClearance] = useState(1.0);
-  const [binStyle, setBinStyle] = useState<BinStyle>("pocket");
+  const [fillHeightPct, setFillHeightPct] = useState(100);
+  const [liveGrid, setLiveGrid] = useState(false);
   const [depth, setDepth] = useState<number | "">("");
   const [overallHeight, setOverallHeight] = useState<number | "">("");
   const [finger, setFinger] = useState(true);
@@ -42,7 +43,8 @@ export function Upload() {
         thickness: thickness === "" ? null : thickness,
         full_height: fullHeight === "" ? null : fullHeight,
         clearance,
-        bin_style: binStyle,
+        fill_height_pct: fillHeightPct,
+        live_grid: liveGrid,
         depth: depth === "" ? null : depth,
         overall_height: overallHeight === "" ? null : overallHeight,
         finger_hole: finger,
@@ -144,11 +146,11 @@ export function Upload() {
             <Field
               label="Bin profile"
               hint={
-                binStyle === "pocket"
+                fillHeightPct === 100 && !liveGrid
                   ? "solid bin with the tool recessed into a fitted pocket"
-                  : binStyle === "corral"
-                    ? "recessed tool shelf with a full-height separator and stackable perimeter"
-                    : "stackable corral with complete Gridfinity sockets wherever they fit outside the tool wall"
+                  : liveGrid
+                    ? "stackable shell with complete Gridfinity sockets wherever they fit outside the tool wall"
+                    : "recessed tool shelf with a full-height wall and stackable perimeter"
               }
             >
               <select
@@ -159,7 +161,8 @@ export function Upload() {
                   const profile = binProfiles.find((p) => p.id === e.target.value);
                   if (!profile) return;
                   setAppliedProfileId(profile.id);
-                  setBinStyle(profile.base_style);
+                  setFillHeightPct(profile.fill_height_pct);
+                  setLiveGrid(profile.live_grid);
                   setLip(profile.lip);
                 }}
               >
@@ -237,10 +240,10 @@ export function Upload() {
               <input className="mono-input" type="number" step={0.25} min={0} value={clearance} onChange={(e) => setClearance(Number(e.target.value))} />
             </Field>
             <Field
-              label={binStyle === "corral" ? "Tool recess depth (mm)" : "Pocket depth (mm)"}
-              hint={binStyle === "corral"
-                ? "distance from the stacking plane down to the thin tool shelf. The full-height separator keeps loose parts out. blank = auto"
-                : "how deep to recess the tool so you can grip it to lift it out. blank = auto from full tool height"}
+              label={fillHeightPct === 100 && !liveGrid ? "Pocket depth (mm)" : "Tool recess depth (mm)"}
+              hint={fillHeightPct === 100 && !liveGrid
+                ? "how deep to recess the tool so you can grip it to lift it out. blank = auto from full tool height"
+                : "distance from the stacking plane down to the thin tool shelf. The full-height wall keeps loose parts out. blank = auto"}
             >
               <input className="mono-input" type="number" min={0.1} step={0.5} value={depth} placeholder="auto" onChange={(e) => setDepth(e.target.value === "" ? "" : Number(e.target.value))} />
             </Field>
@@ -249,7 +252,7 @@ export function Upload() {
             </Field>
             <div className="flex gap-6">
               <Toggle
-                label={binStyle === "corral" ? "Enclosed finger access" : "Finger hole"}
+                label={fillHeightPct === 100 && !liveGrid ? "Finger hole" : "Enclosed finger access"}
                 on={finger}
                 set={setFinger}
               />

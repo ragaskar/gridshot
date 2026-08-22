@@ -17,11 +17,11 @@ import { listBinProfiles } from "../api";
 
 const CORRAL_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
-  base_style: "corral", lip: false, allow_custom_shape: false,
+  fill_height_pct: 0, live_grid: false, lip: false, allow_custom_shape: false,
   magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-  min_wall_mm: null, min_floor_mm: null, corral_floor_mm: null, corral_wall_mm: null,
-  corral_base_flare_mm: null, corral_base_reinforcement_h_mm: null, corral_edge_margin_mm: null,
+  min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+  tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
   magnet_hole_inset_from_edge_mm: null,
   has_preview_image: false,
 };
@@ -30,7 +30,7 @@ function fakeResult(): TraceResult {
   return {
     project: "proj-1",
     bin: {
-      grid: [2, 1], height_u: 3, overall_height_mm: 25.4, bin_style: "pocket",
+      grid: [2, 1], height_u: 3, overall_height_mm: 25.4, fill_height_pct: 100, live_grid: false,
       pocket_depth_mm: 10, pocket_depth_override_mm: null, overall_height_override_mm: null,
       thickness_mm: 4, silhouette_height_mm: 4, full_height_mm: null, clearance_mm: 1,
       lip: true, magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
@@ -56,7 +56,7 @@ describe("Result page bin profile picker", () => {
     useApp.setState({
       result: fakeResult(),
       session: { session: "s1" } as never,
-      params: { clearance: 1, bin_style: "pocket", finger_hole: true, lip: true } as never,
+      params: { clearance: 1, fill_height_pct: 100, live_grid: false, finger_hole: true, lip: true } as never,
     });
   });
 
@@ -65,7 +65,7 @@ describe("Result page bin profile picker", () => {
     useApp.getState().reset();
   });
 
-  it("applies a profile's base style, lip, and magnet-hole defaults to the regenerate form", async () => {
+  it("applies a profile's fill height, lip, and magnet-hole defaults to the regenerate form", async () => {
     render(<Result />);
     const select = (await screen.findByLabelText("Bin profile")) as HTMLSelectElement;
     await waitFor(() => expect(select.options.length).toBe(2));
