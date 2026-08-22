@@ -55,21 +55,11 @@ describe("BinProfiles page", () => {
     vi.mocked(createBinProfile).mockReset();
     vi.mocked(updateBinProfile).mockReset();
     vi.mocked(deleteBinProfile).mockReset();
-    // Pinned to local noon so the local calendar date (what the component
-    // formats) and the UTC calendar date agree in every real-world
-    // timezone — any farther-than-noon offset would put local and UTC on
-    // different sides of midnight and reintroduce exactly the flake this
-    // pins against.
-    // Only fakes `Date` — leaving setTimeout/setInterval real so
-    // testing-library's findBy/waitFor (which poll on real timers) still work.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2024, 2, 15, 12, 0, 0));
   });
 
   afterEach(() => {
     cleanup();
     setPath("/");
-    vi.useRealTimers();
   });
 
   it("lists every profile with its base style and a New tile", async () => {
