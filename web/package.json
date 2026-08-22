@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=\"--localstorage-file=$(mktemp -u -t gridshot-web-localstorage.XXXXXX)\" vitest run"
   },
   "dependencies": {
     "react": "^19.0.0",
