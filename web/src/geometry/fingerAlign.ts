@@ -1,25 +1,33 @@
-import type { FingerHoleSide } from "../api";
+import { pointAtArcLength, ringLength, type Pt } from "./perimeter";
 
 /** Tolerance on a travel direction's off-axis component, in units of the
  *  direction vector (which is unit-length): a hole travels "on a horizontal
- *  plane" only when its edge, after rotation, is horizontal in world space
- *  to within this tolerance — i.e. the tool's rotation is effectively a
- *  multiple of 180°/90° for a top-bottom/left-right hole respectively. */
+ *  plane" only when its tangent, after rotation/mirroring, is horizontal in
+ *  world space to within this tolerance. */
 const AXIS_EPS = 1e-3;
 
-/** World-space direction the hole travels in as its offset increases, for a
- *  tool with the given finger-hole side and world rotation. `top`/`bottom`
- *  holes slide along local X, `left`/`right` along local Y (matching the
- *  Position slider's documented behaviour); rotating that by the tool's
- *  placement rotation gives the world direction. `center` has no single
- *  side to slide along and returns null. */
-export function travelDirection(side: FingerHoleSide, rotDeg: number): [number, number] | null {
-  if (side === "center") return null;
-  const localX = side === "top" || side === "bottom" ? 1 : 0;
-  const localY = localX ? 0 : 1;
-  const a = (rotDeg * Math.PI) / 180;
-  const c = Math.cos(a), s = Math.sin(a);
-  return [localX * c - localY * s, localX * s + localY * c];
+/** World-space unit direction a hole travels in as its arc-length position
+ *  increases, for a tool with the given local pocket ring, world rotation,
+ *  and mirror flags — the ring's own tangent at the current arc position,
+ *  found numerically (a small step either side, in local/stamp space), then
+ *  mirrored and rotated into world space exactly like `placed()` does for
+ *  any other local point. Null for a degenerate (near-zero-length) ring. */
+export function travelDirection(
+  ring: Pt[], arcMm: number, rotDeg: number, mirrorX = false, mirrorY = false,
+): [number, number] | null {
+  const len = ringLength(ring);
+  if (len < 1e-6) return null;
+  const step = Math.min(0.05, len / 4);
+  const [ax, ay] = pointAtArcLength(ring, arcMm - step);
+  const [bx, by] = pointAtArcLength(ring, arcMm + step);
+  let dx = bx - ax, dy = by - ay;
+  if (mirrorX) dx = -dx;
+  if (mirrorY) dy = -dy;
+  const rad = (rotDeg * Math.PI) / 180;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  const wx = dx * c - dy * s, wy = dx * s + dy * c;
+  const mag = Math.hypot(wx, wy);
+  return mag < 1e-9 ? null : [wx / mag, wy / mag];
 }
 
 export interface FingerAlignCandidate {
@@ -27,63 +35,58 @@ export interface FingerAlignCandidate {
   /** Current world position of this tool's finger hole. */
   cx: number;
   cy: number;
-  side: FingerHoleSide;
+  /** Local (stamp-frame) pocket outline the hole's arc position is measured along. */
+  ring: Pt[];
+  arcMm: number;
   rot: number;
-  offset: number;
-  offsetMax: number;
+  mirrorX: boolean;
+  mirrorY: boolean;
 }
 
 export interface FingerAlignPlan {
   axis: "horizontal" | "vertical";
   referenceId: string;
-  /** New `finger_hole_offset_mm` per tool id, excluding the reference tool
+  /** New `finger_hole_arc_mm` per tool id, excluding the reference tool
    *  (which stays put — every other hole aligns to it). */
   updates: Map<string, number>;
 }
 
 /** Whether — and how — a selection's finger holes can be aligned onto one
- *  line. Candidates are tools with finger access on and a slidable side
- *  (`side !== "center"`); tools without a slidable side are simply not
- *  eligible to participate and don't block the rest of the group.
- *
- *  Requires at least 2 candidates, all travelling on the same axis (all
- *  horizontal, i.e. holes on a top/bottom edge sitting level in world space,
- *  or all vertical, left/right edges standing plumb) — a mixed or diagonal
- *  group returns null. The reference is the bottom-most hole (min world Y —
- *  world y increases toward the top of the arrange/preview view) for a
- *  horizontal group, or the left-most (min world X) for a vertical one;
- *  every other candidate's hole must be able to reach that reference's line
- *  without exceeding its own offset range, or the whole plan is null. */
+ *  line. Requires at least 2 candidates, all travelling on the same axis (all
+ *  horizontal, i.e. holes sitting level in world space, or all vertical,
+ *  standing plumb) — a mixed or diagonal group returns null. The reference is
+ *  the bottom-most hole (min world Y) for a horizontal group, or the
+ *  left-most (min world X) for a vertical one; every other candidate's new
+ *  arc-length is a first-order estimate along its own current tangent — exact
+ *  on a straight edge (the common case), an approximation through a curved
+ *  or rounded-corner section. */
 export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): FingerAlignPlan | null {
-  const candidates = candidatesIn.filter((c) => c.side !== "center");
-  if (candidates.length < 2) return null;
+  if (candidatesIn.length < 2) return null;
 
   const dirs = new Map<string, [number, number]>();
-  for (const c of candidates) {
-    const dir = travelDirection(c.side, c.rot);
+  for (const c of candidatesIn) {
+    const dir = travelDirection(c.ring, c.arcMm, c.rot, c.mirrorX, c.mirrorY);
     if (!dir) return null;
     dirs.set(c.id, dir);
   }
 
-  const allHorizontal = candidates.every((c) => Math.abs(dirs.get(c.id)![1]) <= AXIS_EPS);
-  const allVertical = candidates.every((c) => Math.abs(dirs.get(c.id)![0]) <= AXIS_EPS);
+  const allHorizontal = candidatesIn.every((c) => Math.abs(dirs.get(c.id)![1]) <= AXIS_EPS);
+  const allVertical = candidatesIn.every((c) => Math.abs(dirs.get(c.id)![0]) <= AXIS_EPS);
   if (!allHorizontal && !allVertical) return null;
   const axis: "horizontal" | "vertical" = allHorizontal ? "horizontal" : "vertical";
 
   const reference = axis === "horizontal"
-    ? candidates.reduce((best, c) => (c.cy < best.cy ? c : best))
-    : candidates.reduce((best, c) => (c.cx < best.cx ? c : best));
+    ? candidatesIn.reduce((best, c) => (c.cy < best.cy ? c : best))
+    : candidatesIn.reduce((best, c) => (c.cx < best.cx ? c : best));
   const refCoord = axis === "horizontal" ? reference.cx : reference.cy;
 
   const updates = new Map<string, number>();
-  for (const c of candidates) {
+  for (const c of candidatesIn) {
     if (c.id === reference.id) continue;
     const dir = dirs.get(c.id)!;
     const delta = axis === "horizontal" ? refCoord - c.cx : refCoord - c.cy;
     const proj = axis === "horizontal" ? dir[0] * delta : dir[1] * delta;
-    const newOffset = c.offset + proj;
-    if (Math.abs(newOffset) > c.offsetMax + 1e-6) return null;
-    updates.set(c.id, newOffset);
+    updates.set(c.id, c.arcMm + proj);
   }
   return { axis, referenceId: reference.id, updates };
 }

@@ -983,13 +983,10 @@ export interface CombineToolOverride {
   id: string;
   finger_hole: boolean | null;
   clearance_mm: number | null;
-  finger_hole_side_flip: boolean | null;
-  finger_hole_offset_mm: number | null;
+  finger_hole_arc_mm: number | null;
   locked_rotation_deg: number | null;
   pocket_depth_mm: number | null;
 }
-
-export type FingerHoleSide = "top" | "bottom" | "left" | "right" | "center";
 
 export interface CombineTool extends Placement {
   label: string;
@@ -1007,12 +1004,8 @@ export interface CombineTool extends Placement {
   finger_hole: boolean;
   finger_hole_inherited: boolean;
   finger_hole_override: boolean | null;
-  finger_hole_side: FingerHoleSide;
-  finger_hole_offset_mm_max: number;
-  finger_hole_side_flip: boolean;
-  finger_hole_side_flip_override: boolean | null;
-  finger_hole_offset_mm: number;
-  finger_hole_offset_mm_override: number | null;
+  finger_hole_arc_mm: number;
+  finger_hole_arc_mm_override: number | null;
   finger_holes: [number, number, number][];
   stamp: [number, number][];
 }

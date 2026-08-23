@@ -19,6 +19,7 @@ import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
+import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength } from "../geometry/perimeter";
 import { useBinProfiles } from "../useBinProfiles";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
@@ -266,6 +267,9 @@ export function CombineEditor({
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Mutually exclusive with selectedIds: selecting a finger hole deselects
+  // every tool, and vice versa (see down()/downFingerHole() below).
+  const [selectedFingerHoleToolId, setSelectedFingerHoleToolId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -340,6 +344,7 @@ export function CombineEditor({
     clickNarrowsTo: string | null;
     moved: boolean;
   } | null>(null);
+  const fingerDrag = useRef<{ toolId: string; moved: boolean } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
   const depthCheckboxRef = useRef<HTMLInputElement>(null);
@@ -361,6 +366,7 @@ export function CombineEditor({
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       if (e.key === "Escape") {
         setSelectedIds(new Set());
+        setSelectedFingerHoleToolId(null);
       } else if ((e.metaKey || e.ctrlKey) && (e.code === "KeyZ" || e.key.toLowerCase() === "z")) {
         e.preventDefault();
         // On macOS, Cmd+Shift+Z can reach here with e.shiftKey read as false
@@ -401,14 +407,13 @@ export function CombineEditor({
   ): CombineToolOverride[] {
     return tools.map(({
       id, rot, finger_hole_override, clearance_mm_override,
-      finger_hole_side_flip_override, finger_hole_offset_mm_override,
+      finger_hole_arc_mm_override,
       depth_mm_override,
     }) => ({
       id,
       finger_hole: finger_hole_override,
       clearance_mm: clearance_mm_override,
-      finger_hole_side_flip: finger_hole_side_flip_override,
-      finger_hole_offset_mm: finger_hole_offset_mm_override,
+      finger_hole_arc_mm: finger_hole_arc_mm_override,
       locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
     }));
@@ -643,8 +648,7 @@ export function CombineEditor({
       tool.mirror_y,
       tool.finger_hole_override,
       tool.clearance_mm_override,
-      tool.finger_hole_side_flip_override,
-      tool.finger_hole_offset_mm_override,
+      tool.finger_hole_arc_mm_override,
       tool.depth_mm_override,
     ])),
     [tools],
@@ -810,6 +814,7 @@ export function CombineEditor({
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
     arrangeRef.current?.focus();
+    setSelectedFingerHoleToolId(null);
     const alreadySelected = selectedIds.has(id);
     // A plain click on a tool that's already part of a bigger selection is
     // ambiguous at pointerdown time: it might become a group-drag, or it
@@ -839,6 +844,95 @@ export function CombineEditor({
       const o = offsets.get(t.id);
       return o ? { ...t, tx: mx - o.ox, ty: my - o.oy } : t;
     }));
+  }
+  /** Apply a new arc-length position to one tool's finger hole — wraps it
+   *  onto the ring and updates both the value sent to the server
+   *  (`finger_hole_arc_mm`/`_override`) and the local point used for instant
+   *  rendering (`finger_holes[0]`), the same two-tier pattern tx/ty dragging
+   *  already uses (local state now, a debounced server round-trip once the
+   *  gesture settles). */
+  function commitFingerHoleArc(id: string, arcMm: number) {
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== id) return t;
+      const wrapped = wrapArcLength(t.stamp, arcMm);
+      const [lx, ly] = pointAtArcLength(t.stamp, wrapped);
+      const diameter = t.finger_holes[0]?.[2] ?? 20;
+      return {
+        ...t,
+        finger_hole_arc_mm: wrapped,
+        finger_hole_arc_mm_override: wrapped,
+        finger_holes: [[lx, ly, diameter]],
+      };
+    }));
+  }
+  /** World point → the arc-length of the nearest point on `tool`'s own ring,
+   *  undoing mirror/rotate/translate to reach the tool's local frame first
+   *  (the inverse of `placed()`). */
+  function localArcForWorldPoint(tool: CombineTool, mx: number, my: number): number {
+    const wx = mx - tool.tx, wy = my - tool.ty;
+    const rad = (-tool.rot * Math.PI) / 180;
+    const c = Math.cos(rad), s = Math.sin(rad);
+    let lx = wx * c - wy * s, ly = wx * s + wy * c;
+    if (tool.mirror_x) lx = -lx;
+    if (tool.mirror_y) ly = -ly;
+    return nearestArcLength(tool.stamp, [lx, ly]);
+  }
+  function downFingerHole(toolId: string, e: React.PointerEvent) {
+    e.stopPropagation();
+    arrangeRef.current?.focus();
+    setSelectedIds(new Set());
+    setSelectedFingerHoleToolId(toolId);
+    fingerDrag.current = { toolId, moved: false };
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+  function moveFingerHole(e: React.PointerEvent) {
+    if (!fingerDrag.current) return;
+    const tool = tools.find((t) => t.id === fingerDrag.current!.toolId);
+    if (!tool) return;
+    const [mx, my] = toData(e);
+    if (!fingerDrag.current.moved) pushSnapshot();
+    fingerDrag.current.moved = true;
+    commitFingerHoleArc(tool.id, localArcForWorldPoint(tool, mx, my));
+  }
+  /** Number of ring samples used to find the "straight across" jump target
+   *  for Up/Down — a `argmax`/`argmin` of world y would tie across every
+   *  sample on a long flat edge (e.g. a knife blade's straight top) and land
+   *  on an arbitrary corner; matching world x instead lands where "jump to
+   *  the other side" actually reads as meaning. */
+  const FINGER_JUMP_SAMPLES = 200;
+  const FINGER_JUMP_EPS_MM = 0.25;
+  /** The arc-length to jump a finger hole to when nudging "up"/"down": the
+   *  point on the opposite half (by world y, split at the tool's own placed
+   *  bounding-box midline) whose world x is closest to the hole's current
+   *  world x. Null if the hole is already on the requested side (no-op) or
+   *  the ring is degenerate. */
+  function jumpFingerHoleArc(tool: CombineTool, direction: "up" | "down"): number | null {
+    const ring = tool.stamp;
+    const len = ringLength(ring);
+    if (len < 1e-6) return null;
+    const placedRing = placed(ring, tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y);
+    const box = bboxOf(placedRing);
+    const midY = (box.miny + box.maxy) / 2;
+    const [curX, curY] = placedPoint(
+      pointAtArcLength(ring, tool.finger_hole_arc_mm), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+    );
+    const currentlyTop = curY >= midY - FINGER_JUMP_EPS_MM;
+    const currentlyBottom = curY <= midY + FINGER_JUMP_EPS_MM;
+    if (direction === "up" && currentlyTop) return null;
+    if (direction === "down" && currentlyBottom) return null;
+
+    let best: { arc: number; dist: number } | null = null;
+    for (let i = 0; i <= FINGER_JUMP_SAMPLES; i++) {
+      const arc = (i / FINGER_JUMP_SAMPLES) * len;
+      const [wx, wy] = placedPoint(
+        pointAtArcLength(ring, arc), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+      );
+      const onTargetSide = direction === "up" ? wy >= midY : wy <= midY;
+      if (!onTargetSide) continue;
+      const dist = Math.abs(wx - curX);
+      if (best === null || dist < best.dist) best = { arc, dist };
+    }
+    return best ? best.arc : null;
   }
   function rotate(deg: number) {
     if (!selectedTool) return;
@@ -908,9 +1002,13 @@ export function CombineEditor({
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
-    if (!selectedIds.size) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+    if (selectedFingerHoleToolId) {
+      handleFingerHoleKeyDown(e, selectedFingerHoleToolId);
+      return;
+    }
+    if (!selectedIds.size) return;
     const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
     // World y increases toward the top of the (now-correct) top-down view —
     // see the <g transform> in the arrange SVG — so "up" nudges +y.
@@ -924,6 +1022,29 @@ export function CombineEditor({
     if (!d) return;
     e.preventDefault();
     nudgeSelected(d[0], d[1]);
+  }
+  /** Left/Right slide the hole along the ring by the same nudge step (and
+   *  shift-10x) as tool nudging. Up/Down jump it "straight across" to the
+   *  opposite side (see `jumpFingerHoleArc`) — a no-op if it's already
+   *  there. Shift+Up/Shift+Down are explicit no-ops, not a bigger jump. */
+  function handleFingerHoleKeyDown(e: React.KeyboardEvent, toolId: string) {
+    const tool = tools.find((t) => t.id === toolId);
+    if (!tool) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
+      pushSnapshotCoalesced();
+      commitFingerHoleArc(tool.id, tool.finger_hole_arc_mm + (e.key === "ArrowLeft" ? -step : step));
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      if (e.shiftKey) return;
+      const target = jumpFingerHoleArc(tool, e.key === "ArrowUp" ? "up" : "down");
+      if (target === null) return;
+      pushSnapshot();
+      commitFingerHoleArc(tool.id, target);
+    }
   }
   function setRotation(deg: number) {
     if (!selectedTool || !Number.isFinite(deg)) return;
@@ -1004,43 +1125,15 @@ export function CombineEditor({
     setDepthOverrideDraft(shared !== undefined ? String(shared) : "");
   }
 
-  async function setFingerHoleSideFlip(flip: boolean | null) {
-    if (!selectedIds.size) return;
-    pushSnapshot();
-    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
-      ...tool,
-      finger_hole_side_flip: flip ?? false,
-      finger_hole_side_flip_override: flip,
-    } : tool);
-    await load(placementsFor(updated), overridesFor(updated));
-  }
-
-  async function setFingerHoleOffset(mm: number | null) {
-    if (!selectedIds.size) return;
-    pushSnapshot();
-    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
-      ...tool,
-      finger_hole_offset_mm: mm ?? 0,
-      finger_hole_offset_mm_override: mm,
-    } : tool);
-    await load(placementsFor(updated), overridesFor(updated));
-  }
-
   /** Snap every selected tool's finger hole onto the bottom-most one's world
-   *  X (or, for a left/right-side group, the left-most one's world Y) — see
-   *  `computeFingerAlignPlan` for the eligibility/legality rules. Each tool
-   *  gets its own distinct offset, unlike the shared-value bulk Position
-   *  control above. */
-  async function alignFingerHoles() {
+   *  X (or, for a left/right group, the left-most one's world Y) — see
+   *  `computeFingerAlignPlan` for the eligibility rules. Each tool gets its
+   *  own new arc-length position; local state updates immediately, same as
+   *  a drag. */
+  function alignFingerHoles() {
     if (!fingerAlignPlan) return;
     pushSnapshot();
-    const { updates } = fingerAlignPlan;
-    const updated = tools.map((tool) => {
-      const next = updates.get(tool.id);
-      if (next === undefined) return tool;
-      return { ...tool, finger_hole_offset_mm: next, finger_hole_offset_mm_override: next };
-    });
-    await load(placementsFor(updated), overridesFor(updated));
+    for (const [id, arcMm] of fingerAlignPlan.updates) commitFingerHoleArc(id, arcMm);
   }
 
   async function exportBin() {
@@ -1235,18 +1328,25 @@ export function CombineEditor({
       .flatMap((t): FingerAlignCandidate[] => {
         const hole = layout.fingerCircles.find((h) => h.toolId === t.id);
         return hole ? [{
-          id: t.id, cx: hole.cx, cy: hole.cy, side: t.finger_hole_side,
-          rot: t.rot, offset: t.finger_hole_offset_mm, offsetMax: t.finger_hole_offset_mm_max,
+          id: t.id, cx: hole.cx, cy: hole.cy, ring: t.stamp, arcMm: t.finger_hole_arc_mm,
+          rot: t.rot, mirrorX: t.mirror_x, mirrorY: t.mirror_y,
         }] : [];
       }),
   ) : null;
-  const sideFlipEligible = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole && t.finger_hole_side !== "center");
-  const sideFlipAllOn = sideFlipEligible && selectedTools.every((t) => t.finger_hole_side_flip);
-  const sideFlipAllOff = sideFlipEligible && selectedTools.every((t) => !t.finger_hole_side_flip);
-  const sideFlipMixed = sideFlipEligible && !sideFlipAllOn && !sideFlipAllOff;
-  const offsetValue = allEqual(selectedTools, (t) => t.finger_hole_offset_mm);
-  const offsetMax = sideFlipEligible ? Math.min(...selectedTools.map((t) => t.finger_hole_offset_mm_max)) : 0;
-  const offsetAllOverridden = sideFlipEligible && selectedTools.every((t) => t.finger_hole_offset_mm_override !== null);
+  const selectedFingerHoleTool = selectedFingerHoleToolId
+    ? tools.find((t) => t.id === selectedFingerHoleToolId) ?? null
+    : null;
+  const selectedFingerHoleWorld = selectedFingerHoleTool && layout
+    ? layout.fingerCircles.find((h) => h.toolId === selectedFingerHoleTool.id) ?? null
+    : null;
+  // "Lower-left corner of the overall grid is (0,0)" — layout.ow/od already
+  // reflect the full gx*gy footprint before any custom-shape cell removal
+  // (see the layout memo above), so the bin rect's own bottom-left corner
+  // (cx - ow/2, cy - od/2) is exactly that origin.
+  const fingerHoleReadout = selectedFingerHoleWorld && layout ? {
+    x: selectedFingerHoleWorld.cx - (layout.cx - layout.ow / 2),
+    y: selectedFingerHoleWorld.cy - (layout.cy - layout.od / 2),
+  } : null;
   const depthAllOn = selectedTools.length > 0 && selectedTools.every((t) => t.depth_mm_override !== null);
   const depthAllOff = selectedTools.length > 0 && selectedTools.every((t) => t.depth_mm_override === null);
   const depthMixed = selectedTools.length > 0 && !depthAllOn && !depthAllOff;
@@ -1368,13 +1468,14 @@ export function CombineEditor({
             className="w-full touch-none"
             style={{ minHeight: 360, maxHeight: "68vh", cursor: drag.current ? "grabbing" : "default" }}
             preserveAspectRatio="xMidYMid meet"
-            onPointerMove={move}
+            onPointerMove={(e) => { move(e); moveFingerHole(e); }}
             onPointerUp={() => {
               const d = drag.current;
               if (d && d.clickNarrowsTo && !d.moved) setSelectedIds(new Set([d.clickNarrowsTo]));
               drag.current = null;
+              fingerDrag.current = null;
             }}
-            onPointerDown={() => setSelectedIds(new Set())}
+            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolId(null); }}
           >
             {layout && (
               // World y increases toward the back of the bin (standard
@@ -1434,21 +1535,6 @@ export function CombineEditor({
                     strokeWidth={0.7}
                   />;
                 })}
-                {/* finger-access scallops are part of the exact cut envelope */}
-                {layout.fingerCircles.map((hole, index) => {
-                  const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
-                  const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
-                  return <circle
-                    key={`${hole.toolId}-finger-${index}`}
-                    cx={hole.cx}
-                    cy={hole.cy}
-                    r={hole.radius}
-                    fill={holeColor + "2f"}
-                    stroke={holeColor}
-                    strokeWidth={0.6}
-                    strokeDasharray="2 1"
-                  />;
-                })}
                 {/* cleared pockets — turn red once locked and past the locked footprint;
                     hovering an unselected tool shades it to hint it's clickable */}
                 {tools.map((t, i) => {
@@ -1466,6 +1552,27 @@ export function CombineEditor({
                     onPointerDown={(e) => down(t.id, e)}
                     onPointerEnter={() => setHoverId(t.id)}
                     onPointerLeave={() => setHoverId((current) => (current === t.id ? null : current))}
+                  />;
+                })}
+                {/* finger-access scallops are part of the exact cut envelope —
+                    rendered after (on top of) the tool polygons so a click
+                    lands on the hole, not the pocket fill beneath it */}
+                {layout.fingerCircles.map((hole, index) => {
+                  const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
+                  const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
+                  const isSelected = selectedFingerHoleToolId === hole.toolId;
+                  return <circle
+                    key={`${hole.toolId}-finger-${index}`}
+                    cx={hole.cx}
+                    cy={hole.cy}
+                    r={hole.radius}
+                    fill={holeColor + (isSelected ? "55" : "2f")}
+                    stroke={holeColor}
+                    strokeWidth={isSelected ? 1.4 : 0.6}
+                    strokeDasharray="2 1"
+                    className={isSelected ? "marching-ants" : undefined}
+                    style={{ cursor: "grab" }}
+                    onPointerDown={(e) => downFingerHole(hole.toolId, e)}
                   />;
                 })}
               </g>
@@ -1893,78 +2000,33 @@ export function CombineEditor({
               <button
                 className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
                 disabled={busy || selectedTools.length < 2 || !fingerAlignPlan}
-                title="Align every selected tool's finger hole onto one line — needs at least 2 finger holes on the same edge (top/bottom or left/right), each within reach of the bottom-most (or left-most) one"
-                onClick={() => void alignFingerHoles()}
+                title="Align every selected tool's finger hole onto one line — needs at least 2 finger holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
+                onClick={alignFingerHoles}
               >
                 ⟷ Align finger holes
               </button>
-              {sideFlipEligible && (
-                <div className="mt-3 space-y-2 border-t border-line pt-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-knockout">Switch sides</span>
-                    <button
-                      aria-pressed={sideFlipAllOn}
-                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${sideFlipAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
-                      disabled={busy}
-                      onClick={() => void setFingerHoleSideFlip(sideFlipMixed ? true : sideFlipAllOn ? null : true)}
-                    >
-                      {sideFlipMixed ? "–" : sideFlipAllOn ? "Flipped" : "Default"}
-                    </button>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between gap-2 text-muted">
-                      <span>Position</span>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <input
-                          aria-label="Finger-hole position offset in millimetres"
-                          className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
-                          type="number" step={1} min={-offsetMax} max={offsetMax}
-                          disabled={busy}
-                          defaultValue={offsetValue ?? ""}
-                          placeholder={offsetValue === undefined ? "–" : undefined}
-                          key={`${selectionKey}-offset-${offsetValue ?? "mixed"}`}
-                          ref={commitOnChange((raw) => {
-                            if (raw === "") return; // untouched indeterminate field — no-op
-                            const value = Number(raw);
-                            if (!Number.isFinite(value)) return;
-                            if (offsetValue !== undefined && value === offsetValue) return; // unchanged
-                            void setFingerHoleOffset(value);
-                          })}
-                        />
-                        <span className="text-knockout">mm</span>
-                      </div>
-                    </div>
-                    <input
-                      aria-label="Finger-hole position offset"
-                      className="mt-1 w-full accent-teal"
-                      type="range"
-                      min={-offsetMax}
-                      max={offsetMax}
-                      step={0.5}
-                      disabled={busy}
-                      value={offsetValue ?? 0}
-                      onChange={(event) => void setFingerHoleOffset(Number(event.target.value))}
-                    />
-                  </div>
-                  {offsetAllOverridden && (
-                    <button
-                      className="w-full text-left text-teal hover:text-knockout"
-                      disabled={busy}
-                      onClick={() => void setFingerHoleOffset(null)}
-                    >
-                      ↩ Reset position (0 mm)
-                    </button>
-                  )}
-                </div>
-              )}
-              {selectedTool && selectedTool.finger_hole && selectedTool.finger_hole_side === "center" && (
-                <p className="mt-3 border-t border-line pt-3 text-muted">
-                  This tool's shape doesn't sit on a single side — switch-sides/position
-                  controls aren't available.
-                </p>
-              )}
               {alignButtons}
               {distributeButtons}
+            </div>
+          ) : selectedFingerHoleTool ? (
+            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-knockout">
+                  {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
+                </span>
+                <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
+              </div>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
+                <dt>X</dt>
+                <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.x.toFixed(2) : "–"} mm</dd>
+                <dt>Y</dt>
+                <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
+              </dl>
+              <p className="mt-3 border-t border-line pt-3 text-muted">
+                Drag the hole, or use the arrow keys — Left/Right slide it along the
+                outline (same nudge step and Shift ×10 as tools), Up/Down jump it
+                across to the opposite side.
+              </p>
             </div>
           ) : (
             <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
