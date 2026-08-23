@@ -436,6 +436,9 @@ Features added on top of the original public release, newest last:
   tool, with each focal point independently draggable/nudgeable and a click-to-switch
   slop radius between them (see
   [docs/combine-finger-hole-span.md](docs/combine-finger-hole-span.md))
+- Align finger holes now understands span holes in a mixed selection — a span
+  reference aligns every other span hole's second point too, on its own line (see
+  [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
 
 ## License
 

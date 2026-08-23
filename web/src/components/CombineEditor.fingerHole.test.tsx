@@ -43,6 +43,17 @@ function baseTool(id: string, label: string, tx: number, ty: number, fingerHole:
 const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
   "tool-a": baseTool("tool-a", "Wrench", 0, 0, true),
   "tool-b": baseTool("tool-b", "Pliers", 40, 0, false),
+  // A span hole (bottom-most, world y=-5) for the align test: P1 at world
+  // (0,-5) (arc 10), P2 at world (5,-5) (arc 15) — both on the bottom edge,
+  // so the group travels horizontally.
+  "tool-span": {
+    ...baseTool("tool-span", "Vise", 0, 0, true),
+    finger_hole_span: true, finger_hole_arc2_mm: 15,
+    finger_holes: [[0, -5, 4], [5, -5, 4]] as [number, number, number][],
+  },
+  // Single-point hole, off-axis in x and well above tool-span's world y, so
+  // it's never the align reference.
+  "tool-single": baseTool("tool-single", "Chisel", 8, 20, true),
 };
 
 function buildResponse(ids: string[], placements: Placement[] | null | undefined) {
@@ -288,6 +299,27 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     }));
     expect(lobe1After).toEqual(lobe1Before);
     expect(lobe2After).not.toEqual(lobe2Before);
+  });
+
+  it("Align finger holes: a span reference moves a single-point target's P1 onto its own P1, leaving the reference untouched", async () => {
+    render(<CombineEditor ids={["tool-span", "tool-single"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Vise");
+    fireEvent.click(screen.getByText("Vise"));
+    fireEvent.click(screen.getByText("Chisel"), { shiftKey: true });
+    const refLobesBefore = visibleFingerCircles().slice(0, 2).map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }));
+
+    fireEvent.click(screen.getByText("⟷ Align finger holes"));
+
+    const lobes = visibleFingerCircles();
+    // tool-span (the reference — bottom-most) is untouched.
+    expect(lobes.slice(0, 2).map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }))).toEqual(refLobesBefore);
+    // tool-single's one point now shares the reference's P1 world x.
+    const target = lobes[2];
+    expect(Number(target.getAttribute("cx"))).toBeCloseTo(refLobesBefore[0].cx, 0);
   });
 
   it("Shift+ArrowUp is an explicit no-op, even when a plain ArrowUp would move the hole", async () => {

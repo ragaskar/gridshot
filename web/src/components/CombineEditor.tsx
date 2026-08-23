@@ -1234,7 +1234,10 @@ export function CombineEditor({
   function alignFingerHoles() {
     if (!fingerAlignPlan) return;
     pushSnapshot();
-    for (const [id, arcMm] of fingerAlignPlan.updates) commitFingerHoleArc(id, arcMm);
+    for (const [id, update] of fingerAlignPlan.updates) {
+      if (update.arc1 !== undefined) commitFingerHoleArc(id, update.arc1, 0);
+      if (update.arc2 !== undefined) commitFingerHoleArc(id, update.arc2, 1);
+    }
   }
 
   async function exportBin() {
@@ -1427,11 +1430,15 @@ export function CombineEditor({
     selectedTools
       .filter((t) => t.finger_hole)
       .flatMap((t): FingerAlignCandidate[] => {
-        const hole = layout.fingerCircles.find((h) => h.toolId === t.id);
-        return hole ? [{
-          id: t.id, cx: hole.cx, cy: hole.cy, ring: t.stamp, arcMm: t.finger_hole_arc_mm,
+        const p1 = layout.fingerCircles.find((h) => h.toolId === t.id && h.pointIndex === 0);
+        if (!p1) return [];
+        const p2 = layout.fingerCircles.find((h) => h.toolId === t.id && h.pointIndex === 1);
+        return [{
+          id: t.id,
           rot: t.rot, mirrorX: t.mirror_x, mirrorY: t.mirror_y,
-        }] : [];
+          p1: { cx: p1.cx, cy: p1.cy, ring: t.stamp, arcMm: t.finger_hole_arc_mm },
+          ...(p2 ? { p2: { cx: p2.cx, cy: p2.cy, ring: t.stamp, arcMm: t.finger_hole_arc2_mm } } : {}),
+        }];
       }),
   ) : null;
   const selectedFingerHoleTool = selectedFingerHoleToolId

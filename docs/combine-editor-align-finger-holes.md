@@ -15,7 +15,10 @@ to be travelling on the same axis in world space as its arc-length position chan
   position.
 
 A mixed group — some holes travelling horizontally, others vertically, or one sitting on
-a diagonal/curved stretch of outline — leaves the button disabled.
+a diagonal/curved stretch of outline — leaves the button disabled. For a
+[span](combine-finger-hole-span.md) hole, **both** focal points have to qualify — a span
+hole whose second point sits on a curved or off-axis stretch disables the button even
+though its first point is fine.
 
 ## What clicking it does
 
@@ -34,3 +37,19 @@ giving them a common numeric setting.
 Like the existing [bounding-box align/distribute buttons](combine-editor-align.md), this
 is a local rearrangement you can always follow up by dragging or nudging a hole further
 by hand.
+
+## Mixing single-point and span holes
+
+The reference is always picked by its **first** focal point (P1) — a
+[span](combine-finger-hole-span.md) reference's P1, same as a single-point hole's only
+point. Every other tool's P1 always aligns to the reference's P1 line. Beyond that:
+
+- **Reference is single-point**: no target's second point is ever touched, even if the
+  target itself is a span hole — only its P1 moves.
+- **Reference is a span hole**: every other span hole's second point *also* aligns, to
+  the reference's second point's own line (a separate line from P1's — a span hole's two
+  points aren't usually at the same world X/Y). A single-point target still only has a P1
+  to move.
+
+Size is never touched by align, on either point — it only ever moves focal points onto a
+line.
