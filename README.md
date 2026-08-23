@@ -444,6 +444,11 @@ Features added on top of the original public release, newest last:
 - `scripts/up --frontend` / `--segserver` to run the web/cli services and the GPU
   segmentation service on separate hosts, instead of always colocated (see
   [docs/deployment.md](docs/deployment.md))
+- The multi-tool combine editor now mints its own Bin Library entry immediately when
+  a fresh session opens (forking every tool right away) and autosaves every change
+  from then on, superseding the explicit "💾 Save"/"💾 Save to Bin Library" buttons;
+  "Save As…" (fork an independent copy under a new name) is the only manual action
+  left (see [docs/bin-library.md](docs/bin-library.md))
 
 ## License
 

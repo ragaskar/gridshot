@@ -24,9 +24,9 @@ redraw the shape.
 A removed cell is treated the same as the space outside a locked bin: drag a tool's
 pocket or finger-access cutout over one and it turns red, the same overflow warning as
 crossing the locked footprint's edge. **Preview 3D** stays disabled until every tool is
-moved clear; **Export bin**, **Export slice**, and **Save to Bin Library** stay
-available regardless (a tool's location may come out wrong in the export until the
-overlap is fixed).
+moved clear; **Export bin**, **Export slice**, and the autosave to the bin's
+own Bin Library entry stay available regardless (a tool's location may come
+out wrong in the export until the overlap is fixed).
 
 ## Constraints
 

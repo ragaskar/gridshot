@@ -34,8 +34,9 @@ is disabled while any tool is outside the locked footprint (it needs valid
 geometry to build a solid) — drag the tool back inside, click **Auto-pack**
 to re-solve within the bound, or grow the forced size to fit it.
 
-**Export bin**, **Export slice**, and **Save to Bin Library** stay available
-even with a tool outside the footprint — you can still capture the
+**Export bin**, **Export slice**, and the autosave to the bin's own Bin
+Library entry stay available even with a tool outside the footprint — you
+can still capture the
 arrangement (a tool's location may come out wrong in the export until you
 fix the overlap), which matters if you need to save your progress and
 resolve the boundary problem after reloading.
