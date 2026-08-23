@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { computeFingerAlignPlan, travelDirection, type FingerAlignCandidate, type FingerAlignPoint } from "./fingerAlign";
-import type { Pt } from "./perimeter";
+import { nearestArcLength, type Pt } from "./perimeter";
 
 // 10x4 rectangle: bottom edge arc [0,10), right edge [10,14), top [14,24), left [24,28).
 const RING: Pt[] = [[-5, -2], [5, -2], [5, 2], [-5, 2]];
+
+// A rectangle whose bottom edge isn't one straight segment but a zigzag of
+// many short ones, wobbling by an amplitude within SIMPLIFY_TOL_MM (0.05mm —
+// gridshot/core/contour.py's Douglas-Peucker tolerance for a traced tool
+// outline): a real captured tool's "straight" edges look exactly like this
+// close up, since simplification only guarantees each vertex sits within
+// that tolerance of the true edge, not that consecutive vertices are
+// collinear with it.
+function zigzagRing(): Pt[] {
+  const pts: Pt[] = [[-10, -5]];
+  const step = 0.02; // mm — well under the 0.05mm tolerance above
+  const amp = 0.03; // mm
+  let sign = 1;
+  for (let x = -1; x <= 1 + 1e-9; x += step) {
+    pts.push([x, -5 + sign * amp]);
+    sign = -sign;
+  }
+  pts.push([10, -5], [10, 5], [-10, 5]);
+  return pts;
+}
 
 describe("travelDirection", () => {
   it("travels along world +X on the bottom edge at rotation 0", () => {
@@ -38,6 +58,16 @@ describe("travelDirection", () => {
 
   it("returns null for a degenerate ring", () => {
     expect(travelDirection([[0, 0]], 0, 0)).toBeNull();
+  });
+
+  it("still reads as horizontal on a real-world-noisy edge (simplify-tolerance-scale zigzag)", () => {
+    const ring = zigzagRing();
+    const arc = nearestArcLength(ring, [0, -5]); // the zigzag's own midpoint
+    const [, y] = travelDirection(ring, arc, 0)!;
+    // Not ~0: a worst-case (perfectly periodic) zigzag leaves a small residual
+    // even after averaging — see AXIS_EPS's comment — but it must land well
+    // inside the tolerance that check applies.
+    expect(Math.abs(y)).toBeLessThan(0.05);
   });
 });
 
@@ -173,5 +203,17 @@ describe("computeFingerAlignPlan — mixed single-point/span holes", () => {
       }),
     ]);
     expect(plan).toBeNull();
+  });
+
+  it("two holes on real-world-noisy (zigzagged) bottom edges still align", () => {
+    const ringA = zigzagRing();
+    const ringB = zigzagRing();
+    const arcA = nearestArcLength(ringA, [0, -5]);
+    const arcB = nearestArcLength(ringB, [0, -5]);
+    const plan = computeFingerAlignPlan([
+      candidate({ id: "a", p1: point({ ring: ringA, arcMm: arcA, cx: 0, cy: 0 }) }),
+      candidate({ id: "b", p1: point({ ring: ringB, arcMm: arcB, cx: 5, cy: 20 }) }),
+    ]);
+    expect(plan).not.toBeNull();
   });
 });

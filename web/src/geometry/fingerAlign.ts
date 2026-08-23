@@ -3,8 +3,26 @@ import { pointAtArcLength, ringLength, type Pt } from "./perimeter";
 /** Tolerance on a travel direction's off-axis component, in units of the
  *  direction vector (which is unit-length): a hole travels "on a horizontal
  *  plane" only when its tangent, after rotation/mirroring, is horizontal in
- *  world space to within this tolerance. */
-const AXIS_EPS = 1e-3;
+ *  world space to within this tolerance.
+ *
+ *  Loose enough (~3°) to absorb simplify-tolerance-scale noise surviving
+ *  `TANGENT_PROBE_MM`'s averaging (measured up to ~0.036 on an adversarial
+ *  worst-case zigzag — see fingerAlign.test.ts), while staying far tighter
+ *  than any genuine curve or rounded corner, whose tangent swings by tens of
+ *  degrees over the same probe distance. */
+const AXIS_EPS = 0.05;
+
+/** How far either side of the current arc position to probe for the local
+ *  tangent — must clear `SIMPLIFY_TOL_MM` (gridshot/core/contour.py, 0.05mm)
+ *  by a wide margin. A traced tool outline is Douglas-Peucker-simplified to
+ *  that tolerance, which only bounds each vertex's deviation from the true
+ *  edge, not that consecutive vertices are collinear — so a genuinely
+ *  straight edge is still a zigzag of short segments at that scale, each
+ *  with its own, often steep, local slope. Probing at (or near) the noise
+ *  floor mostly measures that noise; this needs to be large enough to
+ *  average it out on any real edge, while staying well under typical pocket
+ *  dimensions (tens of mm) so it doesn't blend across a genuine corner. */
+const TANGENT_PROBE_MM = 1.0;
 
 /** World-space unit direction a hole travels in as its arc-length position
  *  increases, for a tool with the given local pocket ring, world rotation,
@@ -17,7 +35,7 @@ export function travelDirection(
 ): [number, number] | null {
   const len = ringLength(ring);
   if (len < 1e-6) return null;
-  const step = Math.min(0.05, len / 4);
+  const step = Math.min(TANGENT_PROBE_MM, len / 4);
   const [ax, ay] = pointAtArcLength(ring, arcMm - step);
   const [bx, by] = pointAtArcLength(ring, arcMm + step);
   let dx = bx - ax, dy = by - ay;
