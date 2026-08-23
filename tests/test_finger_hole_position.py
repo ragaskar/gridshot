@@ -155,3 +155,54 @@ class TestLegacyFingerHoleFallback:
 
         with pytest.raises(ValueError):
             derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())
+
+
+class TestFingerHoleDiameter:
+    """`BinSettings.finger_hole_diameter_mm` scales the hole's cut diameter.
+    `None` (default) keeps today's fixed 20mm. The center never moves when
+    the diameter changes — only the reported diameter and the sizing
+    envelope that must fully contain the enlarged/shrunk circle."""
+
+    def test_default_diameter_is_20mm(self, printer):
+        spec = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0)
+        assert spec.finger_holes[0][2] == pytest.approx(20.0)
+
+    def test_diameter_override_changes_size_but_not_arc_position(self, printer):
+        # The overall cut envelope re-centers on origin as its bounding box
+        # grows with a bigger hole (existing behavior, unrelated to this
+        # feature), so raw x/y shift — the invariant that must hold is that
+        # the hole stays at the same *arc-length* position along the
+        # boundary, still touching it, regardless of diameter.
+        base = _spec(WIDE_OUTLINE, finger_hole_arc_mm=10.0)
+        bigger = _spec(WIDE_OUTLINE, finger_hole_arc_mm=10.0, finger_hole_diameter_mm=40.0)
+
+        bx, by, bd = base.finger_holes[0]
+        gx, gy, gd = bigger.finger_holes[0]
+        assert bd == pytest.approx(20.0)
+        assert gd == pytest.approx(40.0)
+        assert base.finger_hole_arc_mm == pytest.approx(bigger.finger_hole_arc_mm)
+
+        base_pocket = contour_mod.to_shapely(base.pocket_poly)
+        bigger_pocket = contour_mod.to_shapely(bigger.pocket_poly)
+        assert base_pocket.exterior.distance(Point(bx, by)) < 0.1
+        assert bigger_pocket.exterior.distance(Point(gx, gy)) < 0.1
+
+    def test_diameter_override_keeps_the_full_circle_inside_the_sizing_envelope(self, printer):
+        spec = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_diameter_mm=40.0)
+        x, y, d = spec.finger_holes[0]
+        sizing_shape = contour_mod.to_shapely(spec.sizing_poly)
+        assert sizing_shape.covers(Point(x, y).buffer(d / 2).buffer(-0.05))
+
+    def test_non_finite_diameter_is_rejected(self, printer):
+        tool = derive_mod.ToolGeometry(outline=WIDE_OUTLINE, silhouette_height_mm=5.0)
+        settings = derive_mod.BinSettings(finger_hole=True, finger_hole_diameter_mm=float("nan"))
+
+        with pytest.raises(ValueError):
+            derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())
+
+    def test_non_positive_diameter_is_rejected(self, printer):
+        tool = derive_mod.ToolGeometry(outline=WIDE_OUTLINE, silhouette_height_mm=5.0)
+        settings = derive_mod.BinSettings(finger_hole=True, finger_hole_diameter_mm=0.0)
+
+        with pytest.raises(ValueError):
+            derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())

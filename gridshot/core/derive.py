@@ -82,6 +82,10 @@ class BinSettings:
     finger_hole_arc_mm: float | None = None
     finger_hole_side_flip: bool = False
     finger_hole_offset_mm: float = 0.0
+    # `None` keeps the historical fixed 20mm hole. The center never shifts
+    # when this changes — the circle grows/shrinks around its arc-length
+    # position, same x/y.
+    finger_hole_diameter_mm: float | None = None
     round_tool: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -363,6 +367,11 @@ def derive_bin_spec(
         raise ValueError("finger hole offset must be finite")
     if settings.finger_hole_arc_mm is not None and not math.isfinite(settings.finger_hole_arc_mm):
         raise ValueError("finger hole arc length must be finite")
+    if settings.finger_hole_diameter_mm is not None and (
+        not math.isfinite(settings.finger_hole_diameter_mm)
+        or settings.finger_hole_diameter_mm <= 0
+    ):
+        raise ValueError("finger hole diameter must be > 0")
     if not (0.0 <= settings.fill_height_pct <= 100.0):
         raise ValueError(
             f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
@@ -448,6 +457,11 @@ def derive_bin_spec(
     sizing = pocket_shape
     finger_hole_arc_mm = 0.0
     if settings.finger_hole:
+        diameter = (
+            settings.finger_hole_diameter_mm
+            if settings.finger_hole_diameter_mm is not None
+            else 20.0
+        )
         ring = _ring_points(pocket_shape)
         total_len = _ring_length(ring)
         if settings.finger_hole_arc_mm is not None:
@@ -457,9 +471,9 @@ def derive_bin_spec(
             point = _legacy_finger_hole_point(pocket_shape, wall, settings)
             arc = _arc_length_at_point(ring, (point.x, point.y)) if total_len > 1e-9 else 0.0
 
-        sizing = pocket_shape.union(point.buffer(10.0))
+        sizing = pocket_shape.union(point.buffer(diameter / 2))
         finger_hole_arc_mm = arc
-        fingers.append((float(point.x), float(point.y), 20.0))
+        fingers.append((float(point.x), float(point.y), diameter))
 
     # Centre the complete cut envelope, including the optional scallop.
     sminx, sminy, smaxx, smaxy = sizing.bounds

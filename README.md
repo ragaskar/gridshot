@@ -428,6 +428,10 @@ Features added on top of the original public release, newest last:
   jump it across to the opposite side) — replacing the old "Switch sides" toggle and
   offset slider/number field (see
   [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
+- Per-tool finger-hole diameter override in the multi-tool combine editor — select a
+  hole to resize it (0.1mm precision by typing, 1mm arrow-key steps), growing or
+  shrinking around its current position on the outline (see
+  [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
 
 ## License
 

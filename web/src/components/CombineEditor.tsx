@@ -407,13 +407,14 @@ export function CombineEditor({
   ): CombineToolOverride[] {
     return tools.map(({
       id, rot, finger_hole_override, clearance_mm_override,
-      finger_hole_arc_mm_override,
+      finger_hole_arc_mm_override, finger_hole_diameter_mm_override,
       depth_mm_override,
     }) => ({
       id,
       finger_hole: finger_hole_override,
       clearance_mm: clearance_mm_override,
       finger_hole_arc_mm: finger_hole_arc_mm_override,
+      finger_hole_diameter_mm: finger_hole_diameter_mm_override,
       locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
     }));
@@ -649,6 +650,7 @@ export function CombineEditor({
       tool.finger_hole_override,
       tool.clearance_mm_override,
       tool.finger_hole_arc_mm_override,
+      tool.finger_hole_diameter_mm_override,
       tool.depth_mm_override,
     ])),
     [tools],
@@ -862,6 +864,21 @@ export function CombineEditor({
         finger_hole_arc_mm: wrapped,
         finger_hole_arc_mm_override: wrapped,
         finger_holes: [[lx, ly, diameter]],
+      };
+    }));
+  }
+  /** Resize the selected finger hole in place — same two-tier local/eventual-
+   *  server pattern as `commitFingerHoleArc`: the center (x/y) is untouched,
+   *  only the diameter changes, so the circle grows/shrinks around its
+   *  current position on the outline. */
+  function setFingerHoleDiameter(toolId: string, diameterMm: number) {
+    if (!Number.isFinite(diameterMm) || diameterMm <= 0) return;
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      return {
+        ...t,
+        finger_hole_diameter_mm_override: diameterMm,
+        finger_holes: t.finger_holes.map(([x, y]) => [x, y, diameterMm]),
       };
     }));
   }
@@ -2022,6 +2039,26 @@ export function CombineEditor({
                 <dt>Y</dt>
                 <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
               </dl>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                <span className="text-muted">Diameter</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <input
+                    aria-label="Finger hole diameter in millimetres"
+                    className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                    type="number" step={1} min={0.1}
+                    disabled={busy}
+                    defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
+                    key={selectedFingerHoleTool.id}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (Number.isFinite(value) && value > 0) {
+                        setFingerHoleDiameter(selectedFingerHoleTool.id, value);
+                      }
+                    }}
+                  />
+                  <span className="text-muted">mm</span>
+                </div>
+              </div>
               <p className="mt-3 border-t border-line pt-3 text-muted">
                 Drag the hole, or use the arrow keys — Left/Right slide it along the
                 outline (same nudge step and Shift ×10 as tools), Up/Down jump it

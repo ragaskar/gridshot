@@ -2445,6 +2445,8 @@ class CombineToolOverride(BaseModel):
     finger_hole_arc_mm: Optional[float] = None
     finger_hole_side_flip: Optional[bool] = None
     finger_hole_offset_mm: Optional[float] = None
+    # Null/omitted means the library's diameter (20mm default) applies.
+    finger_hole_diameter_mm: Optional[float] = Field(None, gt=0)
     # Auto-pack only: restrict this tool's rotation search to this one angle.
     locked_rotation_deg: Optional[float] = None
     # Bin-time pocket-depth override — independent of the library's own
@@ -2571,6 +2573,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     depths, fingers, inherited_fingers = [], [], []
     clearances, inherited_clearances = [], []
     inherited_depths = []
+    inherited_finger_diameters = []
     for tid in req.ids:
         try:
             t = bintools_mod.resolve_tool(tid)
@@ -2607,6 +2610,11 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.finger_hole_offset_mm is not None
             else 0.0
         )
+        finger_hole_diameter_mm = (
+            override.finger_hole_diameter_mm
+            if override is not None and override.finger_hole_diameter_mm is not None
+            else t.finger_hole_diameter_mm
+        )
         depth_override = (
             override.pocket_depth_mm
             if override is not None and override.pocket_depth_mm is not None
@@ -2620,6 +2628,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
             "finger_hole_arc_mm": finger_hole_arc_mm,
             "finger_hole_side_flip": finger_hole_side_flip,
             "finger_hole_offset_mm": finger_hole_offset_mm,
+            "finger_hole_diameter_mm": finger_hole_diameter_mm,
             "pocket_depth_mm": depth_override if depth_override is not None else t.pocket_depth_mm,
         })
         spec = library_mod.derive_tool_spec(
@@ -2650,6 +2659,9 @@ def _combine_layout(req: "CombineRequest") -> dict:
             for x, y, diameter in spec.finger_holes
         ])
         inherited_fingers.append(t.finger_hole)
+        inherited_finger_diameters.append(
+            t.finger_hole_diameter_mm if t.finger_hole_diameter_mm is not None else 20.0
+        )
         clearances.append(clearance)
         inherited_clearances.append(t.clearance_mm)
     if len(pack_stamps) < 2:
@@ -2830,6 +2842,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "centered": centered, "tfs": ctfs,
         "depths": depths, "inherited_depths": inherited_depths, "fingers": centered_fingers,
         "local_fingers": fingers, "inherited_fingers": inherited_fingers,
+        "inherited_finger_diameters": inherited_finger_diameters,
         "clearances": clearances, "inherited_clearances": inherited_clearances,
         "gx": gx, "gy": gy,
         "wall": wall,
@@ -2873,6 +2886,10 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.finger_hole_arc_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_diameter_override = next(
+            (item.finger_hole_diameter_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         requested_depth_override = next(
             (item.pocket_depth_mm for item in req.overrides or [] if item.id == t.id),
             None,
@@ -2900,6 +2917,8 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "finger_hole_override": requested_override,
             "finger_hole_arc_mm": round(spec.finger_hole_arc_mm, 2),
             "finger_hole_arc_mm_override": requested_arc_override,
+            "finger_hole_diameter_mm_override": requested_diameter_override,
+            "finger_hole_diameter_mm_inherited": round(lay["inherited_finger_diameters"][i], 2),
             "finger_holes": [
                 [round(float(x), 2), round(float(y), 2), round(float(diameter), 2)]
                 for x, y, diameter in lay["local_fingers"][i]

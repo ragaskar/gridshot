@@ -117,6 +117,7 @@ def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
         finger_hole_arc_mm=source.finger_hole_arc_mm,
         finger_hole_side_flip=source.finger_hole_side_flip,
         finger_hole_offset_mm=source.finger_hole_offset_mm,
+        finger_hole_diameter_mm=source.finger_hole_diameter_mm,
         lip=source.lip,
         magnet_holes=source.magnet_holes,
         magnet_hole_diameter_mm=source.magnet_hole_diameter_mm,

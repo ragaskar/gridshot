@@ -39,6 +39,21 @@ renders at, before any [custom bin shape](combine-custom-bin-shape.md)
 removes cells from it. It updates live while you drag or nudge, to 0.01mm
 resolution.
 
+## Size
+
+Selecting a hole also shows its diameter in the Inspector, in mm. It defaults to
+20mm — the size GridShot has always cut — until you change it for that tool, in
+that bin.
+
+- Type a value for 0.1mm precision. The field's spinner arrows step by a
+  whole 1mm at a time; type directly into the field for anything finer.
+- The hole grows or shrinks **around its current position on the outline** —
+  changing the diameter never slides the hole along the boundary or off it,
+  only how big a bite it takes out of the pocket wall there.
+- Like position, this is a bin-time-only override: it doesn't touch the
+  tool's library settings, and it's independent of every other tool's finger
+  hole in the same bin.
+
 ## Multi-select
 
 There's no bulk position editing across a multi-tool selection — a finger

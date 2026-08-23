@@ -30,6 +30,7 @@ function baseTool(id: string, label: string, tx: number, ty: number, fingerHole:
     finger: fingerHole, finger_hole: fingerHole, finger_hole_inherited: fingerHole, finger_hole_override: null,
     // Starts at the bottom edge's midpoint (arc 10, world (0,-5)).
     finger_hole_arc_mm: fingerHole ? 10 : 0, finger_hole_arc_mm_override: null,
+    finger_hole_diameter_mm_override: null, finger_hole_diameter_mm_inherited: 20,
     finger_holes: (fingerHole ? [[0, -5, 4]] : []) as [number, number, number][],
     derivation_key: `${id}-key`,
     stamp: STAMP,
@@ -191,6 +192,31 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     const stillJumped = fingerCircle();
     expect(Number(stillJumped.getAttribute("cx"))).toBeCloseTo(afterFirstJump.cx);
     expect(Number(stillJumped.getAttribute("cy"))).toBeCloseTo(afterFirstJump.cy);
+  });
+
+  it("shows a diameter input seeded from the hole's current diameter, with a 1mm arrow step", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+
+    const input = screen.getByLabelText(/diameter/i) as HTMLInputElement;
+    expect(input.value).toBe("4");
+    expect(input.step).toBe("1");
+  });
+
+  it("typing a diameter grows the circle's radius without moving its center", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    const before = { cx: Number(fingerCircle().getAttribute("cx")), cy: Number(fingerCircle().getAttribute("cy")) };
+
+    const input = screen.getByLabelText(/diameter/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "13.7" } });
+
+    const circle = fingerCircle();
+    expect(Number(circle.getAttribute("r"))).toBeCloseTo(6.85);
+    expect(Number(circle.getAttribute("cx"))).toBeCloseTo(before.cx);
+    expect(Number(circle.getAttribute("cy"))).toBeCloseTo(before.cy);
   });
 
   it("Shift+ArrowUp is an explicit no-op, even when a plain ArrowUp would move the hole", async () => {

@@ -984,6 +984,7 @@ export interface CombineToolOverride {
   finger_hole: boolean | null;
   clearance_mm: number | null;
   finger_hole_arc_mm: number | null;
+  finger_hole_diameter_mm: number | null;
   locked_rotation_deg: number | null;
   pocket_depth_mm: number | null;
 }
@@ -1006,6 +1007,8 @@ export interface CombineTool extends Placement {
   finger_hole_override: boolean | null;
   finger_hole_arc_mm: number;
   finger_hole_arc_mm_override: number | null;
+  finger_hole_diameter_mm_override: number | null;
+  finger_hole_diameter_mm_inherited: number;
   finger_holes: [number, number, number][];
   stamp: [number, number][];
 }

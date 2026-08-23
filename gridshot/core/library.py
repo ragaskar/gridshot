@@ -121,6 +121,8 @@ class LibraryTool(BaseModel):
     finger_hole_arc_mm: float | None = None
     finger_hole_side_flip: bool = False
     finger_hole_offset_mm: float = 0.0
+    # `None` keeps the historical fixed 20mm hole diameter.
+    finger_hole_diameter_mm: float | None = None
     lip: bool = True
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -292,6 +294,7 @@ def derive_tool_spec(
             finger_hole_arc_mm=tool.finger_hole_arc_mm,
             finger_hole_side_flip=tool.finger_hole_side_flip,
             finger_hole_offset_mm=tool.finger_hole_offset_mm,
+            finger_hole_diameter_mm=tool.finger_hole_diameter_mm,
             round_tool=tool.round_tool,
             magnet_holes=tool.magnet_holes,
             magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,

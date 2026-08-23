@@ -43,6 +43,7 @@ class SavedBinOverride(BaseModel):
     finger_hole_arc_mm: Optional[float] = None
     finger_hole_side_flip: Optional[bool] = None
     finger_hole_offset_mm: Optional[float] = None
+    finger_hole_diameter_mm: Optional[float] = None
     locked_rotation_deg: Optional[float] = None
     pocket_depth_mm: Optional[float] = None
 

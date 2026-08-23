@@ -581,7 +581,7 @@ def trace(
         None, help="Bin height in 7mm gridfinity units (default: fewest that fit the pocket)."
     ),
     lip: bool = typer.Option(True, help="Spec stacking lip on the rim (--no-lip to omit)."),
-    finger_hole: bool = typer.Option(False, help="Cut a 20mm finger hole in the pocket."),
+    finger_hole: bool = typer.Option(False, help="Cut a finger-access hole in the pocket (20mm by default)."),
     magnet_holes: bool = typer.Option(
         False, help="Cut magnet holes at each corner of every foot."
     ),

@@ -96,3 +96,30 @@ class TestCombineFingerHolePosition:
         tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
         assert tool_a["finger_hole_arc_mm_override"] is None
         assert tool_a["finger_holes"] != base_a["finger_holes"]
+
+
+class TestCombineFingerHoleDiameter:
+    def test_default_diameter_is_20mm_and_no_override(self, client, library_dir):
+        _seed_two_tools()
+
+        response = _preview(client)
+
+        assert response.status_code == 200
+        tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
+        assert tool_a["finger_holes"][0][2] == pytest.approx(20.0)
+        assert tool_a["finger_hole_diameter_mm_override"] is None
+
+    def test_diameter_override_resizes_one_tool_only(self, client, library_dir):
+        _seed_two_tools()
+        baseline = _preview(client).json()
+        base_b = next(t for t in baseline["tools"] if t["id"] == "tool-b")
+
+        response = _preview(client, overrides=[{"id": "tool-a", "finger_hole_diameter_mm": 30.0}])
+
+        assert response.status_code == 200
+        by_id = {t["id"]: t for t in response.json()["tools"]}
+        assert by_id["tool-a"]["finger_holes"][0][2] == pytest.approx(30.0)
+        assert by_id["tool-a"]["finger_hole_diameter_mm_override"] == pytest.approx(30.0)
+        assert by_id["tool-a"]["finger_hole_diameter_mm_inherited"] == pytest.approx(20.0)
+        assert by_id["tool-b"]["finger_hole_diameter_mm_override"] is None
+        assert by_id["tool-b"]["finger_holes"] == base_b["finger_holes"]
