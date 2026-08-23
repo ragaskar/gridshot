@@ -31,6 +31,8 @@ function baseTool(id: string, label: string, tx: number, ty: number, fingerHole:
     // Starts at the bottom edge's midpoint (arc 10, world (0,-5)).
     finger_hole_arc_mm: fingerHole ? 10 : 0, finger_hole_arc_mm_override: null,
     finger_hole_diameter_mm_override: null, finger_hole_diameter_mm_inherited: 20,
+    finger_hole_span: false, finger_hole_span_override: null,
+    finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null,
     finger_holes: (fingerHole ? [[0, -5, 4]] : []) as [number, number, number][],
     derivation_key: `${id}-key`,
     stamp: STAMP,
@@ -217,6 +219,75 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect(Number(circle.getAttribute("r"))).toBeCloseTo(6.85);
     expect(Number(circle.getAttribute("cx"))).toBeCloseTo(before.cx);
     expect(Number(circle.getAttribute("cy"))).toBeCloseTo(before.cy);
+  });
+
+  function visibleFingerCircles(): SVGCircleElement[] {
+    return Array.from(document.querySelectorAll('circle[stroke-dasharray="2 1"]'));
+  }
+  function spanToggleButton(): HTMLElement {
+    return screen.getByText("Span both sides").nextElementSibling as HTMLElement;
+  }
+
+  it("turning span on adds a second lobe opposite the first; turning it off removes it", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    expect(visibleFingerCircles()).toHaveLength(1);
+
+    fireEvent.click(spanToggleButton());
+
+    const lobes = visibleFingerCircles();
+    expect(lobes).toHaveLength(2);
+    // Started at the bottom edge's midpoint (0,-5) — opposite lands on the
+    // top edge's midpoint (0,5).
+    expect(Number(lobes[1].getAttribute("cx"))).toBeCloseTo(0, 0);
+    expect(Number(lobes[1].getAttribute("cy"))).toBeCloseTo(5, 0);
+    // P1 is unmoved.
+    expect(Number(lobes[0].getAttribute("cx"))).toBeCloseTo(0, 0);
+    expect(Number(lobes[0].getAttribute("cy"))).toBeCloseTo(-5, 0);
+
+    fireEvent.click(spanToggleButton());
+    expect(visibleFingerCircles()).toHaveLength(1);
+    const restored = visibleFingerCircles()[0];
+    expect(Number(restored.getAttribute("cx"))).toBeCloseTo(0, 0);
+    expect(Number(restored.getAttribute("cy"))).toBeCloseTo(-5, 0);
+  });
+
+  it("Up/Down becomes a no-op once span is on", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.click(spanToggleButton());
+    const before = visibleFingerCircles().map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }));
+
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowUp" });
+
+    const after = visibleFingerCircles().map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }));
+    expect(after).toEqual(before);
+  });
+
+  it("clicking the second lobe selects it, and Left/Right then only moves that lobe", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.click(spanToggleButton());
+    const [lobe1Before, lobe2Before] = visibleFingerCircles().map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }));
+    const lobe2 = visibleFingerCircles()[1];
+
+    fireEvent.pointerDown(lobe2, { clientX: lobe2Before.cx, clientY: -lobe2Before.cy, pointerId: 2 });
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+
+    const [lobe1After, lobe2After] = visibleFingerCircles().map((c) => ({
+      cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
+    }));
+    expect(lobe1After).toEqual(lobe1Before);
+    expect(lobe2After).not.toEqual(lobe2Before);
   });
 
   it("Shift+ArrowUp is an explicit no-op, even when a plain ArrowUp would move the hole", async () => {

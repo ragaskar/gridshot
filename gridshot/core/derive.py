@@ -19,7 +19,7 @@ import numpy as np
 from shapely.affinity import rotate as shapely_rotate
 from shapely.affinity import scale as shapely_scale
 from shapely.affinity import translate
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 from shapely.ops import nearest_points
 
 from . import bench as bench_mod
@@ -86,6 +86,13 @@ class BinSettings:
     # when this changes — the circle grows/shrinks around its arc-length
     # position, same x/y.
     finger_hole_diameter_mm: float | None = None
+    # Turns the single circular hole into a two-lobe stadium/pill straddling
+    # the tool — a second focal point at `finger_hole_arc2_mm` (same
+    # None-means-unplaced convention as `finger_hole_arc_mm`; unset falls
+    # back to the ring's opposite point by arc-length, a cheap always-valid
+    # default — see `derive_bin_spec`) sharing the first point's diameter.
+    finger_hole_span: bool = False
+    finger_hole_arc2_mm: float | None = None
     round_tool: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -119,6 +126,12 @@ class DerivedBinSpec:
     # legacy-fallback point's own arc-length), so a caller always has a real
     # position to seed dragging/nudging from.
     finger_hole_arc_mm: float = 0.0
+    # Resolved arc-length of the second (span-only) focal point — mirrors
+    # `finger_hole_arc_mm`, concrete even when `BinSettings.finger_hole_arc2_mm`
+    # was left unset. `finger_hole_span_poly` is the exact capsule/stadium cut
+    # connecting the two points; both are None/0.0 unless span is on.
+    finger_hole_arc2_mm: float = 0.0
+    finger_hole_span_poly: Poly | None = None
     reserved_cells: list[tuple[float, float]] = field(default_factory=list)
     available_cells: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -372,6 +385,8 @@ def derive_bin_spec(
         or settings.finger_hole_diameter_mm <= 0
     ):
         raise ValueError("finger hole diameter must be > 0")
+    if settings.finger_hole_arc2_mm is not None and not math.isfinite(settings.finger_hole_arc2_mm):
+        raise ValueError("finger hole second arc length must be finite")
     if not (0.0 <= settings.fill_height_pct <= 100.0):
         raise ValueError(
             f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
@@ -456,6 +471,8 @@ def derive_bin_spec(
     fingers: list[tuple[float, float, float]] = []
     sizing = pocket_shape
     finger_hole_arc_mm = 0.0
+    finger_hole_arc2_mm = 0.0
+    span_shape = None
     if settings.finger_hole:
         diameter = (
             settings.finger_hole_diameter_mm
@@ -475,6 +492,24 @@ def derive_bin_spec(
         finger_hole_arc_mm = arc
         fingers.append((float(point.x), float(point.y), diameter))
 
+        if settings.finger_hole_span:
+            if settings.finger_hole_arc2_mm is not None:
+                arc2 = settings.finger_hole_arc2_mm % total_len if total_len > 1e-9 else 0.0
+            else:
+                # Cheap, always-valid default: the ring's opposite point by
+                # arc-length. The frontend always commits an explicit arc2
+                # the moment span is turned on (using a world-space "opposite
+                # side" jump), so this fallback only matters for a caller
+                # that enables span without ever placing the second point.
+                arc2 = (arc + total_len / 2) % total_len if total_len > 1e-9 else 0.0
+            point2 = Point(_point_at_arc_length(ring, arc2))
+            finger_hole_arc2_mm = arc2
+            fingers.append((float(point2.x), float(point2.y), diameter))
+            span_shape = LineString([point, point2]).buffer(
+                diameter / 2, cap_style="round"
+            )
+            sizing = sizing.union(span_shape)
+
     # Centre the complete cut envelope, including the optional scallop.
     sminx, sminy, smaxx, smaxy = sizing.bounds
     dx, dy = -(sminx + smaxx) / 2, -(sminy + smaxy) / 2
@@ -482,6 +517,8 @@ def derive_bin_spec(
     tool_bin_shape = translate(tool_bin_shape, dx, dy)
     sizing = translate(sizing, dx, dy)
     fingers = [(x + dx, y + dy, diameter) for x, y, diameter in fingers]
+    if span_shape is not None:
+        span_shape = translate(span_shape, dx, dy)
 
     gx, gy = grid_mod.auto_grid(contour_mod.from_shapely(sizing), wall=wall)
     need_u = grid_mod.auto_height_u(depth)
@@ -547,6 +584,10 @@ def derive_bin_spec(
         magnet_hole_depth_mm=settings.magnet_hole_depth_mm,
         finger_holes=fingers,
         finger_hole_arc_mm=finger_hole_arc_mm,
+        finger_hole_arc2_mm=finger_hole_arc2_mm,
+        finger_hole_span_poly=(
+            contour_mod.from_shapely(span_shape) if span_shape is not None else None
+        ),
         reserved_cells=reserved_cells,
         available_cells=available_cells,
         warnings=warnings,

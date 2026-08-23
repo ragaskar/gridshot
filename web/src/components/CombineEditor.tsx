@@ -270,6 +270,12 @@ export function CombineEditor({
   // Mutually exclusive with selectedIds: selecting a finger hole deselects
   // every tool, and vice versa (see down()/downFingerHole() below).
   const [selectedFingerHoleToolId, setSelectedFingerHoleToolId] = useState<string | null>(null);
+  // Which focal point (0 = P1, 1 = P2) a span hole's selection/drag/nudge
+  // currently addresses. Meaningless (stays 0) for a single-point hole.
+  const [selectedFingerPointIndex, setSelectedFingerPointIndex] = useState<0 | 1>(0);
+  // The non-selected point of a selected span hole, while the pointer sits
+  // within its click-to-select slop radius — renders a "select hint" ring.
+  const [hoveredFingerPoint, setHoveredFingerPoint] = useState<{ toolId: string; pointIndex: 0 | 1 } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -344,7 +350,7 @@ export function CombineEditor({
     clickNarrowsTo: string | null;
     moved: boolean;
   } | null>(null);
-  const fingerDrag = useRef<{ toolId: string; moved: boolean } | null>(null);
+  const fingerDrag = useRef<{ toolId: string; pointIndex: 0 | 1; moved: boolean } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
   const depthCheckboxRef = useRef<HTMLInputElement>(null);
@@ -367,6 +373,7 @@ export function CombineEditor({
       if (e.key === "Escape") {
         setSelectedIds(new Set());
         setSelectedFingerHoleToolId(null);
+        setSelectedFingerPointIndex(0);
       } else if ((e.metaKey || e.ctrlKey) && (e.code === "KeyZ" || e.key.toLowerCase() === "z")) {
         e.preventDefault();
         // On macOS, Cmd+Shift+Z can reach here with e.shiftKey read as false
@@ -408,6 +415,7 @@ export function CombineEditor({
     return tools.map(({
       id, rot, finger_hole_override, clearance_mm_override,
       finger_hole_arc_mm_override, finger_hole_diameter_mm_override,
+      finger_hole_span_override, finger_hole_arc2_mm_override,
       depth_mm_override,
     }) => ({
       id,
@@ -415,6 +423,8 @@ export function CombineEditor({
       clearance_mm: clearance_mm_override,
       finger_hole_arc_mm: finger_hole_arc_mm_override,
       finger_hole_diameter_mm: finger_hole_diameter_mm_override,
+      finger_hole_span: finger_hole_span_override,
+      finger_hole_arc2_mm: finger_hole_arc2_mm_override,
       locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
     }));
@@ -651,6 +661,8 @@ export function CombineEditor({
       tool.clearance_mm_override,
       tool.finger_hole_arc_mm_override,
       tool.finger_hole_diameter_mm_override,
+      tool.finger_hole_span_override,
+      tool.finger_hole_arc2_mm_override,
       tool.depth_mm_override,
     ])),
     [tools],
@@ -662,10 +674,22 @@ export function CombineEditor({
   const layout = useMemo(() => {
     if (!meta || !tools.length) return null;
     const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y));
-    const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter]) => {
+    const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter], pointIndex) => {
       const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y);
-      return { toolId: tool.id, cx, cy, radius: diameter / 2 };
+      return { toolId: tool.id, pointIndex: pointIndex as 0 | 1, cx, cy, radius: diameter / 2 };
     }));
+    // A span hole's two lobes read as one pill — draw a stroke between their
+    // centers, as wide as the hole diameter, under the circles themselves.
+    const fingerConnectors = fingerCircles.reduce<{ toolId: string; x1: number; y1: number; x2: number; y2: number; diameter: number }[]>(
+      (acc, hole) => {
+        if (hole.pointIndex !== 1) return acc;
+        const p1 = fingerCircles.find((h) => h.toolId === hole.toolId && h.pointIndex === 0);
+        if (!p1) return acc;
+        acc.push({ toolId: hole.toolId, x1: p1.cx, y1: p1.cy, x2: hole.cx, y2: hole.cy, diameter: hole.radius * 2 });
+        return acc;
+      },
+      [],
+    );
     const xs = [
       ...polys.flat().map((p) => p[0]),
       ...fingerCircles.flatMap((hole) => [hole.cx - hole.radius, hole.cx + hole.radius]),
@@ -750,7 +774,7 @@ export function CombineEditor({
     const viewCx = (boxMinX + boxMaxX) / 2, viewCy = (boxMinY + boxMaxY) / 2;
     const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
 
-    return { polys, fingerCircles, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
+    return { polys, fingerCircles, fingerConnectors, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
   }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
@@ -817,6 +841,7 @@ export function CombineEditor({
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedFingerHoleToolId(null);
+    setSelectedFingerPointIndex(0);
     const alreadySelected = selectedIds.has(id);
     // A plain click on a tool that's already part of a bigger selection is
     // ambiguous at pointerdown time: it might become a group-drag, or it
@@ -849,23 +874,57 @@ export function CombineEditor({
   }
   /** Apply a new arc-length position to one tool's finger hole — wraps it
    *  onto the ring and updates both the value sent to the server
-   *  (`finger_hole_arc_mm`/`_override`) and the local point used for instant
-   *  rendering (`finger_holes[0]`), the same two-tier pattern tx/ty dragging
+   *  (`finger_hole_arc_mm`/`_override`, or the `arc2` pair when `pointIndex`
+   *  is 1) and the local point used for instant rendering
+   *  (`finger_holes[pointIndex]`, patched in place — the other point, if
+   *  any, is left untouched), the same two-tier pattern tx/ty dragging
    *  already uses (local state now, a debounced server round-trip once the
    *  gesture settles). */
-  function commitFingerHoleArc(id: string, arcMm: number) {
+  function commitFingerHoleArc(id: string, arcMm: number, pointIndex: 0 | 1 = 0) {
     setTools((ts) => ts.map((t) => {
       if (t.id !== id) return t;
+      if (pointIndex === 1 && !t.finger_hole_span) return t;
       const wrapped = wrapArcLength(t.stamp, arcMm);
       const [lx, ly] = pointAtArcLength(t.stamp, wrapped);
-      const diameter = t.finger_holes[0]?.[2] ?? 20;
+      const diameter = t.finger_holes[pointIndex]?.[2] ?? t.finger_holes[0]?.[2] ?? 20;
+      const finger_holes = t.finger_holes.map((entry, i) => (i === pointIndex ? [lx, ly, diameter] : entry)) as typeof t.finger_holes;
+      return pointIndex === 1
+        ? { ...t, finger_hole_arc2_mm: wrapped, finger_hole_arc2_mm_override: wrapped, finger_holes }
+        : { ...t, finger_hole_arc_mm: wrapped, finger_hole_arc_mm_override: wrapped, finger_holes };
+    }));
+  }
+  /** Turn a selected hole's span on/off. On: seeds a fresh second point
+   *  "diametrically opposite" P1 (same rule as the Up/Down jump — see
+   *  `arcOnOppositeSide`) and appends it to `finger_holes`. Off: drops
+   *  exactly the point span-on added — P1 (and whichever point is currently
+   *  selected, if it was P1) is left exactly where it was, so toggling span
+   *  on then off is a no-op round-trip. */
+  function spanFingerHole(toolId: string, on: boolean) {
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      if (on) {
+        const arc2 = arcOnOppositeSide(t, t.finger_hole_arc_mm) ?? t.finger_hole_arc_mm;
+        const wrapped = wrapArcLength(t.stamp, arc2);
+        const [lx, ly] = pointAtArcLength(t.stamp, wrapped);
+        const diameter = t.finger_holes[0]?.[2] ?? 20;
+        return {
+          ...t,
+          finger_hole_span: true,
+          finger_hole_span_override: true,
+          finger_hole_arc2_mm: wrapped,
+          finger_hole_arc2_mm_override: wrapped,
+          finger_holes: [t.finger_holes[0] ?? [0, 0, diameter], [lx, ly, diameter]],
+        };
+      }
       return {
         ...t,
-        finger_hole_arc_mm: wrapped,
-        finger_hole_arc_mm_override: wrapped,
-        finger_holes: [[lx, ly, diameter]],
+        finger_hole_span: false,
+        finger_hole_span_override: false,
+        finger_hole_arc2_mm_override: null,
+        finger_holes: t.finger_holes.slice(0, 1),
       };
     }));
+    setSelectedFingerPointIndex(0);
   }
   /** Resize the selected finger hole in place — same two-tier local/eventual-
    *  server pattern as `commitFingerHoleArc`: the center (x/y) is untouched,
@@ -894,12 +953,14 @@ export function CombineEditor({
     if (tool.mirror_y) ly = -ly;
     return nearestArcLength(tool.stamp, [lx, ly]);
   }
-  function downFingerHole(toolId: string, e: React.PointerEvent) {
+  function downFingerHole(toolId: string, pointIndex: 0 | 1, e: React.PointerEvent) {
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedIds(new Set());
     setSelectedFingerHoleToolId(toolId);
-    fingerDrag.current = { toolId, moved: false };
+    setSelectedFingerPointIndex(pointIndex);
+    setHoveredFingerPoint(null);
+    fingerDrag.current = { toolId, pointIndex, moved: false };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
   function moveFingerHole(e: React.PointerEvent) {
@@ -909,21 +970,27 @@ export function CombineEditor({
     const [mx, my] = toData(e);
     if (!fingerDrag.current.moved) pushSnapshot();
     fingerDrag.current.moved = true;
-    commitFingerHoleArc(tool.id, localArcForWorldPoint(tool, mx, my));
+    commitFingerHoleArc(tool.id, localArcForWorldPoint(tool, mx, my), fingerDrag.current.pointIndex);
   }
   /** Number of ring samples used to find the "straight across" jump target
    *  for Up/Down — a `argmax`/`argmin` of world y would tie across every
    *  sample on a long flat edge (e.g. a knife blade's straight top) and land
    *  on an arbitrary corner; matching world x instead lands where "jump to
    *  the other side" actually reads as meaning. */
+  /** Extra click/hover radius (beyond the lobe's own drawn radius) for
+   *  selecting the *other* focal point of a span hole — so switching between
+   *  P1/P2 doesn't require pixel-perfect precision on the small circle. */
+  const FINGER_SELECT_SLOP_MM = 4;
   const FINGER_JUMP_SAMPLES = 200;
   const FINGER_JUMP_EPS_MM = 0.25;
-  /** The arc-length to jump a finger hole to when nudging "up"/"down": the
-   *  point on the opposite half (by world y, split at the tool's own placed
-   *  bounding-box midline) whose world x is closest to the hole's current
-   *  world x. Null if the hole is already on the requested side (no-op) or
-   *  the ring is degenerate. */
-  function jumpFingerHoleArc(tool: CombineTool, direction: "up" | "down"): number | null {
+  /** The arc-length of the point on the opposite half (by world y, split at
+   *  the tool's own placed bounding-box midline) from `arcMm`'s point, whose
+   *  world x is closest to it — "where the hole would go if flipped to the
+   *  other side," unconditionally. Null only for a degenerate (near-zero-
+   *  length) ring. Shared by `jumpFingerHoleArc` (Up/Down nudge, gated on
+   *  already being on the requested side) and turning span on (always
+   *  applied, to seed the second focal point opposite the first). */
+  function arcOnOppositeSide(tool: CombineTool, arcMm: number): number | null {
     const ring = tool.stamp;
     const len = ringLength(ring);
     if (len < 1e-6) return null;
@@ -931,12 +998,9 @@ export function CombineEditor({
     const box = bboxOf(placedRing);
     const midY = (box.miny + box.maxy) / 2;
     const [curX, curY] = placedPoint(
-      pointAtArcLength(ring, tool.finger_hole_arc_mm), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+      pointAtArcLength(ring, arcMm), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
     );
-    const currentlyTop = curY >= midY - FINGER_JUMP_EPS_MM;
-    const currentlyBottom = curY <= midY + FINGER_JUMP_EPS_MM;
-    if (direction === "up" && currentlyTop) return null;
-    if (direction === "down" && currentlyBottom) return null;
+    const currentlyTop = curY >= midY;
 
     let best: { arc: number; dist: number } | null = null;
     for (let i = 0; i <= FINGER_JUMP_SAMPLES; i++) {
@@ -944,12 +1008,31 @@ export function CombineEditor({
       const [wx, wy] = placedPoint(
         pointAtArcLength(ring, arc), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
       );
-      const onTargetSide = direction === "up" ? wy >= midY : wy <= midY;
+      const onTargetSide = currentlyTop ? wy <= midY : wy >= midY;
       if (!onTargetSide) continue;
       const dist = Math.abs(wx - curX);
       if (best === null || dist < best.dist) best = { arc, dist };
     }
     return best ? best.arc : null;
+  }
+  /** The arc-length to jump a finger hole to when nudging "up"/"down". Null
+   *  if the hole is already on the requested side (no-op) or the ring is
+   *  degenerate. */
+  function jumpFingerHoleArc(tool: CombineTool, direction: "up" | "down"): number | null {
+    const ring = tool.stamp;
+    const len = ringLength(ring);
+    if (len < 1e-6) return null;
+    const placedRing = placed(ring, tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y);
+    const box = bboxOf(placedRing);
+    const midY = (box.miny + box.maxy) / 2;
+    const [, curY] = placedPoint(
+      pointAtArcLength(ring, tool.finger_hole_arc_mm), tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+    );
+    const currentlyTop = curY >= midY - FINGER_JUMP_EPS_MM;
+    const currentlyBottom = curY <= midY + FINGER_JUMP_EPS_MM;
+    if (direction === "up" && currentlyTop) return null;
+    if (direction === "down" && currentlyBottom) return null;
+    return arcOnOppositeSide(tool, tool.finger_hole_arc_mm);
   }
   function rotate(deg: number) {
     if (!selectedTool) return;
@@ -1050,13 +1133,14 @@ export function CombineEditor({
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
       const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
+      const current = selectedFingerPointIndex === 1 ? tool.finger_hole_arc2_mm : tool.finger_hole_arc_mm;
       pushSnapshotCoalesced();
-      commitFingerHoleArc(tool.id, tool.finger_hole_arc_mm + (e.key === "ArrowLeft" ? -step : step));
+      commitFingerHoleArc(tool.id, current + (e.key === "ArrowLeft" ? -step : step), selectedFingerPointIndex);
       return;
     }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       e.preventDefault();
-      if (e.shiftKey) return;
+      if (e.shiftKey || tool.finger_hole_span) return;
       const target = jumpFingerHoleArc(tool, e.key === "ArrowUp" ? "up" : "down");
       if (target === null) return;
       pushSnapshot();
@@ -1492,7 +1576,7 @@ export function CombineEditor({
               drag.current = null;
               fingerDrag.current = null;
             }}
-            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolId(null); }}
+            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolId(null); setSelectedFingerPointIndex(0); }}
           >
             {layout && (
               // World y increases toward the back of the bin (standard
@@ -1574,23 +1658,57 @@ export function CombineEditor({
                 {/* finger-access scallops are part of the exact cut envelope —
                     rendered after (on top of) the tool polygons so a click
                     lands on the hole, not the pocket fill beneath it */}
+                {layout.fingerConnectors.map((conn) => {
+                  const toolIndex = tools.findIndex((tool) => tool.id === conn.toolId);
+                  const connColor = layout.overflowIds.has(conn.toolId) ? OVERFLOW_COLOR : color(toolIndex);
+                  const isSelected = selectedFingerHoleToolId === conn.toolId;
+                  return <line
+                    key={`${conn.toolId}-finger-connector`}
+                    x1={conn.x1} y1={conn.y1} x2={conn.x2} y2={conn.y2}
+                    stroke={connColor + (isSelected ? "55" : "2f")}
+                    strokeWidth={conn.diameter}
+                    strokeLinecap="round"
+                  />;
+                })}
                 {layout.fingerCircles.map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
                   const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
-                  const isSelected = selectedFingerHoleToolId === hole.toolId;
-                  return <circle
-                    key={`${hole.toolId}-finger-${index}`}
-                    cx={hole.cx}
-                    cy={hole.cy}
-                    r={hole.radius}
-                    fill={holeColor + (isSelected ? "55" : "2f")}
-                    stroke={holeColor}
-                    strokeWidth={isSelected ? 1.4 : 0.6}
-                    strokeDasharray="2 1"
-                    className={isSelected ? "marching-ants" : undefined}
-                    style={{ cursor: "grab" }}
-                    onPointerDown={(e) => downFingerHole(hole.toolId, e)}
-                  />;
+                  const holeSelected = selectedFingerHoleToolId === hole.toolId;
+                  const isActive = holeSelected && selectedFingerPointIndex === hole.pointIndex;
+                  const isSpan = tools.find((t) => t.id === hole.toolId)?.finger_hole_span ?? false;
+                  const isHinted = hoveredFingerPoint?.toolId === hole.toolId && hoveredFingerPoint.pointIndex === hole.pointIndex;
+                  return <g key={`${hole.toolId}-finger-${index}`}>
+                    {isSpan && (
+                      <circle
+                        cx={hole.cx} cy={hole.cy} r={hole.radius + FINGER_SELECT_SLOP_MM}
+                        fill="transparent"
+                        style={{ cursor: "pointer" }}
+                        onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
+                        onPointerEnter={() => !isActive && setHoveredFingerPoint({ toolId: hole.toolId, pointIndex: hole.pointIndex })}
+                        onPointerLeave={() => setHoveredFingerPoint((h) => (
+                          h?.toolId === hole.toolId && h.pointIndex === hole.pointIndex ? null : h
+                        ))}
+                      />
+                    )}
+                    <circle
+                      cx={hole.cx}
+                      cy={hole.cy}
+                      r={hole.radius}
+                      fill={holeColor + (isActive ? "55" : holeSelected ? "40" : "2f")}
+                      stroke={holeColor}
+                      strokeWidth={isActive ? 1.4 : holeSelected ? 1 : 0.6}
+                      strokeDasharray="2 1"
+                      className={isActive ? "marching-ants" : undefined}
+                      style={{ cursor: "grab" }}
+                      onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
+                    />
+                    {isHinted && !isActive && (
+                      <circle
+                        cx={hole.cx} cy={hole.cy} r={hole.radius + 1.5}
+                        fill="none" stroke={holeColor} strokeWidth={0.8} strokeDasharray="1 1"
+                      />
+                    )}
+                  </g>;
                 })}
               </g>
             )}
@@ -2030,6 +2148,9 @@ export function CombineEditor({
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="truncate text-xs text-knockout">
                   {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
+                  {selectedFingerHoleTool.finger_hole_span && (
+                    <span className="ml-1 text-muted">· P{selectedFingerPointIndex + 1}</span>
+                  )}
                 </span>
                 <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
               </div>
@@ -2059,10 +2180,32 @@ export function CombineEditor({
                   <span className="text-muted">mm</span>
                 </div>
               </div>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                <span className="text-muted">Span both sides</span>
+                <button
+                  aria-pressed={selectedFingerHoleTool.finger_hole_span}
+                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                  disabled={busy}
+                  onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
+                >
+                  {selectedFingerHoleTool.finger_hole_span ? "On" : "Off"}
+                </button>
+              </div>
               <p className="mt-3 border-t border-line pt-3 text-muted">
-                Drag the hole, or use the arrow keys — Left/Right slide it along the
-                outline (same nudge step and Shift ×10 as tools), Up/Down jump it
-                across to the opposite side.
+                {selectedFingerHoleTool.finger_hole_span ? (
+                  <>
+                    Drag the active point, or use Left/Right to slide it along the
+                    outline (same nudge step and Shift ×10 as tools). Click near the
+                    other lobe (or the hinted ring around it) to switch which point
+                    moves. Up/Down is disabled while span is on.
+                  </>
+                ) : (
+                  <>
+                    Drag the hole, or use the arrow keys — Left/Right slide it along the
+                    outline (same nudge step and Shift ×10 as tools), Up/Down jump it
+                    across to the opposite side.
+                  </>
+                )}
               </p>
             </div>
           ) : (

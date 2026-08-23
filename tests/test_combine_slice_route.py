@@ -34,6 +34,7 @@ def _stub_layout(monkeypatch, depths, height_u=4):
         "centered": [_pocket(-15.0), _pocket(15.0)],
         "depths": depths,
         "fingers": [[], []],
+        "connectors": [None, None],
         "gx": 3, "gy": 1,
         "lip": False,
         "height_u": height_u,

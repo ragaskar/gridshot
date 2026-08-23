@@ -2290,6 +2290,7 @@ def library_compose_preview_glb(req: ComposeRequest) -> Response:
             pocket=spec.pocket_poly,
             pocket_depth=spec.pocket_depth_mm,
             finger_holes=spec.finger_holes,
+            finger_hole_connector=spec.finger_hole_span_poly,
             lip=spec.lip,
             fill_height_pct=spec.fill_height_pct,
             live_grid=spec.live_grid,
@@ -2447,6 +2448,11 @@ class CombineToolOverride(BaseModel):
     finger_hole_offset_mm: Optional[float] = None
     # Null/omitted means the library's diameter (20mm default) applies.
     finger_hole_diameter_mm: Optional[float] = Field(None, gt=0)
+    # Two-lobe "span" hole (see gridshot.core.derive.BinSettings.finger_hole_span).
+    # `finger_hole_arc2_mm` is the second point's arc-length, same
+    # null-means-unplaced convention as `finger_hole_arc_mm`.
+    finger_hole_span: Optional[bool] = None
+    finger_hole_arc2_mm: Optional[float] = None
     # Auto-pack only: restrict this tool's rotation search to this one angle.
     locked_rotation_deg: Optional[float] = None
     # Bin-time pocket-depth override — independent of the library's own
@@ -2571,6 +2577,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         wall = max(wall, tool_wall_mm + tool_wall_flare_mm + edge_margin_mm)
     tools, specs, pack_stamps, pocket_stamps = [], [], [], []
     depths, fingers, inherited_fingers = [], [], []
+    connectors, spans, arc2s = [], [], []
     clearances, inherited_clearances = [], []
     inherited_depths = []
     inherited_finger_diameters = []
@@ -2615,6 +2622,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.finger_hole_diameter_mm is not None
             else t.finger_hole_diameter_mm
         )
+        finger_hole_span = (
+            override.finger_hole_span
+            if override is not None and override.finger_hole_span is not None
+            else t.finger_hole_span
+        )
+        # Same None-is-meaningful threading as finger_hole_arc_mm: unset
+        # means "not yet placed", not "zero" — derive_bin_spec falls back to
+        # the ring's opposite point by arc-length.
+        finger_hole_arc2_mm = (
+            override.finger_hole_arc2_mm if override is not None else None
+        )
         depth_override = (
             override.pocket_depth_mm
             if override is not None and override.pocket_depth_mm is not None
@@ -2629,6 +2647,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
             "finger_hole_side_flip": finger_hole_side_flip,
             "finger_hole_offset_mm": finger_hole_offset_mm,
             "finger_hole_diameter_mm": finger_hole_diameter_mm,
+            "finger_hole_span": finger_hole_span,
+            "finger_hole_arc2_mm": finger_hole_arc2_mm,
             "pocket_depth_mm": depth_override if depth_override is not None else t.pocket_depth_mm,
         })
         spec = library_mod.derive_tool_spec(
@@ -2658,6 +2678,14 @@ def _combine_layout(req: "CombineRequest") -> dict:
             (float(x - origin.x), float(y - origin.y), float(diameter))
             for x, y, diameter in spec.finger_holes
         ])
+        connectors.append(
+            contour_mod.from_shapely(
+                stranslate(contour_mod.to_shapely(spec.finger_hole_span_poly), -origin.x, -origin.y)
+            )
+            if spec.finger_hole_span_poly is not None else None
+        )
+        spans.append(finger_hole_span)
+        arc2s.append(spec.finger_hole_arc2_mm)
         inherited_fingers.append(t.finger_hole)
         inherited_finger_diameters.append(
             t.finger_hole_diameter_mm if t.finger_hole_diameter_mm is not None else 20.0
@@ -2720,7 +2748,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         shape = srotate(shape, tfs[i]["rot"], origin=(0, 0))
         shape = stranslate(shape, tfs[i]["tx"], tfs[i]["ty"])
         placed_envelopes.append(contour_mod.from_shapely(shape))
-    placed_pockets, placed_fingers = [], []
+    placed_pockets, placed_fingers, placed_connectors = [], [], []
     for i, stamp in enumerate(pocket_stamps):
         mirror_x, mirror_y = tfs[i].get("mirror_x", False), tfs[i].get("mirror_y", False)
         shape = contour_mod.to_shapely(stamp)
@@ -2738,6 +2766,14 @@ def _combine_layout(req: "CombineRequest") -> dict:
             )
             for x, y, diameter in fingers[i]
         ])
+        if connectors[i] is not None:
+            connector_shape = contour_mod.to_shapely(connectors[i])
+            connector_shape = _mirror_local(connector_shape, mirror_x, mirror_y)
+            connector_shape = srotate(connector_shape, tfs[i]["rot"], origin=(0, 0))
+            connector_shape = stranslate(connector_shape, tfs[i]["tx"], tfs[i]["ty"])
+            placed_connectors.append(contour_mod.from_shapely(connector_shape))
+        else:
+            placed_connectors.append(None)
 
     union = unary_union(
         [contour_mod.to_shapely(p) for p in placed_envelopes]
@@ -2774,13 +2810,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
     else:
         dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin
 
-    centered, centered_fingers, ctfs = [], [], []
+    centered, centered_fingers, centered_connectors, ctfs = [], [], [], []
     for i, p in enumerate(placed_pockets):
         centered.append(contour_mod.from_shapely(stranslate(contour_mod.to_shapely(p), dx, dy)))
         centered_fingers.append([
             (float(x + dx), float(y + dy), float(diameter))
             for x, y, diameter in placed_fingers[i]
         ])
+        centered_connectors.append(
+            contour_mod.from_shapely(stranslate(contour_mod.to_shapely(placed_connectors[i]), dx, dy))
+            if placed_connectors[i] is not None else None
+        )
         ctfs.append({
             "tx": tfs[i]["tx"] + dx, "ty": tfs[i]["ty"] + dy, "rot": tfs[i]["rot"],
             "mirror_x": tfs[i].get("mirror_x", False), "mirror_y": tfs[i].get("mirror_y", False),
@@ -2805,6 +2845,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
             for i, poly in enumerate(centered):
                 shapes = [contour_mod.to_shapely(poly)]
                 shapes += [Point(fx, fy).buffer(dia / 2) for fx, fy, dia in centered_fingers[i]]
+                if centered_connectors[i] is not None:
+                    shapes.append(contour_mod.to_shapely(centered_connectors[i]))
                 if unary_union(shapes).intersects(removed_union):
                     label = tools[i].label or tools[i].id
                     raise HTTPException(
@@ -2821,7 +2863,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         if req.overall_height else need_u
     )
     grid_cuts = [
-        (centered[i], depths[i], centered_fingers[i])
+        (centered[i], depths[i], centered_fingers[i], centered_connectors[i])
         for i in range(len(centered))
     ]
     grid_cell_kwargs = dict(
@@ -2841,7 +2883,9 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "pack_stamps": pack_stamps, "pocket_stamps": pocket_stamps,
         "centered": centered, "tfs": ctfs,
         "depths": depths, "inherited_depths": inherited_depths, "fingers": centered_fingers,
-        "local_fingers": fingers, "inherited_fingers": inherited_fingers,
+        "connectors": centered_connectors, "local_fingers": fingers,
+        "local_connectors": connectors, "spans": spans, "arc2s": arc2s,
+        "inherited_fingers": inherited_fingers,
         "inherited_finger_diameters": inherited_finger_diameters,
         "clearances": clearances, "inherited_clearances": inherited_clearances,
         "gx": gx, "gy": gy,
@@ -2890,6 +2934,14 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.finger_hole_diameter_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_span_override = next(
+            (item.finger_hole_span for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
+        requested_arc2_override = next(
+            (item.finger_hole_arc2_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         requested_depth_override = next(
             (item.pocket_depth_mm for item in req.overrides or [] if item.id == t.id),
             None,
@@ -2919,6 +2971,10 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "finger_hole_arc_mm_override": requested_arc_override,
             "finger_hole_diameter_mm_override": requested_diameter_override,
             "finger_hole_diameter_mm_inherited": round(lay["inherited_finger_diameters"][i], 2),
+            "finger_hole_span": bool(lay["spans"][i]),
+            "finger_hole_span_override": requested_span_override,
+            "finger_hole_arc2_mm": round(lay["arc2s"][i], 2),
+            "finger_hole_arc2_mm_override": requested_arc2_override,
             "finger_holes": [
                 [round(float(x), 2), round(float(y), 2), round(float(diameter), 2)]
                 for x, y, diameter in lay["local_fingers"][i]
@@ -2949,7 +3005,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
     """Build the exact solid shared by interactive GLB preview and 3MF export."""
     lay = lay or _combine_layout(req)
     pockets = [
-        (lay["centered"][i], lay["depths"][i], lay["fingers"][i])
+        (lay["centered"][i], lay["depths"][i], lay["fingers"][i], lay["connectors"][i])
         for i in range(len(lay["centered"]))
     ]
     try:

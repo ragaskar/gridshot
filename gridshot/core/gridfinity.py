@@ -463,10 +463,13 @@ def _grid_retention_envelope(
     for entry in pockets:
         shape = to_shapely(entry[0])
         fingers = entry[2] if len(entry) > 2 else ()
+        connector = entry[3] if len(entry) > 3 else None
         lobes = [
             Point(float(x), float(y)).buffer(float(diameter) / 2)
             for x, y, diameter in fingers
         ]
+        if connector is not None:
+            lobes.append(to_shapely(connector))
         if lobes:
             shape = unary_union([shape, *lobes])
         envelopes.append(
@@ -515,6 +518,7 @@ def bin_solid(
     pocket: Poly | None = None,
     pocket_depth: float = 0.0,
     finger_holes: list[tuple[float, float, float]] = (),
+    finger_hole_connector: Poly | None = None,
     lip: bool = False,
     pockets: list[tuple[Poly, float]] | None = None,
     fill_height_pct: float = 100.0,
@@ -559,6 +563,14 @@ def bin_solid(
     on the fast path (`fill_height_pct == 100 and not live_grid`) for now —
     the general construction's deck/perimeter still build from a fixed outer
     rect rather than the polyomino outline.
+
+    `finger_hole_connector` is the exact stadium/capsule polygon connecting a
+    two-lobe ("span") finger hole's pair of circles in `finger_holes` — cut
+    (or unioned into the tool wall envelope) in addition to those circles, so
+    a tool narrower than the hole diameter at that cross-section still gets a
+    clean channel between the two lobes instead of two disconnected holes.
+    `pockets` entries may carry the same thing as an optional 4th tuple
+    element: `(pocket, depth, fingers, connector)`.
     """
     if not (0.0 <= fill_height_pct <= 100.0):
         raise ValueError(f"fill_height_pct must be between 0 and 100, got {fill_height_pct}")
@@ -568,7 +580,11 @@ def bin_solid(
             "custom bin shape is only supported at fill_height_pct=100 with live_grid off"
         )
     cuts = list(pockets) if pockets else (
-        [(pocket, pocket_depth, finger_holes if not fast_path else ())]
+        [(
+            pocket, pocket_depth,
+            finger_holes if not fast_path else (),
+            finger_hole_connector if not fast_path else None,
+        )]
         if pocket is not None and pocket_depth > 0 else []
     )
     if not fast_path and not cuts:
@@ -632,11 +648,14 @@ def bin_solid(
             for entry in cuts:
                 pk, _depth = entry[0], entry[1]
                 pk_fingers = entry[2] if len(entry) > 2 else ()
+                pk_connector = entry[3] if len(entry) > 3 else None
                 tool_inner = _cross_section_from_poly(pk)
                 for fx, fy, dia in pk_fingers:
                     tool_inner = tool_inner + CrossSection.circle(
                         dia / 2, CIRCULAR_SEGMENTS
                     ).translate((fx, fy))
+                if pk_connector is not None:
+                    tool_inner = tool_inner + _cross_section_from_poly(pk_connector)
                 tool_wall_union = tool_wall_union + tool_inner.offset(
                     tool_wall_mm - ov, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
                 )
@@ -698,6 +717,7 @@ def bin_solid(
     for entry in cuts:
         pk, depth = entry[0], entry[1]
         pk_fingers = entry[2] if len(entry) > 2 else ()
+        pk_connector = entry[3] if len(entry) > 3 else None
         if not fast_path:
             if depth <= 0:
                 raise ValueError("recess depth must be > 0")
@@ -714,6 +734,8 @@ def bin_solid(
                 inner = inner + CrossSection.circle(
                     dia / 2, CIRCULAR_SEGMENTS
                 ).translate((fx, fy))
+            if pk_connector is not None:
+                inner = inner + _cross_section_from_poly(pk_connector)
             outer = inner.offset(
                 tool_wall_mm, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS
             )
@@ -749,6 +771,11 @@ def bin_solid(
                 depth + EPS, dia / 2, dia / 2, CIRCULAR_SEGMENTS
             ).translate((fx, fy, floor_z))
             solid = solid - cyl
+        if pk_connector is not None:
+            connector_cut = Manifold.extrude(
+                _cross_section_from_poly(pk_connector), depth + EPS
+            ).translate((0, 0, floor_z))
+            solid = solid - connector_cut
 
     if fast_path and pocket is not None and pocket_depth > 0:
         floor_z = total_h - pocket_depth
@@ -757,6 +784,11 @@ def bin_solid(
                 pocket_depth + EPS, dia / 2, dia / 2, CIRCULAR_SEGMENTS
             ).translate((fx, fy, floor_z))
             solid = solid - cyl
+        if finger_hole_connector is not None:
+            connector_cut = Manifold.extrude(
+                _cross_section_from_poly(finger_hole_connector), pocket_depth + EPS
+            ).translate((0, 0, floor_z))
+            solid = solid - connector_cut
 
     return _drop_boolean_noise(solid)
 

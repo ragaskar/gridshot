@@ -432,6 +432,10 @@ Features added on top of the original public release, newest last:
   hole to resize it (0.1mm precision by typing, 1mm arrow-key steps), growing or
   shrinking around its current position on the outline (see
   [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
+- Finger-hole "span" — turn a hole into a two-lobe pill straddling both sides of the
+  tool, with each focal point independently draggable/nudgeable and a click-to-switch
+  slop radius between them (see
+  [docs/combine-finger-hole-span.md](docs/combine-finger-hole-span.md))
 
 ## License
 

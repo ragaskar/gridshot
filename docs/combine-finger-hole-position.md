@@ -54,6 +54,12 @@ that bin.
   tool's library settings, and it's independent of every other tool's finger
   hole in the same bin.
 
+## Span
+
+A hole can also be turned into a two-lobe pill spanning both sides of the
+tool instead of a single circle — see [finger-hole
+span](combine-finger-hole-span.md).
+
 ## Multi-select
 
 There's no bulk position editing across a multi-tool selection — a finger

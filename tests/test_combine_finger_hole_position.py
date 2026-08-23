@@ -123,3 +123,65 @@ class TestCombineFingerHoleDiameter:
         assert by_id["tool-a"]["finger_hole_diameter_mm_inherited"] == pytest.approx(20.0)
         assert by_id["tool-b"]["finger_hole_diameter_mm_override"] is None
         assert by_id["tool-b"]["finger_holes"] == base_b["finger_holes"]
+
+
+class TestCombineFingerHoleSpan:
+    def test_default_span_is_off_with_one_point(self, client, library_dir):
+        _seed_two_tools()
+
+        response = _preview(client)
+
+        assert response.status_code == 200
+        tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
+        assert tool_a["finger_hole_span"] is False
+        assert tool_a["finger_hole_span_override"] is None
+        assert len(tool_a["finger_holes"]) == 1
+
+    def test_span_override_adds_a_second_point_for_one_tool_only(self, client, library_dir):
+        _seed_two_tools()
+        baseline = _preview(client).json()
+        base_b = next(t for t in baseline["tools"] if t["id"] == "tool-b")
+
+        response = _preview(client, overrides=[{"id": "tool-a", "finger_hole_span": True}])
+
+        assert response.status_code == 200
+        by_id = {t["id"]: t for t in response.json()["tools"]}
+        assert by_id["tool-a"]["finger_hole_span"] is True
+        assert by_id["tool-a"]["finger_hole_span_override"] is True
+        assert len(by_id["tool-a"]["finger_holes"]) == 2
+        assert by_id["tool-b"]["finger_hole_span"] is False
+        assert by_id["tool-b"]["finger_holes"] == base_b["finger_holes"]
+
+    def test_arc2_override_moves_the_second_point(self, client, library_dir):
+        _seed_two_tools()
+        base = _preview(client, overrides=[{"id": "tool-a", "finger_hole_span": True}]).json()
+        base_a = next(t for t in base["tools"] if t["id"] == "tool-a")
+
+        response = _preview(client, overrides=[
+            {"id": "tool-a", "finger_hole_span": True, "finger_hole_arc2_mm": 15.0},
+        ])
+
+        assert response.status_code == 200
+        tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
+        assert tool_a["finger_hole_arc2_mm"] == pytest.approx(15.0)
+        assert tool_a["finger_hole_arc2_mm_override"] == pytest.approx(15.0)
+        assert tool_a["finger_holes"][1] != base_a["finger_holes"][1]
+        # The first point's own boundary position is untouched by moving the
+        # second — raw x/y can still shift, since the overall cut envelope
+        # re-centers on origin as its bounding box changes with P2's move
+        # (same as the diameter-override case above).
+        assert tool_a["finger_hole_arc_mm"] == pytest.approx(base_a["finger_hole_arc_mm"])
+
+    def test_span_off_after_on_drops_the_second_point(self, client, library_dir):
+        _seed_two_tools()
+        baseline = _preview(client).json()
+        base_a = next(t for t in baseline["tools"] if t["id"] == "tool-a")
+
+        response = _preview(client, overrides=[
+            {"id": "tool-a", "finger_hole_span": False, "finger_hole_arc2_mm": 15.0},
+        ])
+
+        assert response.status_code == 200
+        tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
+        assert len(tool_a["finger_holes"]) == 1
+        assert tool_a["finger_holes"][0] == base_a["finger_holes"][0]

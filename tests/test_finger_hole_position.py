@@ -206,3 +206,94 @@ class TestFingerHoleDiameter:
 
         with pytest.raises(ValueError):
             derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())
+
+
+# A "dogbone": wide at both ends (x in [-30,-10] and [10,30], y in [-10,10]),
+# narrow through the middle (x in [-10,10], y in [-3,3]) — a synthetic stand-in
+# for a wrench/pliers whose waist is much narrower than a 20mm finger hole.
+DOGBONE_OUTLINE = Poly(exterior=[
+    (-30.0, -10.0), (-10.0, -10.0), (-10.0, -3.0), (10.0, -3.0),
+    (10.0, -10.0), (30.0, -10.0), (30.0, 10.0), (10.0, 10.0),
+    (10.0, 3.0), (-10.0, 3.0), (-10.0, 10.0), (-30.0, 10.0),
+])
+
+
+class TestFingerHoleSpan:
+    """`BinSettings.finger_hole_span` turns the single circular hole into a
+    two-lobe stadium/pill: a second focal point (`finger_hole_arc2_mm`) plus
+    the exact capsule polygon connecting them, so the cut spans clean across
+    a tool even where the plain pocket between the two points is much
+    narrower than the hole diameter (the two-circles-only shortcut would
+    silently under-cut exactly this case)."""
+
+    def test_span_off_by_default_reports_a_single_point(self, printer):
+        spec = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0)
+        assert len(spec.finger_holes) == 1
+        assert spec.finger_hole_span_poly is None
+
+    def test_span_on_reports_two_points_sharing_one_diameter(self, printer):
+        base = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0)
+        spec = _spec(
+            WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_span=True,
+            finger_hole_arc2_mm=30.0, finger_hole_diameter_mm=14.0,
+        )
+        assert len(spec.finger_holes) == 2
+        (x1, y1, d1), (x2, y2, d2) = spec.finger_holes
+        assert d1 == pytest.approx(14.0)
+        assert d2 == pytest.approx(14.0)
+        assert (x1, y1) != pytest.approx((x2, y2))
+        # P1's arc-length position is unaffected by span turning on — same
+        # boundary spot base's single hole used (raw x/y shift because the
+        # overall cut envelope re-centers on origin as its bbox grows to fit
+        # the span, same as the diameter test above).
+        assert spec.finger_hole_arc_mm == pytest.approx(base.finger_hole_arc_mm)
+
+    def test_missing_arc2_falls_back_to_the_far_side_of_the_ring(self, printer):
+        spec = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_span=True)
+        assert len(spec.finger_holes) == 2
+        ring = derive_mod._ring_points(contour_mod.to_shapely(spec.pocket_poly))
+        total_len = derive_mod._ring_length(ring)
+        assert spec.finger_hole_arc2_mm == pytest.approx(total_len / 2, abs=1e-6)
+
+    def test_span_channel_covers_the_midpoint_between_far_apart_points(self, printer):
+        span = _spec(
+            DOGBONE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_span=True,
+            finger_hole_diameter_mm=20.0,
+        )
+        (x1, y1, d1), (x2, y2, _) = span.finger_holes
+        dist = math.hypot(x2 - x1, y2 - y1)
+        # Confirms this is actually a discriminating case: the two lobes are
+        # far enough apart that circles alone wouldn't overlap or touch.
+        assert dist > d1
+
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        sizing_shape = contour_mod.to_shapely(span.sizing_poly)
+        assert sizing_shape.covers(Point(mx, my).buffer(0.05))
+
+    def test_span_poly_is_a_capsule_between_the_two_points(self, printer):
+        spec = _spec(
+            WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_span=True,
+            finger_hole_arc2_mm=30.0, finger_hole_diameter_mm=14.0,
+        )
+        (x1, y1, _), (x2, y2, _) = spec.finger_holes
+        span_shape = contour_mod.to_shapely(spec.finger_hole_span_poly)
+        expected_area = math.pi * (14.0 / 2) ** 2 + 14.0 * math.hypot(x2 - x1, y2 - y1)
+        assert span_shape.area == pytest.approx(expected_area, rel=0.02)
+
+    def test_span_off_after_on_drops_the_second_point(self, printer):
+        base = _spec(WIDE_OUTLINE, finger_hole_arc_mm=0.0)
+        spanned_then_off = _spec(
+            WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_span=False,
+            finger_hole_arc2_mm=30.0,
+        )
+        assert len(spanned_then_off.finger_holes) == 1
+        assert spanned_then_off.finger_holes[0][:2] == pytest.approx(base.finger_holes[0][:2], abs=1e-6)
+
+    def test_non_finite_arc2_is_rejected(self, printer):
+        tool = derive_mod.ToolGeometry(outline=WIDE_OUTLINE, silhouette_height_mm=5.0)
+        settings = derive_mod.BinSettings(
+            finger_hole=True, finger_hole_span=True, finger_hole_arc2_mm=float("nan"),
+        )
+
+        with pytest.raises(ValueError):
+            derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())
