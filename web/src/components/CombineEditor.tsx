@@ -186,10 +186,11 @@ interface Snapshot {
 }
 
 /** A gx×gy grid of small toggle squares, one per gridfinity unit, for
- *  "custom bin shape" — checking a cell removes it from the bin. Rows run
- *  top-to-bottom in increasing iy and columns left-to-right in increasing
- *  ix, matching the Arrange 2D view's own orientation (iy grows downward,
- *  same as the SVG's y axis). */
+ *  "custom bin shape" — checking a cell removes it from the bin. Columns run
+ *  left-to-right in increasing ix; rows run top-to-bottom in *decreasing*
+ *  iy, matching the Arrange 2D view's own orientation (world y increases
+ *  toward the top there, standard top-down convention — see the <g
+ *  transform> in the arrange SVG). */
 function CustomShapeGrid({
   gx, gy, removedCells, disabled, onToggle,
 }: {
@@ -204,15 +205,16 @@ function CustomShapeGrid({
       className="mt-2 inline-grid gap-[2px] border border-line bg-field p-1"
       style={{ gridTemplateColumns: `repeat(${gx}, 16px)`, borderRadius: 2 }}
     >
-      {Array.from({ length: gy }, (_, iy) => (
-        Array.from({ length: gx }, (_, ix) => {
+      {Array.from({ length: gy }, (_, row) => {
+        const iy = gy - 1 - row;
+        return Array.from({ length: gx }, (_, ix) => {
           const removed = removedCells.has(cellKey(ix, iy));
           return (
             <button
               key={cellKey(ix, iy)}
               type="button"
               aria-pressed={removed}
-              aria-label={`Grid cell column ${ix + 1}, row ${iy + 1}${removed ? " (removed)" : ""}`}
+              aria-label={`Grid cell column ${ix + 1}, row ${row + 1}${removed ? " (removed)" : ""}`}
               title={removed ? "Removed — click to restore" : "Click to remove this cell"}
               disabled={disabled}
               className="h-4 w-4 border"
@@ -224,8 +226,8 @@ function CustomShapeGrid({
               onClick={() => onToggle(ix, iy)}
             />
           );
-        })
-      ))}
+        });
+      })}
     </div>
   );
 }
@@ -782,7 +784,10 @@ export function CombineEditor({
     const p = svg.createSVGPoint();
     p.x = e.clientX; p.y = e.clientY;
     const d = p.matrixTransform(svg.getScreenCTM()!.inverse());
-    return [d.x, d.y];
+    // getScreenCTM() reflects the <svg>'s own viewBox mapping, not the
+    // content <g>'s mirror — undo that same y mirror here so callers get
+    // true world (tx/ty) coordinates straight back.
+    return [d.x, -d.y];
   }
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
@@ -1223,8 +1228,11 @@ export function CombineEditor({
     }
   });
   const m = 8; // viewport margin (mm)
+  // The content group mirrors y for display (see the <g transform> above),
+  // so the viewBox's own y origin must track the mirrored range too: world
+  // y's max becomes the smallest (topmost) SVG-space y.
   const vb = layout
-    ? `${layout.viewCx - layout.viewW / 2 - m} ${layout.viewCy - layout.viewH / 2 - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
+    ? `${layout.viewCx - layout.viewW / 2 - m} ${-(layout.viewCy + layout.viewH / 2) - m} ${layout.viewW + 2 * m} ${layout.viewH + 2 * m}`
     : "0 0 100 100";
 
   const alignButtons = (
@@ -1333,7 +1341,15 @@ export function CombineEditor({
             onPointerDown={() => setSelectedIds(new Set())}
           >
             {layout && (
-              <>
+              // World y increases toward the back of the bin (standard
+              // top-down/CAD convention, matching the 3D preview and the
+              // exported STL/3MF) — SVG's own y axis increases downward, so
+              // this group mirrors y once for display only. Every world
+              // coordinate below (bin outline, grid lines, removed cells,
+              // sockets, finger circles, tool polygons) is left as raw world
+              // mm; toData() undoes the same mirror on the way back in for
+              // pointer/drag handling.
+              <g transform="scale(1,-1)">
                 {/* bin footprint + gridfinity cells */}
                 {customShape && removedCells.size > 0 ? (
                   <path
@@ -1416,7 +1432,7 @@ export function CombineEditor({
                     onPointerLeave={() => setHoverId((current) => (current === t.id ? null : current))}
                   />;
                 })}
-              </>
+              </g>
             )}
             </svg> : (
               <div className="relative h-[clamp(360px,62vh,620px)] w-full">
