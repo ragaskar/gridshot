@@ -196,6 +196,74 @@ class TestUserDetection:
         assert user_after_setup(workdir) == "0:0"
 
 
+class TestBuildInfo:
+    """gridshot_set_build_info stamps GRIDSHOT_GIT_SHA/GRIDSHOT_BUILD_TIME for
+    the web image's build-info footer (see docker/web.Dockerfile). git/date
+    are deliberately absent from these tests' PATH (not in REAL_TOOLS), so
+    every case here also covers the "tool isn't available" fallback."""
+
+    def run_build_info(self, workdir, env: dict[str, str] | None = None):
+        stub(workdir, "docker", stdout=ROOTFUL_DOCKER)
+        result = run(
+            workdir,
+            'gridshot_compose_setup\n'
+            'printf "%s|%s" "$GRIDSHOT_GIT_SHA" "$GRIDSHOT_BUILD_TIME"\n',
+            env,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    def test_falls_back_to_unknown_without_git_or_date_on_path(self, workdir):
+        assert self.run_build_info(workdir) == "unknown|unknown"
+
+    def test_an_explicit_sha_is_left_alone(self, workdir):
+        sha, _, built = self.run_build_info(
+            workdir, {"GRIDSHOT_GIT_SHA": "deadbee"}
+        ).partition("|")
+        assert sha == "deadbee"
+        assert built == "unknown"
+
+    def test_an_explicit_build_time_is_left_alone(self, workdir):
+        _, _, built = self.run_build_info(
+            workdir, {"GRIDSHOT_BUILD_TIME": "2026-01-01T00:00:00Z"}
+        ).partition("|")
+        assert built == "2026-01-01T00:00:00Z"
+
+    def test_real_git_sha_is_picked_up_when_git_is_on_path(self, workdir):
+        real_git = shutil.which("git")
+        assert real_git, "git not found on PATH — needed for this test"
+        (workdir / "bin" / "git").symlink_to(real_git)
+        env = {"PATH": str(workdir / "bin"), "HOME": str(workdir)}
+        subprocess.run(["git", "init", "-q"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=workdir, env=env, check=True)
+        (workdir / "f").write_text("x")
+        subprocess.run(["git", "add", "f"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=workdir, env=env, check=True)
+
+        sha, _, _ = self.run_build_info(workdir, {"HOME": str(workdir)}).partition("|")
+
+        assert sha != "unknown"
+        assert len(sha.removesuffix("-dirty")) == 7
+
+    def test_uncommitted_changes_mark_the_sha_dirty(self, workdir):
+        real_git = shutil.which("git")
+        assert real_git, "git not found on PATH — needed for this test"
+        (workdir / "bin" / "git").symlink_to(real_git)
+        env = {"PATH": str(workdir / "bin"), "HOME": str(workdir)}
+        subprocess.run(["git", "init", "-q"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=workdir, env=env, check=True)
+        (workdir / "f").write_text("x")
+        subprocess.run(["git", "add", "f"], cwd=workdir, env=env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=workdir, env=env, check=True)
+        (workdir / "f").write_text("changed")
+
+        sha, _, _ = self.run_build_info(workdir, {"HOME": str(workdir)}).partition("|")
+
+        assert sha.endswith("-dirty")
+
+
 class TestMountDirs:
     def test_bind_mount_targets_are_created_as_the_host_user(self, workdir):
         stub(workdir, "docker", stdout=ROOTFUL_DOCKER)

@@ -35,6 +35,9 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      args:
+        GRIDSHOT_GIT_SHA: ${GRIDSHOT_GIT_SHA:-unknown}
+        GRIDSHOT_BUILD_TIME: ${GRIDSHOT_BUILD_TIME:-unknown}
     image: gridshot-web
     user: "${GRIDSHOT_USER:-1000:1000}"
     working_dir: /app

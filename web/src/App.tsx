@@ -12,6 +12,7 @@ import { Batch } from "./pages/Batch";
 import { Calibration } from "./pages/Calibration";
 import { MatReference } from "./pages/MatReference";
 import { AppNavigation } from "./components/AppNavigation";
+import { BuildFooter } from "./components/BuildFooter";
 import { getSession, type GenerateParams, type Session, type TraceResult } from "./api";
 import { decodeUrlState, pathForView } from "./urlState";
 
@@ -150,6 +151,7 @@ export function App() {
     <>
       <AppNavigation />
       {page}
+      <BuildFooter />
     </>
   );
 }

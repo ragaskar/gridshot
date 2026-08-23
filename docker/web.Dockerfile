@@ -4,6 +4,14 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+# Deliberately varies on every build (see scripts/lib-compose.sh) so this
+# layer — and everything after it — can never be served stale: a footer
+# showing a build time older than your last rebuild means the rebuild
+# didn't actually happen, not that the cache picked a bad time to be right.
+ARG GRIDSHOT_GIT_SHA=unknown
+ARG GRIDSHOT_BUILD_TIME=unknown
+ENV VITE_GIT_SHA=$GRIDSHOT_GIT_SHA
+ENV VITE_BUILD_TIME=$GRIDSHOT_BUILD_TIME
 RUN npm run build
 
 # Stage 2: python app image + built SPA

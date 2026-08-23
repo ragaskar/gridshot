@@ -119,8 +119,28 @@ gridshot_detect_user() {
     esac
 }
 
+# Stamp the web image's build-info footer with the commit and time it was
+# actually built from — an explicit signal that a rebuild happened (or
+# didn't), instead of inferring it from cache behaviour. Recomputed on every
+# call so a stale footer after "rebuild" means the rebuild genuinely didn't
+# run, not that this script only checked once. Respects an already-exported
+# GRIDSHOT_GIT_SHA/GRIDSHOT_BUILD_TIME (e.g. a CI pipeline pinning its own),
+# same pattern as gridshot_detect_user's GRIDSHOT_USER.
+gridshot_set_build_info() {
+    if [ -z "${GRIDSHOT_GIT_SHA:-}" ]; then
+        GRIDSHOT_GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+        if [ "$GRIDSHOT_GIT_SHA" != "unknown" ] \
+            && { ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; }; then
+            GRIDSHOT_GIT_SHA="${GRIDSHOT_GIT_SHA}-dirty"
+        fi
+    fi
+    : "${GRIDSHOT_BUILD_TIME:=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)}"
+    export GRIDSHOT_GIT_SHA GRIDSHOT_BUILD_TIME
+}
+
 gridshot_compose_setup() {
     gridshot_pick_engine
     gridshot_make_mount_dirs
     gridshot_detect_user
+    gridshot_set_build_info
 }
