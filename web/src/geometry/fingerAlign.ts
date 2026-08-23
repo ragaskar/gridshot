@@ -1,17 +1,5 @@
 import { pointAtArcLength, ringLength, type Pt } from "./perimeter";
 
-/** Tolerance on a travel direction's off-axis component, in units of the
- *  direction vector (which is unit-length): a hole travels "on a horizontal
- *  plane" only when its tangent, after rotation/mirroring, is horizontal in
- *  world space to within this tolerance.
- *
- *  Loose enough (~3°) to absorb simplify-tolerance-scale noise surviving
- *  `TANGENT_PROBE_MM`'s averaging (measured up to ~0.036 on an adversarial
- *  worst-case zigzag — see fingerAlign.test.ts), while staying far tighter
- *  than any genuine curve or rounded corner, whose tangent swings by tens of
- *  degrees over the same probe distance. */
-const AXIS_EPS = 0.05;
-
 /** How far either side of the current arc position to probe for the local
  *  tangent — must clear `SIMPLIFY_TOL_MM` (gridshot/core/contour.py, 0.05mm)
  *  by a wide margin. A traced tool outline is Douglas-Peucker-simplified to
@@ -22,7 +10,23 @@ const AXIS_EPS = 0.05;
  *  floor mostly measures that noise; this needs to be large enough to
  *  average it out on any real edge, while staying well under typical pocket
  *  dimensions (tens of mm) so it doesn't blend across a genuine corner. */
-const TANGENT_PROBE_MM = 1.0;
+const TANGENT_PROBE_MM = 2.0;
+
+/** Tolerance on a travel direction's off-axis component, in units of the
+ *  direction vector (which is unit-length): a hole travels "on a horizontal
+ *  plane" only when its tangent, after rotation/mirroring, is horizontal in
+ *  world space to within this tolerance.
+ *
+ *  Sized from a synthetic model, not measured real captures: 500 seeded
+ *  random rings with vertices independently perturbed by up to
+ *  SIMPLIFY_TOL_MM off a straight line (see fingerAlign.test.ts) put the
+ *  worst observed residual at `TANGENT_PROBE_MM`=2mm at ~0.047 — this gives
+ *  that roughly 2x headroom. It's still far tighter than any genuine curve
+ *  or rounded corner, whose tangent swings by tens of degrees over the same
+ *  probe distance. If this turns out to reject (or wrongly accept) real
+ *  traced outlines, that's the number to revisit against actual capture
+ *  data, not this synthetic model. */
+const AXIS_EPS = 0.1;
 
 /** World-space unit direction a hole travels in as its arc-length position
  *  increases, for a tool with the given local pocket ring, world rotation,

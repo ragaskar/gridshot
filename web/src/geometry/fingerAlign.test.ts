@@ -5,21 +5,30 @@ import { nearestArcLength, type Pt } from "./perimeter";
 // 10x4 rectangle: bottom edge arc [0,10), right edge [10,14), top [14,24), left [24,28).
 const RING: Pt[] = [[-5, -2], [5, -2], [5, 2], [-5, 2]];
 
-// A rectangle whose bottom edge isn't one straight segment but a zigzag of
-// many short ones, wobbling by an amplitude within SIMPLIFY_TOL_MM (0.05mm —
-// gridshot/core/contour.py's Douglas-Peucker tolerance for a traced tool
-// outline): a real captured tool's "straight" edges look exactly like this
-// close up, since simplification only guarantees each vertex sits within
-// that tolerance of the true edge, not that consecutive vertices are
-// collinear with it.
-function zigzagRing(): Pt[] {
+// A rectangle whose bottom edge isn't one straight segment but a dense run of
+// short ones, each vertex independently perturbed off the true straight line
+// by up to SIMPLIFY_TOL_MM (0.05mm — gridshot/core/contour.py's Douglas-
+// Peucker tolerance for a traced tool outline): simplification only
+// guarantees each vertex sits within that tolerance of the true edge, not
+// that consecutive vertices are collinear with it, so a real captured tool's
+// "straight" edges look exactly like this close up. Deterministic (seeded),
+// so a specific seed can pin down a known-bad case reproducibly.
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function noisyRing(seed: number): Pt[] {
+  const rnd = mulberry32(seed);
   const pts: Pt[] = [[-10, -5]];
   const step = 0.02; // mm — well under the 0.05mm tolerance above
-  const amp = 0.03; // mm
-  let sign = 1;
-  for (let x = -1; x <= 1 + 1e-9; x += step) {
-    pts.push([x, -5 + sign * amp]);
-    sign = -sign;
+  const tol = 0.05; // mm — SIMPLIFY_TOL_MM
+  for (let x = -4; x <= 4 + 1e-9; x += step) {
+    pts.push([x, -5 + (rnd() * 2 - 1) * tol]);
   }
   pts.push([10, -5], [10, 5], [-10, 5]);
   return pts;
@@ -60,14 +69,14 @@ describe("travelDirection", () => {
     expect(travelDirection([[0, 0]], 0, 0)).toBeNull();
   });
 
-  it("still reads as horizontal on a real-world-noisy edge (simplify-tolerance-scale zigzag)", () => {
-    const ring = zigzagRing();
-    const arc = nearestArcLength(ring, [0, -5]); // the zigzag's own midpoint
+  it("still reads as ~horizontal on a real-world-noisy edge (worst of 500 seeded trials)", () => {
+    // Seed 314 is the worst of 500 tried against TANGENT_PROBE_MM=2 (residual
+    // ~0.047 — see AXIS_EPS's comment) — not ~0, since per-vertex noise this
+    // size doesn't fully average out, but it must clear AXIS_EPS with margin.
+    const ring = noisyRing(314);
+    const arc = nearestArcLength(ring, [0, -5]); // the noisy run's own midpoint
     const [, y] = travelDirection(ring, arc, 0)!;
-    // Not ~0: a worst-case (perfectly periodic) zigzag leaves a small residual
-    // even after averaging — see AXIS_EPS's comment — but it must land well
-    // inside the tolerance that check applies.
-    expect(Math.abs(y)).toBeLessThan(0.05);
+    expect(Math.abs(y)).toBeLessThan(0.1);
   });
 });
 
@@ -205,9 +214,9 @@ describe("computeFingerAlignPlan — mixed single-point/span holes", () => {
     expect(plan).toBeNull();
   });
 
-  it("two holes on real-world-noisy (zigzagged) bottom edges still align", () => {
-    const ringA = zigzagRing();
-    const ringB = zigzagRing();
+  it("two holes on real-world-noisy bottom edges still align", () => {
+    const ringA = noisyRing(314); // the worst-case seed above
+    const ringB = noisyRing(1);
     const arcA = nearestArcLength(ringA, [0, -5]);
     const arcB = nearestArcLength(ringB, [0, -5]);
     const plan = computeFingerAlignPlan([
