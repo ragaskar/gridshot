@@ -81,10 +81,10 @@ that specific request with a real error message (see [Troubleshooting](#troubles
 scripts/up
 ```
 
-or, without Tailscale:
+or, for an HTTPS URL reachable from your phone anywhere on your tailnet:
 
 ```bash
-scripts/up --no-tailscale
+scripts/up --tailscale
 ```
 
 The first `scripts/up` builds containers and, on segserver's first real request,
@@ -92,9 +92,9 @@ downloads model weights — this can take a while depending on your connection. 
 running:
 
 - `http://localhost:8800` on the machine running it
-- add `--public-bind` to reach it from other machines on your LAN, or use Tailscale
-  Serve (the default) for an HTTPS URL reachable from your phone anywhere on your
-  tailnet
+- reachable from other machines on your LAN by default; add `--tailscale` instead
+  for the HTTPS tailnet URL (see [docs/deployment.md](../deployment.md) for both, and
+  for splitting the web app and segserver across hosts)
 
 Check `http://localhost:8800/api/health/capabilities` (or watch the "Segserver"
 status badge on the app's own capture page) to confirm the segmentation service is

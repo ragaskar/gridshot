@@ -4,31 +4,53 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: scripts/up [--no-tailscale] [--public-bind]
+Usage: scripts/up [--frontend | --segserver] [--tailscale]
 
-Build and start the GridShot web and segmentation services.
+Build and start GridShot services.
+
+With no service flag, builds and starts both segserver and web — the
+single-host case, where they share the compose network and reach each
+other over it with no configuration needed.
 
 Options:
-  --no-tailscale  Skip Tailscale Serve configuration; use localhost only.
-  --public-bind   Bind the web port to 0.0.0.0 instead of 127.0.0.1, so
-                  other machines on the LAN can reach it directly.
-  -h, --help      Show this help message.
+  --frontend   Build and start only the web service, for a multi-host
+               deploy where segserver runs elsewhere. Requires
+               GRIDSHOT_SEGSERVER_URL (environment or .env) pointing at
+               segserver's reachable address, e.g.
+               GRIDSHOT_SEGSERVER_URL=http://192.168.1.50:8801.
+  --segserver  Build and start only the segserver service, published on
+               the LAN (0.0.0.0) instead of the compose-internal network,
+               for a multi-host deploy where web/cli run elsewhere.
+  --tailscale  Publish the web service at https://<host>.<tailnet>.ts.net
+               via Tailscale Serve, and bind its port to 127.0.0.1 (it's
+               reached through Tailscale Serve, not directly) instead of
+               the 0.0.0.0 default.
+  -h, --help   Show this help message.
 
-Requires HF_TOKEN to be set (environment or .env); set
-DISABLE_TOKEN_CHECK=1 to skip that check, e.g. if models are already
-cached locally.
+The web port binds to 0.0.0.0 by default; set GRIDSHOT_BIND_ADDR in .env
+to change it. segserver's port defaults to 127.0.0.1 (--segserver widens
+it to 0.0.0.0); set GRIDSHOT_SEGSERVER_BIND_ADDR yourself to override
+either default.
+
+Requires HF_TOKEN to be set (environment or .env) when segserver is being
+started; set DISABLE_TOKEN_CHECK=1 to skip that check, e.g. if models are
+already cached locally.
 EOF
 }
 
-use_tailscale=true
-public_bind=false
+frontend=false
+segserver_only=false
+use_tailscale=false
 while (($#)); do
     case "$1" in
-        --no-tailscale)
-            use_tailscale=false
+        --frontend)
+            frontend=true
             ;;
-        --public-bind)
-            public_bind=true
+        --segserver)
+            segserver_only=true
+            ;;
+        --tailscale)
+            use_tailscale=true
             ;;
         -h|--help)
             usage
@@ -43,7 +65,32 @@ while (($#)); do
     shift
 done
 
-# Best-effort guess at this host's LAN IP, for the --public-bind banner.
+if "$frontend" && "$segserver_only"; then
+    echo "scripts/up: --frontend and --segserver are mutually exclusive" >&2
+    exit 2
+fi
+
+if "$use_tailscale" && "$segserver_only"; then
+    echo "scripts/up: --tailscale fronts the web service; it doesn't apply with --segserver" >&2
+    exit 2
+fi
+
+if "$frontend"; then
+    services=(web)
+elif "$segserver_only"; then
+    services=(segserver)
+else
+    services=(segserver web)
+fi
+
+needs_segserver=false
+has_web=false
+for s in "${services[@]}"; do
+    [ "$s" = segserver ] && needs_segserver=true
+    [ "$s" = web ] && has_web=true
+done
+
+# Best-effort guess at this host's LAN IP, for the startup banner.
 # The route-to-1.1.1.1 trick reports the source address the kernel would use
 # for outbound traffic without sending any packet, so it works offline too.
 lan_ip() {
@@ -53,14 +100,30 @@ lan_ip() {
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 
-if "$public_bind"; then
-    export GRIDSHOT_BIND_ADDR=0.0.0.0
+# --frontend starts web with nothing else on the compose network, so the
+# compose-internal "segserver" hostname it defaults to won't resolve. Fail
+# fast here instead of surfacing this later as an inference error.
+if "$frontend" && [ -z "${GRIDSHOT_SEGSERVER_URL:-}" ] \
+    && ! { [ -f .env ] && grep -qE '^[[:space:]]*GRIDSHOT_SEGSERVER_URL[[:space:]]*=[[:space:]]*[^[:space:]]' .env; }; then
+    cat >&2 <<'EOF'
+
+########################################################################
+# ERROR: GRIDSHOT_SEGSERVER_URL is not set.
+#
+# --frontend starts only the web service; it needs to know where
+# segserver is reachable. Set GRIDSHOT_SEGSERVER_URL in your environment
+# or in .env (see .env.example), e.g.:
+#   GRIDSHOT_SEGSERVER_URL=http://192.168.1.50:8801
+########################################################################
+
+EOF
+    exit 1
 fi
 
 # segserver silently fails to load models without HF_TOKEN, which otherwise
 # only surfaces later as an inference error. Fail fast here instead, unless
 # the model is already cached locally and the check is deliberately skipped.
-if [ -z "${DISABLE_TOKEN_CHECK:-}" ] && [ -z "${HF_TOKEN:-}" ] \
+if "$needs_segserver" && [ -z "${DISABLE_TOKEN_CHECK:-}" ] && [ -z "${HF_TOKEN:-}" ] \
     && ! { [ -f .env ] && grep -qE '^[[:space:]]*HF_TOKEN[[:space:]]*=[[:space:]]*[^[:space:]]' .env; }; then
     cat >&2 <<'EOF'
 
@@ -78,26 +141,39 @@ EOF
     exit 1
 fi
 
+if "$use_tailscale"; then
+    export GRIDSHOT_BIND_ADDR=127.0.0.1
+fi
+if "$segserver_only"; then
+    export GRIDSHOT_SEGSERVER_BIND_ADDR=0.0.0.0
+fi
+
 # shellcheck source=scripts/lib-compose.sh
 source scripts/lib-compose.sh
 gridshot_compose_setup
-gridshot_compose up -d --build segserver web
+gridshot_compose up -d --build "${services[@]}"
 
 echo
 echo "GridShot is up:"
-if "$use_tailscale"; then
-    # Publish at https://<this-host>.<tailnet>.ts.net (valid cert, tailnet-only).
-    tailscale serve --bg 8800
-    tailscale serve status 2>/dev/null | sed -n '1p' || true
-else
-    echo "  Tailscale configuration skipped (--no-tailscale)"
-fi
-echo "  local:  http://localhost:8800"
-if "$public_bind"; then
-    ip=$(lan_ip || true)
-    if [ -n "$ip" ]; then
-        echo "  LAN:    http://$ip:8800  (--public-bind: bound to 0.0.0.0)"
+if "$has_web"; then
+    echo "  local:  http://localhost:8800"
+    if "$use_tailscale"; then
+        # Publish at https://<this-host>.<tailnet>.ts.net (valid cert, tailnet-only).
+        tailscale serve --bg 8800
+        tailscale serve status 2>/dev/null | sed -n '1p' || true
     else
-        echo "  LAN:    http://<this host's LAN IP>:8800  (--public-bind: bound to 0.0.0.0; couldn't auto-detect the IP)"
+        ip=$(lan_ip || true)
+        if [ -n "$ip" ]; then
+            echo "  LAN:    http://$ip:8800"
+        else
+            echo "  LAN:    http://<this host's LAN IP>:8800  (couldn't auto-detect the IP)"
+        fi
+    fi
+fi
+if "$needs_segserver"; then
+    if "$segserver_only"; then
+        echo "  segserver: listening on 8801 (published on the LAN — set GRIDSHOT_SEGSERVER_URL on web/cli hosts to reach it)"
+    else
+        echo "  segserver: listening on 8801 (compose-internal only)"
     fi
 fi

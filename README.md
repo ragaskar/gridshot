@@ -109,7 +109,7 @@ GridShot uses GPU 0 by default. On a multi-GPU host, choose a different NVIDIA C
 device for the current launch:
 
 ```bash
-GRIDSHOT_GPU_DEVICE=nvidia.com/gpu=1 scripts/up --no-tailscale
+GRIDSHOT_GPU_DEVICE=nvidia.com/gpu=1 scripts/up
 ```
 
 #### Podman and other rootless engines
@@ -161,20 +161,18 @@ with calipers and record both values. An unverified mat cannot be used for captu
 scripts/up
 ```
 
-For a workstation-only deployment without Tailscale:
+This builds and starts both the web and segmentation services on this machine,
+binding the web app to `http://localhost:8800` and, by default, to the LAN as well
+(see [docs/deployment.md](docs/deployment.md) for remote access and multi-host
+deploys). For the phone-friendly HTTPS endpoint instead:
 
 ```bash
-scripts/up --no-tailscale
+scripts/up --tailscale
 ```
 
-`scripts/up` builds and starts the web and segmentation services, then exposes the
-web app through Tailscale:
-
-- `http://localhost:8800` on the workstation
-- `https://<host>.<tailnet>.ts.net/` from a tailnet-connected phone
-
-`--no-tailscale` does not invoke the Tailscale CLI or change any existing Tailscale
-Serve configuration.
+This publishes `https://<host>.<tailnet>.ts.net/` from a tailnet-connected phone, in
+addition to `http://localhost:8800` on the workstation, and binds the web port to
+`127.0.0.1` instead of the LAN.
 
 ### 3. Capture a tool
 
@@ -258,7 +256,7 @@ settings. Use `scripts/prune --dry-run` to preview cleanup of old capture projec
 | Service | Port | GPU | Role |
 | --- | ---: | --- | --- |
 | `web` | `8800` | No | FastAPI, the React SPA, and the public API boundary |
-| `segserver` | `8801` internal | Yes | SAM 2.1 interactive segmentation, SAM 3 concept segmentation, and dense matching |
+| `segserver` | `8801` | Yes | SAM 2.1 interactive segmentation, SAM 3 concept segmentation, and dense matching |
 
 Runtime probes are exposed through the web service:
 
@@ -298,7 +296,8 @@ Features added on top of the original public release, newest last:
   (see [docs/deployment.md](docs/deployment.md))
 - Batch calibration signature triage: reports every photo's mismatch in one pass
   instead of aborting at the first one that disagrees
-- `--public-bind` flag for `scripts/up` to expose the web UI on the LAN
+- `scripts/up` binds the web UI to the LAN by default, with `--tailscale` to
+  narrow it back to loopback behind Tailscale Serve instead
 - `scripts/up` fails fast when `HF_TOKEN` is missing, instead of surfacing the
   failure later as an inference-time error
 - Unhandled server errors return their real error text instead of a bare
@@ -442,6 +441,9 @@ Features added on top of the original public release, newest last:
 - Copy finger-hole style: push one selected tool's hole type (off/single/span) and
   diameter onto the rest of a multi-tool selection, without moving any existing point
   (see [docs/combine-editor-copy-finger-hole-style.md](docs/combine-editor-copy-finger-hole-style.md))
+- `scripts/up --frontend` / `--segserver` to run the web/cli services and the GPU
+  segmentation service on separate hosts, instead of always colocated (see
+  [docs/deployment.md](docs/deployment.md))
 
 ## License
 

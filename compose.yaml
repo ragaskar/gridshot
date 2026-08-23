@@ -27,7 +27,7 @@ services:
       HOME: /tmp
       GRIDSHOT_CONFIG_DIR: /app/config
       HF_TOKEN: ${HF_TOKEN:-}
-      GRIDSHOT_SEGSERVER_URL: http://segserver:8801
+      GRIDSHOT_SEGSERVER_URL: ${GRIDSHOT_SEGSERVER_URL:-http://segserver:8801}
     volumes:
       - .:/app:z
 
@@ -44,9 +44,9 @@ services:
     environment:
       HOME: /tmp
       GRIDSHOT_CONFIG_DIR: /app/config
-      GRIDSHOT_SEGSERVER_URL: http://segserver:8801
+      GRIDSHOT_SEGSERVER_URL: ${GRIDSHOT_SEGSERVER_URL:-http://segserver:8801}
     ports:
-      - "${GRIDSHOT_BIND_ADDR:-127.0.0.1}:8800:8800"  # localhost by default; scripts/up --public-bind widens this to 0.0.0.0
+      - "${GRIDSHOT_BIND_ADDR:-0.0.0.0}:8800:8800"  # LAN-reachable by default; scripts/up --tailscale narrows this to 127.0.0.1
     volumes:
       - ./projects:/app/projects:z
       - ./config:/app/config:z
@@ -66,8 +66,8 @@ services:
       TORCH_HOME: /app/config/cache/torch
       GRIDSHOT_SAM: ${GRIDSHOT_SAM:-sam2}
       GRIDSHOT_INFERENCE_QUEUE_SIZE: ${GRIDSHOT_INFERENCE_QUEUE_SIZE:-2}
-    expose:
-      - "8801"  # compose network only; web/cli are the public boundary
+    ports:
+      - "${GRIDSHOT_SEGSERVER_BIND_ADDR:-127.0.0.1}:8801:8801"  # loopback by default (colocated deploy); scripts/up --segserver widens this to 0.0.0.0 for a multi-host deploy
     volumes:
       - ./config:/app/config:z
     deploy:

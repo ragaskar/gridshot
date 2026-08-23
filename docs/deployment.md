@@ -55,24 +55,70 @@ SELinux, so this doesn't affect a plain Docker setup at all.
 
 ## Reaching GridShot from somewhere other than `localhost`
 
-By default the web port only binds `127.0.0.1` — the assumption is you're either on
-the same machine or using Tailscale Serve (the default behavior of `scripts/up`,
-which sets up an HTTPS URL reachable from anywhere on your tailnet).
+By default `scripts/up` binds the web port to `0.0.0.0`, so other machines on your
+LAN can reach it directly over plain HTTP — `scripts/up` prints a best-effort guess
+at your LAN IP in the startup banner. There's no additional auth in front of this
+beyond whatever your network already provides — treat it the same as any other
+unauthenticated service on your LAN.
 
-If you're on a home LAN without Tailscale, pass `--public-bind` to bind `0.0.0.0`
-instead, so other machines on the network can reach it directly over plain HTTP:
+For an HTTPS URL reachable from your phone anywhere on your tailnet instead, pass
+`--tailscale`. This narrows the web port back to `127.0.0.1` (Tailscale Serve reaches
+it over loopback) and publishes it through Tailscale:
 
 ```bash
-scripts/up --public-bind
+scripts/up --tailscale
 ```
 
-`scripts/up` prints a best-effort guess at your LAN IP in the startup banner when you
-use this flag. There's no additional auth in front of a `--public-bind` server beyond
-whatever your network already provides — treat it the same as any other unauthenticated
-service on your LAN.
+Want neither — loopback only, no Tailscale? Set `GRIDSHOT_BIND_ADDR=127.0.0.1` in
+`.env` yourself; `scripts/up` doesn't have a flag for this since it's the same as
+`--tailscale` minus the `tailscale serve` call.
 
 For `HF_TOKEN` and the Hugging Face access requirement `scripts/up` checks before
 starting, see [step 1 of the usage walkthrough](usage/README.md#1-hugging-face-access--starting-the-app).
+
+## Splitting web/cli and segserver across hosts
+
+`web` and `cli` are plain CPU services — FastAPI, the SPA, and a thin HTTP client to
+segserver — with no GPU or CUDA dependency of their own; every GPU/CDI requirement in
+`compose.yaml` is scoped to the `segserver` service. That means `web`/`cli` can run
+on any Docker or Podman host, while `segserver` stays wherever the GPU is, as long as
+they can reach each other over the network.
+
+On the segserver host:
+
+```bash
+scripts/up --segserver
+```
+
+This builds and starts only `segserver`, and publishes its port on `0.0.0.0:8801`
+instead of the compose-internal-only default — `scripts/up`'s normal, colocated mode
+binds it to `127.0.0.1` since nothing outside the compose network needs to reach it
+there. There's no auth in front of segserver's HTTP API either, so treat this the
+same as the LAN-bound web port: fine on a trusted home/office LAN, not something to
+expose past it without adding your own network boundary (a VPN, a firewall rule
+scoped to the web host's IP, etc).
+
+On the web/cli host, point at that address before starting:
+
+```bash
+echo 'GRIDSHOT_SEGSERVER_URL=http://192.168.1.50:8801' >> .env
+scripts/up --frontend
+```
+
+`--frontend` builds and starts only `web`, and fails fast at startup if
+`GRIDSHOT_SEGSERVER_URL` isn't set — the same fail-fast approach `scripts/up` already
+takes for a missing `HF_TOKEN`, so a wiring mistake shows up immediately instead of as
+a later inference error. `scripts/gridshot` (the CLI wrapper) reads the same
+`GRIDSHOT_SEGSERVER_URL`, via the `cli` service's environment in `compose.yaml`, so no
+separate configuration is needed for it.
+
+Moving an existing single-host deployment onto two hosts, or to a fresh host
+entirely: all persistent state is in the bind-mounted `config/` and `projects/`
+directories (calibration, printer profiles, the tool library, segserver's downloaded
+model cache, and capture projects) — nothing else to extract from a running
+container. Copy both directories to the new host(s) and it picks up where it left
+off; copying `config/`'s model cache over to a new segserver host also avoids
+re-downloading models on first run.
 
 ## GPU selection
 
