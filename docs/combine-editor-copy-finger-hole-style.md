@@ -1,11 +1,12 @@
 # Copy finger-hole style
 
 With [multiple tools selected](combine-editor-multi-select.md) in the "Arrange multi-tool
-bin" modal, a **Copy style** button sits next to [Align finger
-holes](combine-editor-align-finger-holes.md) in the Inspector's "Finger access" section.
-It's enabled whenever at least two tools are selected — unlike Align, it doesn't need
-every hole travelling on the same axis, and it works even when some (or all) selected
-tools have no finger hole yet.
+bin" modal, a **Copy style** button appears in the tool Inspector's "Finger access"
+section. It's enabled whenever at least two tools are selected — unlike
+[Align finger holes](combine-editor-align-finger-holes.md), it doesn't need every hole
+travelling on the same axis, and it works even when some (or all) selected tools have no
+finger hole yet — which is exactly why it stays gated on selecting *tools*, not their
+holes directly: a tool with no hole yet has no hole to click.
 
 ## What it copies, and from where
 

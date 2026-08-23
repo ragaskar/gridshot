@@ -330,10 +330,15 @@ export function CombineEditor({
   const [tools, setTools] = useState<CombineTool[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // Mutually exclusive with selectedIds: selecting a finger hole deselects
-  // every tool, and vice versa (see down()/downFingerHole() below).
-  const [selectedFingerHoleToolId, setSelectedFingerHoleToolId] = useState<string | null>(null);
+  // every tool, and vice versa (see down()/downFingerHole() below). A plain
+  // click replaces this with a single-tool set (and starts a drag); a
+  // shift-click toggles membership instead (no drag) — multi-selecting
+  // finger holes is what enables Align/Copy style and multi-hole nudge.
+  const [selectedFingerHoleToolIds, setSelectedFingerHoleToolIds] = useState<Set<string>>(new Set());
   // Which focal point (0 = P1, 1 = P2) a span hole's selection/drag/nudge
-  // currently addresses. Meaningless (stays 0) for a single-point hole.
+  // currently addresses. Meaningless (stays 0) for a single-point hole, and
+  // only meaningful for the single-select case (size === 1) — a multi-hole
+  // nudge moves both points of a span hole regardless.
   const [selectedFingerPointIndex, setSelectedFingerPointIndex] = useState<0 | 1>(0);
   // The non-selected point of a selected span hole, while the pointer sits
   // within its click-to-select slop radius — renders a "select hint" ring.
@@ -426,6 +431,9 @@ export function CombineEditor({
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
   const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
+  // The tools whose finger hole is currently selected — Align/Copy style and
+  // the multi-hole nudge all iterate this, not the tool multi-selection above.
+  const selectedFingerHoleTools = tools.filter((t) => selectedFingerHoleToolIds.has(t.id));
   const selectionKey = [...selectedIds].sort().join(",");
 
   useEffect(() => {
@@ -442,7 +450,7 @@ export function CombineEditor({
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       if (e.key === "Escape") {
         setSelectedIds(new Set());
-        setSelectedFingerHoleToolId(null);
+        setSelectedFingerHoleToolIds(new Set());
         setSelectedFingerPointIndex(0);
       } else if ((e.metaKey || e.ctrlKey) && (e.code === "KeyZ" || e.key.toLowerCase() === "z")) {
         e.preventDefault();
@@ -989,7 +997,7 @@ export function CombineEditor({
   function down(id: string, e: React.PointerEvent) {
     e.stopPropagation();
     arrangeRef.current?.focus();
-    setSelectedFingerHoleToolId(null);
+    setSelectedFingerHoleToolIds(new Set());
     setSelectedFingerPointIndex(0);
     const alreadySelected = selectedIds.has(id);
     // A plain click on a tool that's already part of a bigger selection is
@@ -1102,13 +1110,29 @@ export function CombineEditor({
     if (tool.mirror_y) ly = -ly;
     return nearestArcLength(tool.stamp, [lx, ly]);
   }
+  /** Plain click replaces the finger-hole selection with just this tool's
+   *  hole and starts a drag, exactly as before multi-select existed.
+   *  Shift-click instead toggles this tool's membership in the selection
+   *  (mirroring nextSelection's tool-selection behavior) and does *not*
+   *  start a drag — dragging stays a single-hole-only action. Either way,
+   *  the point just clicked becomes the "active" one for point-specific
+   *  actions (diameter, span toggle, Up/Down jump), which only apply while
+   *  exactly one tool's hole is selected. */
   function downFingerHole(toolId: string, pointIndex: 0 | 1, e: React.PointerEvent) {
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedIds(new Set());
-    setSelectedFingerHoleToolId(toolId);
     setSelectedFingerPointIndex(pointIndex);
     setHoveredFingerPoint(null);
+    if (e.shiftKey) {
+      setSelectedFingerHoleToolIds((current) => {
+        const next = new Set(current);
+        next.has(toolId) ? next.delete(toolId) : next.add(toolId);
+        return next;
+      });
+      return;
+    }
+    setSelectedFingerHoleToolIds(new Set([toolId]));
     fingerDrag.current = { toolId, pointIndex, moved: false };
     (e.target as Element).setPointerCapture(e.pointerId);
   }
@@ -1287,8 +1311,12 @@ export function CombineEditor({
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-    if (selectedFingerHoleToolId) {
-      handleFingerHoleKeyDown(e, selectedFingerHoleToolId);
+    if (selectedFingerHoleToolIds.size === 1) {
+      handleFingerHoleKeyDown(e, [...selectedFingerHoleToolIds][0]);
+      return;
+    }
+    if (selectedFingerHoleToolIds.size > 1) {
+      handleFingerHoleKeyDownMulti(e, [...selectedFingerHoleToolIds]);
       return;
     }
     if (!selectedIds.size) return;
@@ -1334,6 +1362,35 @@ export function CombineEditor({
       if (target === null) return;
       pushSnapshot();
       commitFingerHoleArc(tool.id, target);
+    }
+  }
+  /** Left/Right (+ Shift ×10) across a finger-hole multi-selection — the
+   *  only finger-hole action that supports multi-select (see
+   *  handleFingerHoleKeyDown's single-select version for Up/Down/etc, which
+   *  stay single-hole-only). Up/Down are an explicit no-op here: there's no
+   *  per-tool "active point" once more than one hole is selected. Unlike
+   *  the single-select case (which nudges only the active P1/P2), this
+   *  moves *both* focal points of a span hole — nudging a multi-selection
+   *  reads as "move the whole hole," not "move whichever lobe I happened to
+   *  click last." */
+  function handleFingerHoleKeyDownMulti(e: React.KeyboardEvent, toolIds: string[]) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
+    const wantsRight = e.key === "ArrowRight";
+    const sortedIds = [...toolIds].sort();
+    pushSnapshotCoalesced(`fingerArcBulk:${sortedIds.join(",")}`);
+    for (const id of sortedIds) {
+      const tool = tools.find((t) => t.id === id);
+      if (!tool) continue;
+      const arcGoesRight1 = arcIncreasesWorldX(tool, tool.finger_hole_arc_mm);
+      const delta1 = (arcGoesRight1 === wantsRight) ? step : -step;
+      commitFingerHoleArc(tool.id, tool.finger_hole_arc_mm + delta1, 0);
+      if (tool.finger_hole_span) {
+        const arcGoesRight2 = arcIncreasesWorldX(tool, tool.finger_hole_arc2_mm);
+        const delta2 = (arcGoesRight2 === wantsRight) ? step : -step;
+        commitFingerHoleArc(tool.id, tool.finger_hole_arc2_mm + delta2, 1);
+      }
     }
   }
   function setRotation(deg: number) {
@@ -1415,11 +1472,11 @@ export function CombineEditor({
     setDepthOverrideDraft(shared !== undefined ? String(shared) : "");
   }
 
-  /** Snap every selected tool's finger hole onto the bottom-most one's world
-   *  X (or, for a left/right group, the left-most one's world Y) — see
-   *  `computeFingerAlignPlan` for the eligibility rules. Each tool gets its
-   *  own new arc-length position; local state updates immediately, same as
-   *  a drag. */
+  /** Snap every selected finger hole (selectedFingerHoleTools, not the tool
+   *  multi-select) onto the bottom-most one's world X (or, for a left/right
+   *  group, the left-most one's world Y) — see `computeFingerAlignPlan` for
+   *  the eligibility rules. Each tool gets its own new arc-length position;
+   *  local state updates immediately, same as a drag. */
   function alignFingerHoles() {
     if (!fingerAlignPlan) return;
     pushSnapshot();
@@ -1428,11 +1485,15 @@ export function CombineEditor({
       if (update.arc2 !== undefined) commitFingerHoleArc(id, update.arc2, 1);
     }
   }
-  /** The "base" tool for Copy style: the bottom-most selected tool by its own
-   *  placed bounding box — not its hole's position, which might not exist —
-   *  so the pick stays defined even when some/all selected tools have no
-   *  finger hole yet (unlike Align's reference, copy style's whole point is
-   *  to work in exactly that case). */
+  /** The "base" tool for Copy style: the bottom-most **tool-multi-selected**
+   *  (selectedTools, deliberately not the finger-hole multi-selection Align
+   *  uses) tool by its own placed bounding box — not its hole's position,
+   *  which might not exist — so the pick stays defined even when some/all
+   *  selected tools have no finger hole yet. Copy style's whole point is to
+   *  work in exactly that case (turning a hole on for a tool that has none),
+   *  which is exactly what the finger-hole selection model can't represent —
+   *  a hole-less tool has no circle to click — so Copy style keeps the old
+   *  tool-selection gating rather than moving to Align's new one. */
   function copyStyleBaseTool(): CombineTool | null {
     if (selectedTools.length < 2) return null;
     return selectedTools.reduce((best, t) => {
@@ -1686,7 +1747,7 @@ export function CombineEditor({
   const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
   const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
   const fingerAlignPlan = layout ? computeFingerAlignPlan(
-    selectedTools
+    selectedFingerHoleTools
       .filter((t) => t.finger_hole)
       .flatMap((t): FingerAlignCandidate[] => {
         const p1 = layout.fingerCircles.find((h) => h.toolId === t.id && h.pointIndex === 0);
@@ -1700,9 +1761,7 @@ export function CombineEditor({
         }];
       }),
   ) : null;
-  const selectedFingerHoleTool = selectedFingerHoleToolId
-    ? tools.find((t) => t.id === selectedFingerHoleToolId) ?? null
-    : null;
+  const selectedFingerHoleTool = selectedFingerHoleTools.length === 1 ? selectedFingerHoleTools[0] : null;
   const selectedFingerHoleWorld = selectedFingerHoleTool && layout
     ? layout.fingerCircles.find((h) => h.toolId === selectedFingerHoleTool.id) ?? null
     : null;
@@ -1842,7 +1901,7 @@ export function CombineEditor({
               drag.current = null;
               fingerDrag.current = null;
             }}
-            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolId(null); setSelectedFingerPointIndex(0); }}
+            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolIds(new Set()); setSelectedFingerPointIndex(0); }}
           >
             {layout && (
               // World y increases toward the back of the bin (standard
@@ -1927,7 +1986,7 @@ export function CombineEditor({
                 {layout.fingerConnectors.map((conn) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === conn.toolId);
                   const connColor = layout.overflowIds.has(conn.toolId) ? OVERFLOW_COLOR : color(toolIndex);
-                  const isSelected = selectedFingerHoleToolId === conn.toolId;
+                  const isSelected = selectedFingerHoleToolIds.has(conn.toolId);
                   return <line
                     key={`${conn.toolId}-finger-connector`}
                     x1={conn.x1} y1={conn.y1} x2={conn.x2} y2={conn.y2}
@@ -1939,8 +1998,8 @@ export function CombineEditor({
                 {layout.fingerCircles.map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
                   const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
-                  const holeSelected = selectedFingerHoleToolId === hole.toolId;
-                  const isActive = holeSelected && selectedFingerPointIndex === hole.pointIndex;
+                  const holeSelected = selectedFingerHoleToolIds.has(hole.toolId);
+                  const isActive = holeSelected && selectedFingerHoleToolIds.size === 1 && selectedFingerPointIndex === hole.pointIndex;
                   const isSpan = tools.find((t) => t.id === hole.toolId)?.finger_hole_span ?? false;
                   const isHinted = hoveredFingerPoint?.toolId === hole.toolId && hoveredFingerPoint.pointIndex === hole.pointIndex;
                   return <g key={`${hole.toolId}-finger-${index}`}>
@@ -2417,14 +2476,6 @@ export function CombineEditor({
               )}
               <button
                 className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
-                disabled={busy || selectedTools.length < 2 || !fingerAlignPlan}
-                title="Align every selected tool's finger hole onto one line — needs at least 2 finger holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
-                onClick={alignFingerHoles}
-              >
-                ⟷ Align finger holes
-              </button>
-              <button
-                className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
                 disabled={busy || selectedTools.length < 2}
                 title="Copy the bottom-most selected tool's finger-hole style (on/off, span, diameter) onto every other selected tool — a tool with no hole yet gets its own auto-placed point, existing points never move"
                 onClick={() => void copyFingerHoleStyle()}
@@ -2434,70 +2485,89 @@ export function CombineEditor({
               {alignButtons}
               {distributeButtons}
             </div>
-          ) : selectedFingerHoleTool ? (
+          ) : selectedFingerHoleToolIds.size > 0 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="truncate text-xs text-knockout">
-                  {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
-                  {selectedFingerHoleTool.finger_hole_span && (
-                    <span className="ml-1 text-muted">· P{selectedFingerPointIndex + 1}</span>
-                  )}
-                </span>
-                <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
-              </div>
-              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                <dt>X</dt>
-                <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.x.toFixed(2) : "–"} mm</dd>
-                <dt>Y</dt>
-                <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
-              </dl>
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                <span className="text-muted">Diameter</span>
-                <div className="flex shrink-0 items-center gap-1">
-                  <input
-                    aria-label="Finger hole diameter in millimetres"
-                    className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
-                    type="number" step={1} min={0.1}
-                    disabled={busy}
-                    defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
-                    key={selectedFingerHoleTool.id}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (Number.isFinite(value) && value > 0) {
-                        setFingerHoleDiameter(selectedFingerHoleTool.id, value);
-                      }
-                    }}
-                  />
-                  <span className="text-muted">mm</span>
+              {selectedFingerHoleTool ? (
+                <>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="truncate text-xs text-knockout">
+                      {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
+                      {selectedFingerHoleTool.finger_hole_span && (
+                        <span className="ml-1 text-muted">· P{selectedFingerPointIndex + 1}</span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
+                  </div>
+                  <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
+                    <dt>X</dt>
+                    <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.x.toFixed(2) : "–"} mm</dd>
+                    <dt>Y</dt>
+                    <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
+                  </dl>
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                    <span className="text-muted">Diameter</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <input
+                        aria-label="Finger hole diameter in millimetres"
+                        className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                        type="number" step={1} min={0.1}
+                        disabled={busy}
+                        defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
+                        key={selectedFingerHoleTool.id}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isFinite(value) && value > 0) {
+                            setFingerHoleDiameter(selectedFingerHoleTool.id, value);
+                          }
+                        }}
+                      />
+                      <span className="text-muted">mm</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                    <span className="text-muted">Span both sides</span>
+                    <button
+                      aria-pressed={selectedFingerHoleTool.finger_hole_span}
+                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                      disabled={busy}
+                      onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
+                    >
+                      {selectedFingerHoleTool.finger_hole_span ? "On" : "Off"}
+                    </button>
+                  </div>
+                  <p className="mt-3 border-t border-line pt-3 text-muted">
+                    {selectedFingerHoleTool.finger_hole_span ? (
+                      <>
+                        Drag the active point, or use Left/Right to slide it along the
+                        outline (same nudge step and Shift ×10 as tools). Click near the
+                        other lobe (or the hinted ring around it) to switch which point
+                        moves. Up/Down is disabled while span is on.
+                      </>
+                    ) : (
+                      <>
+                        Drag the hole, or use the arrow keys — Left/Right slide it along the
+                        outline (same nudge step and Shift ×10 as tools), Up/Down jump it
+                        across to the opposite side.
+                      </>
+                    )}
+                  </p>
+                </>
+              ) : (
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="truncate text-xs text-knockout">
+                    {selectedFingerHoleToolIds.size} finger holes selected
+                  </span>
+                  <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
                 </div>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                <span className="text-muted">Span both sides</span>
-                <button
-                  aria-pressed={selectedFingerHoleTool.finger_hole_span}
-                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
-                  disabled={busy}
-                  onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
-                >
-                  {selectedFingerHoleTool.finger_hole_span ? "On" : "Off"}
-                </button>
-              </div>
-              <p className="mt-3 border-t border-line pt-3 text-muted">
-                {selectedFingerHoleTool.finger_hole_span ? (
-                  <>
-                    Drag the active point, or use Left/Right to slide it along the
-                    outline (same nudge step and Shift ×10 as tools). Click near the
-                    other lobe (or the hinted ring around it) to switch which point
-                    moves. Up/Down is disabled while span is on.
-                  </>
-                ) : (
-                  <>
-                    Drag the hole, or use the arrow keys — Left/Right slide it along the
-                    outline (same nudge step and Shift ×10 as tools), Up/Down jump it
-                    across to the opposite side.
-                  </>
-                )}
-              </p>
+              )}
+              <button
+                className="mt-3 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
+                disabled={busy || selectedFingerHoleTools.length < 2 || !fingerAlignPlan}
+                title="Align every selected finger hole onto one line — needs at least 2 holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
+                onClick={alignFingerHoles}
+              >
+                ⟷ Align finger holes
+              </button>
             </div>
           ) : (
             <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>

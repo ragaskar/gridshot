@@ -324,8 +324,14 @@ describe("CombineEditor finger-hole selection and position editing", () => {
   it("Align finger holes: a span reference moves a single-point target's P1 onto its own P1, leaving the reference untouched", async () => {
     render(<CombineEditor ids={["tool-span", "tool-single"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Vise");
-    fireEvent.click(screen.getByText("Vise"));
-    fireEvent.click(screen.getByText("Chisel"), { shiftKey: true });
+    // Selecting tools no longer enables Align — select the finger holes
+    // directly instead: tool-span's P1 (plain click), then tool-single's
+    // one hole (shift-click, adds it to the multi-selection).
+    const before = visibleFingerCircles();
+    const refP1 = { cx: Number(before[0].getAttribute("cx")), cy: Number(before[0].getAttribute("cy")) };
+    fireEvent.pointerDown(before[0], { clientX: refP1.cx, clientY: -refP1.cy, pointerId: 1 });
+    const targetPos = { cx: Number(before[2].getAttribute("cx")), cy: Number(before[2].getAttribute("cy")) };
+    fireEvent.pointerDown(before[2], { clientX: targetPos.cx, clientY: -targetPos.cy, pointerId: 2, shiftKey: true });
     const refLobesBefore = visibleFingerCircles().slice(0, 2).map((c) => ({
       cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
     }));

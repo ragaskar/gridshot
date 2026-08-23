@@ -453,6 +453,12 @@ Features added on top of the original public release, newest last:
   multi-tool combine editor — a line and 0.01mm gap label from its outline, in the
   nudge direction, to the next tool it would hit (see
   [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
+- Finger holes are now multi-selectable directly (shift-click, same gesture as tools) in
+  the multi-tool combine editor; Align finger holes now requires selecting 2+ holes this
+  way instead of 2+ tools, and Left/Right nudge (+ Shift ×10) works across that
+  selection — Copy style stays gated on tool selection, since it's the one action that
+  still needs to target a tool with no hole yet (see
+  [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
 
 ## License
 

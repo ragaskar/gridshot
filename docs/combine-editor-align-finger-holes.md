@@ -1,12 +1,22 @@
 # Align finger holes
 
-With [multiple tools selected](combine-editor-multi-select.md) in the "Arrange multi-tool
-bin" modal, an **Align finger holes** button appears in the Inspector's "Finger access"
-section. It's always shown, just disabled until the selection qualifies.
+Click a tool's finger hole in the "Arrange multi-tool bin" modal to select it, then
+shift-click another to add it to the selection — same shift-click-to-add gesture as
+[multi-selecting tools](combine-editor-multi-select.md), but for finger holes
+specifically. With 2+ finger holes selected this way, an **Align finger holes** button
+appears in the Inspector. Selecting *tools* (rather than their holes) never shows or
+enables this button, even with several selected — click the holes themselves.
 
-## When it's enabled
+While 2+ finger holes are selected, **Left/Right** (and Shift for ×10) nudges every one
+of them at once, along each hole's own outline — the same step as a single hole's nudge.
+Up/Down, drag, span toggle, and diameter stay single-hole actions and aren't available
+once more than one hole is selected. A [span](combine-finger-hole-span.md) hole moves
+*both* of its focal points together under a multi-select nudge (unlike a single-selected
+span hole, where Left/Right only moves whichever point you clicked).
 
-At least two selected tools need finger access **on**, and every one of those holes has
+## When Align is enabled
+
+At least two selected finger holes need to exist, and every one of them has
 to be travelling on the same axis in world space as its arc-length position changes:
 
 - **Horizontal**: every eligible hole's outline runs level (in world space) at its current
