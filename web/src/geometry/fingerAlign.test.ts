@@ -35,8 +35,8 @@ function candidate(over: Partial<FingerAlignCandidate> & { id: string }): Finger
 describe("computeFingerAlignPlan", () => {
   it("aligns two bottom-side tools to the bottom-most one", () => {
     const plan = computeFingerAlignPlan([
-      candidate({ id: "a", cx: 0, cy: 20, offset: 0 }), // bottom-most (max cy) — reference
-      candidate({ id: "b", cx: 5, cy: 0, offset: 0 }),
+      candidate({ id: "a", cx: 0, cy: 0, offset: 0 }), // bottom-most (min cy) — reference
+      candidate({ id: "b", cx: 5, cy: 20, offset: 0 }),
     ]);
     expect(plan).not.toBeNull();
     expect(plan!.axis).toBe("horizontal");
@@ -69,8 +69,8 @@ describe("computeFingerAlignPlan", () => {
 
   it("excludes a center-side tool rather than blocking the rest of the group", () => {
     const plan = computeFingerAlignPlan([
-      candidate({ id: "a", cx: 0, cy: 20 }),
-      candidate({ id: "b", cx: 5, cy: 0 }),
+      candidate({ id: "a", cx: 0, cy: 0 }),
+      candidate({ id: "b", cx: 5, cy: 20 }),
       candidate({ id: "c", side: "center", cx: 999, cy: 999 }),
     ]);
     expect(plan).not.toBeNull();
@@ -93,8 +93,8 @@ describe("computeFingerAlignPlan", () => {
     // "bottom" side at rot=180 travels along world (-1, 0): moving its hole
     // to world X = refX still resolves via the dot product regardless of sign.
     const plan = computeFingerAlignPlan([
-      candidate({ id: "a", cx: 0, cy: 20 }), // reference, rot 0
-      candidate({ id: "b", cx: 5, cy: 0, rot: 180 }),
+      candidate({ id: "a", cx: 0, cy: 0 }), // reference, rot 0
+      candidate({ id: "b", cx: 5, cy: 20, rot: 180 }),
     ]);
     expect(plan).not.toBeNull();
     // dir=(-1,0), delta = refX(0) - cx(5) = -5, proj = -1 * -5 = 5

@@ -49,10 +49,11 @@ export interface FingerAlignPlan {
  *  Requires at least 2 candidates, all travelling on the same axis (all
  *  horizontal, i.e. holes on a top/bottom edge sitting level in world space,
  *  or all vertical, left/right edges standing plumb) — a mixed or diagonal
- *  group returns null. The reference is the bottom-most hole (max world Y)
- *  for a horizontal group, or the left-most (min world X) for a vertical
- *  one; every other candidate's hole must be able to reach that reference's
- *  line without exceeding its own offset range, or the whole plan is null. */
+ *  group returns null. The reference is the bottom-most hole (min world Y —
+ *  world y increases toward the top of the arrange/preview view) for a
+ *  horizontal group, or the left-most (min world X) for a vertical one;
+ *  every other candidate's hole must be able to reach that reference's line
+ *  without exceeding its own offset range, or the whole plan is null. */
 export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): FingerAlignPlan | null {
   const candidates = candidatesIn.filter((c) => c.side !== "center");
   if (candidates.length < 2) return null;
@@ -70,7 +71,7 @@ export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): Fi
   const axis: "horizontal" | "vertical" = allHorizontal ? "horizontal" : "vertical";
 
   const reference = axis === "horizontal"
-    ? candidates.reduce((best, c) => (c.cy > best.cy ? c : best))
+    ? candidates.reduce((best, c) => (c.cy < best.cy ? c : best))
     : candidates.reduce((best, c) => (c.cx < best.cx ? c : best));
   const refCoord = axis === "horizontal" ? reference.cx : reference.cy;
 

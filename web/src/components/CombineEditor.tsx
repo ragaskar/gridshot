@@ -352,9 +352,16 @@ export function CombineEditor({
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       if (e.key === "Escape") {
         setSelectedIds(new Set());
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      } else if ((e.metaKey || e.ctrlKey) && (e.code === "KeyZ" || e.key.toLowerCase() === "z")) {
         e.preventDefault();
-        if (e.shiftKey) redo(); else undo();
+        // On macOS, Cmd+Shift+Z can reach here with e.shiftKey read as false
+        // (the browser's own Cmd+Shift+Z "Redo" menu shortcut appears to
+        // race the DOM event's modifier snapshot) — e.key still comes
+        // through as the shifted "Z" even then, so treat that as an
+        // equally valid signal rather than trusting e.shiftKey alone.
+        // Never let an ambiguous signal fall through to undo(): the whole
+        // point is Cmd+Shift+Z must not silently undo instead of redo.
+        if (e.shiftKey || e.key === "Z") redo(); else undo();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -847,13 +854,15 @@ export function CombineEditor({
         return { ...t, tx: t.tx + (target - from) };
       }));
     } else {
-      const target = edge === "top" ? Math.min(...all.map((b) => b.miny))
-        : edge === "bottom" ? Math.max(...all.map((b) => b.maxy))
+      // World y increases toward the top of the (now-correct) top-down
+      // view, so "top" targets the max y, "bottom" the min.
+      const target = edge === "top" ? Math.max(...all.map((b) => b.maxy))
+        : edge === "bottom" ? Math.min(...all.map((b) => b.miny))
         : (Math.min(...all.map((b) => b.miny)) + Math.max(...all.map((b) => b.maxy))) / 2;
       setTools((ts) => ts.map((t) => {
         const b = boxes.get(t.id);
         if (!b) return t;
-        const from = edge === "top" ? b.miny : edge === "bottom" ? b.maxy : (b.miny + b.maxy) / 2;
+        const from = edge === "top" ? b.maxy : edge === "bottom" ? b.miny : (b.miny + b.maxy) / 2;
         return { ...t, ty: t.ty + (target - from) };
       }));
     }
@@ -892,11 +901,13 @@ export function CombineEditor({
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
     const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
+    // World y increases toward the top of the (now-correct) top-down view —
+    // see the <g transform> in the arrange SVG — so "up" nudges +y.
     const deltas: Record<string, [number, number]> = {
       ArrowLeft: [-step, 0],
       ArrowRight: [step, 0],
-      ArrowUp: [0, -step],
-      ArrowDown: [0, step],
+      ArrowUp: [0, step],
+      ArrowDown: [0, -step],
     };
     const d = deltas[e.key];
     if (!d) return;

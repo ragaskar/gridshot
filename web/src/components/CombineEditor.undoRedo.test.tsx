@@ -211,6 +211,24 @@ describe("CombineEditor undo/redo", () => {
     await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(true));
   });
 
+  it("redoes on a macOS Cmd+Shift+Z whose event reports e.shiftKey as false", async () => {
+    // Regression: on macOS, Cmd+Shift+Z's own DOM event can arrive with
+    // e.shiftKey read as false — e.key still comes through as the shifted
+    // "Z" in that case, so that must be enough to redo (never fall through
+    // to undo, which is worse than doing nothing).
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    fireEvent.click(magnetHolesCheckbox());
+    await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(true));
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(false));
+
+    fireEvent.keyDown(window, { key: "Z", metaKey: true, shiftKey: false });
+
+    await waitFor(() => expect(magnetHolesCheckbox().checked).toBe(true));
+  });
+
   it("does not intercept Cmd+Z while a text field is focused", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
