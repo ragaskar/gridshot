@@ -70,6 +70,65 @@ function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot, mirror_x, mirror_y }) => ({ id, tx, ty, rot, mirror_x, mirror_y }));
 }
 
+/** Whether a tool's own interactively-driven fields (the ones a drag, nudge,
+ *  or arrow key sets directly, with no server round-trip in between) differ
+ *  between two snapshots of it. */
+function toolInteractiveFieldsDiverged(before: CombineTool, now: CombineTool): boolean {
+  return (
+    before.tx !== now.tx || before.ty !== now.ty || before.rot !== now.rot
+    || before.mirror_x !== now.mirror_x || before.mirror_y !== now.mirror_y
+    || before.finger_hole_arc_mm !== now.finger_hole_arc_mm
+    || before.finger_hole_arc_mm_override !== now.finger_hole_arc_mm_override
+    || before.finger_hole_arc2_mm !== now.finger_hole_arc2_mm
+    || before.finger_hole_arc2_mm_override !== now.finger_hole_arc2_mm_override
+    || before.finger_hole_diameter_mm_override !== now.finger_hole_diameter_mm_override
+    // Every edit that touches finger_holes replaces the array (see
+    // commitFingerHoleArc et al.) rather than mutating it in place, so
+    // reference equality alone tells us whether it changed.
+    || before.finger_holes !== now.finger_holes
+  );
+}
+
+function withLocalInteractiveFields(serverTool: CombineTool, local: CombineTool): CombineTool {
+  return {
+    ...serverTool,
+    tx: local.tx, ty: local.ty, rot: local.rot,
+    mirror_x: local.mirror_x, mirror_y: local.mirror_y,
+    finger_hole_arc_mm: local.finger_hole_arc_mm,
+    finger_hole_arc_mm_override: local.finger_hole_arc_mm_override,
+    finger_hole_arc2_mm: local.finger_hole_arc2_mm,
+    finger_hole_arc2_mm_override: local.finger_hole_arc2_mm_override,
+    finger_hole_diameter_mm_override: local.finger_hole_diameter_mm_override,
+    finger_holes: local.finger_holes,
+  };
+}
+
+/** Reconciles a fresh `combinePreview` response with local state, without
+ *  clobbering a drag/nudge/rotate that landed on some tool while *this*
+ *  particular request was in flight (nothing gates those interactions on
+ *  `busy`, by design — the whole point of the local-first, eventual-server
+ *  pattern they already use is that they shouldn't have to wait).
+ *
+ *  `baseline` is what `tools` looked like the moment this request was built
+ *  (before any concurrent edit); `current` is what it is right now, as the
+ *  response comes back. A tool whose interactive fields haven't moved since
+ *  baseline gets the server's response verbatim — including its freshly
+ *  recomputed derived fields (depth, inherited clearance, etc.), which is
+ *  the whole reason to apply the response at all. One that HAS diverged
+ *  keeps its current interactive fields (the concurrent edit wins, since
+ *  this response was computed from stale placements/overrides for it) but
+ *  still adopts the server's other, derived fields. */
+function mergeServerTools(
+  serverTools: CombineTool[], baseline: CombineTool[], current: CombineTool[],
+): CombineTool[] {
+  return serverTools.map((serverTool) => {
+    const before = baseline.find((t) => t.id === serverTool.id);
+    const now = current.find((t) => t.id === serverTool.id);
+    if (!before || !now || !toolInteractiveFieldsDiverged(before, now)) return serverTool;
+    return withLocalInteractiveFields(serverTool, now);
+  });
+}
+
 /** "Combined Bin YYYY-MM-DD" using the browser's local date (not UTC). */
 function defaultBinName(): string {
   const d = new Date();
@@ -464,6 +523,7 @@ export function CombineEditor({
     idsOverride: string[] = toolIds,
     liveGridOverride: boolean = liveGrid,
   ) {
+    const baseline = tools; // local state as of the moment this request was built
     setBusy(true);
     setErr(null);
     try {
@@ -483,9 +543,19 @@ export function CombineEditor({
         ...structuralOverride,
       });
       setMeta(p);
-      setTools(p.tools);
+      // A functional update, not `setTools(p.tools)`: `tools` (this closure's
+      // `baseline`) may already be stale by the time this response lands, if
+      // a drag/nudge landed on some tool while this request was in flight —
+      // reconcile against whatever's *actually* current, not what was true
+      // when this call started. React runs the updater synchronously, so
+      // `merged` is settled by the time this function returns it below.
+      let merged: CombineTool[] = p.tools;
+      setTools((current) => {
+        merged = mergeServerTools(p.tools, baseline, current);
+        return merged;
+      });
       setSelectedIds((current) => new Set([...current].filter((id) => p.tools.some((tool) => tool.id === id))));
-      return p.tools;
+      return merged;
     } catch (e) {
       setErr((e as Error).message);
       return null;

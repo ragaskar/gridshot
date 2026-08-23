@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CombineEditor } from "./CombineEditor";
 import type { Placement } from "../api";
 
@@ -13,7 +13,7 @@ vi.mock("../api", () => ({
   listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
 
 // 20x10 rect, perimeter 60: edge0 (-10,-5)->(10,-5) arc[0,20] (bottom edge,
 // midpoint arc 10), edge1 (10,-5)->(10,5) arc[20,30] (right edge), edge2
@@ -58,6 +58,11 @@ const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
   // for the same arc-10 local point. Used to check that keyboard nudging
   // stays screen-relative instead of following the tool's own rotation.
   "tool-rot180": { ...baseTool("tool-rot180", "Upside-down", 0, 0, true), rot: 180 },
+  // Post-fork identities Save mints for tool-a/tool-b (see saveThenEdit.test.tsx)
+  // — needed so a test that saves and lets adoptSavedBinIds reload doesn't
+  // silently degrade to a blank, no-finger-hole tool for the new ids.
+  "bintool-a": baseTool("bintool-a", "Wrench", 0, 0, true),
+  "bintool-b": baseTool("bintool-b", "Pliers", 40, 0, false),
 };
 
 function buildResponse(ids: string[], placements: Placement[] | null | undefined) {
@@ -75,6 +80,9 @@ function buildResponse(ids: string[], placements: Placement[] | null | undefined
 
 function fingerCircle(): SVGCircleElement {
   return document.querySelector("circle")!;
+}
+function magnetHolesCheckbox(): HTMLInputElement {
+  return screen.getByText("Magnet holes").previousElementSibling as HTMLInputElement;
 }
 function binRect(): SVGRectElement {
   return document.querySelector("svg rect")!;
@@ -364,6 +372,105 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     // discrete action) — tool-a's earlier, already-committed nudge must survive.
     expect(Number(allFingerCircles()[1].getAttribute("cx"))).toBeCloseTo(bBefore.cx);
     expect(Number(allFingerCircles()[0].getAttribute("cx"))).toBeCloseTo(aAfterFirstNudge.cx);
+  });
+
+  it("a finger-hole drag survives a load() that was already in flight", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    // Defer the *next* combinePreview call (the magnet-holes toggle's load())
+    // so it's still in flight when the drag below commits.
+    let resolveDeferred: () => void;
+    const deferred = new Promise<void>((resolve) => { resolveDeferred = resolve; });
+    vi.mocked(combinePreview).mockImplementationOnce(
+      (ids, options) => deferred.then(() => buildResponse(ids, options?.placements)),
+    );
+
+    fireEvent.click(magnetHolesCheckbox()); // starts a load() that won't resolve yet
+    expect(magnetHolesCheckbox().disabled).toBe(true); // busy
+
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.pointerMove(document.querySelector("svg")!, { clientX: -10, clientY: 0, pointerId: 1 });
+    fireEvent.pointerUp(document.querySelector("svg")!, { pointerId: 1 });
+
+    const draggedCx = Number(fingerCircle().getAttribute("cx"));
+    const draggedCy = Number(fingerCircle().getAttribute("cy"));
+    expect(draggedCx).toBeCloseTo(-10); // the drag applied locally, mid-flight
+
+    resolveDeferred!();
+    await waitFor(() => expect(magnetHolesCheckbox().disabled).toBe(false)); // load() settled
+
+    // The drag must survive the in-flight load() resolving after it, not get
+    // silently overwritten by the stale response it was built from.
+    expect(Number(fingerCircle().getAttribute("cx"))).toBeCloseTo(draggedCx);
+    expect(Number(fingerCircle().getAttribute("cy"))).toBeCloseTo(draggedCy);
+  });
+
+  it("a finger-hole nudge is picked up by the next 3D preview request", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    vi.mocked(combinePreviewGlb).mockClear();
+
+    fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+
+    await waitFor(() => expect(combinePreviewGlb).toHaveBeenCalled(), { timeout: 2000 });
+
+    const [, options] = vi.mocked(combinePreviewGlb).mock.calls.at(-1)!;
+    const overrideA = options?.overrides?.find((o) => o.id === "tool-a");
+    expect(overrideA?.finger_hole_arc_mm).toBeCloseTo(10.1);
+  });
+
+  it("a finger-hole mouse drag is picked up by the next 3D preview request", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    vi.mocked(combinePreviewGlb).mockClear();
+
+    fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.pointerMove(document.querySelector("svg")!, { clientX: -10, clientY: 0, pointerId: 1 });
+    fireEvent.pointerUp(document.querySelector("svg")!, { pointerId: 1 });
+
+    await waitFor(() => expect(combinePreviewGlb).toHaveBeenCalled(), { timeout: 2000 });
+
+    const [, options] = vi.mocked(combinePreviewGlb).mock.calls.at(-1)!;
+    const overrideA = options?.overrides?.find((o) => o.id === "tool-a");
+    // Dragged to the left edge's midpoint (world (-10, 0)) — edge3 runs
+    // (-10,5)->(-10,-5), arc [50,60], so its midpoint is arc 55.
+    expect(overrideA?.finger_hole_arc_mm).toBeCloseTo(55);
+  });
+
+  it("a finger-hole nudge is included in what gets sent to Save", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+
+    vi.mocked(saveBin).mockResolvedValue({
+      id: "bin-1", label: "My Bin", created_ts: 0,
+      tool_ids: ["bintool-a", "bintool-b"],
+      tool_labels: ["Wrench", "Pliers"],
+      placements: [
+        { id: "bintool-a", tx: 0, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+        { id: "bintool-b", tx: 40, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+      ],
+      overrides: [],
+      overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
+      magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
+      force_gx: null, force_gy: null, removed_cells: null,
+      lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
+      min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
+      tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
+      magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
+    });
+
+    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
+    fireEvent.click(screen.getByText("Save As"));
+    await waitFor(() => expect(saveBin).toHaveBeenCalled());
+
+    const [, , options] = vi.mocked(saveBin).mock.calls.at(-1)!;
+    const overrideA = options?.overrides?.find((o) => o.id === "tool-a");
+    expect(overrideA?.finger_hole_arc_mm).toBeCloseTo(10.1);
   });
 
   it("ArrowRight moves the hole toward screen-right even on a tool rotated 180°", async () => {
