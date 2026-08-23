@@ -485,8 +485,10 @@ export function CombineEditor({
       setMeta(p);
       setTools(p.tools);
       setSelectedIds((current) => new Set([...current].filter((id) => p.tools.some((tool) => tool.id === id))));
+      return p.tools;
     } catch (e) {
       setErr((e as Error).message);
+      return null;
     } finally {
       setBusy(false);
     }
@@ -1237,6 +1239,60 @@ export function CombineEditor({
     for (const [id, update] of fingerAlignPlan.updates) {
       if (update.arc1 !== undefined) commitFingerHoleArc(id, update.arc1, 0);
       if (update.arc2 !== undefined) commitFingerHoleArc(id, update.arc2, 1);
+    }
+  }
+  /** The "base" tool for Copy style: the bottom-most selected tool by its own
+   *  placed bounding box — not its hole's position, which might not exist —
+   *  so the pick stays defined even when some/all selected tools have no
+   *  finger hole yet (unlike Align's reference, copy style's whole point is
+   *  to work in exactly that case). */
+  function copyStyleBaseTool(): CombineTool | null {
+    if (selectedTools.length < 2) return null;
+    return selectedTools.reduce((best, t) => {
+      const tMinY = bboxOf(placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y)).miny;
+      const bestMinY = bboxOf(placed(best.stamp, best.tx, best.ty, best.rot, best.mirror_x, best.mirror_y)).miny;
+      return tMinY < bestMinY ? t : best;
+    });
+  }
+  /** Copy the base tool's finger-hole *style* — on/off, span, diameter — onto
+   *  every other selected tool, without moving any existing point (that's
+   *  what [[alignFingerHoles]] is for). A tool with no hole yet that gains
+   *  one gets its own auto-placed point from the server, exactly as if its
+   *  own "Finger access" toggle had just been switched on — copy style
+   *  never copies the base's *position*. If the base has no hole, every
+   *  other selected tool's hole is turned off. */
+  async function copyFingerHoleStyle() {
+    const base = copyStyleBaseTool();
+    if (!base) return;
+    const targetIds = new Set(selectedTools.filter((t) => t.id !== base.id).map((t) => t.id));
+    if (!targetIds.size) return;
+    pushSnapshot();
+    const wantsHole = base.finger_hole;
+    const wantsSpan = base.finger_hole_span;
+    const diameter = base.finger_holes[0]?.[2] ?? 20;
+    const updated = tools.map((t) => {
+      if (!targetIds.has(t.id)) return t;
+      const gainingFresh = wantsHole && !t.finger_hole;
+      return {
+        ...t,
+        finger: wantsHole,
+        finger_hole: wantsHole,
+        finger_hole_override: wantsHole,
+        ...(wantsHole ? { finger_hole_diameter_mm_override: diameter } : {}),
+        // A tool losing its hole no longer needs a placed point; a tool
+        // gaining one fresh must NOT inherit any stale prior position —
+        // both let the server's own auto/legacy placement resolve it next
+        // time the hole is turned back on, same as a from-scratch toggle.
+        ...(gainingFresh || !wantsHole ? { finger_hole_arc_mm_override: null } : {}),
+      };
+    });
+    const refreshed = await load(placementsFor(updated), overridesFor(updated));
+    if (!wantsHole || !refreshed) return;
+    // Span needs each target's own (possibly just-resolved) P1 to seed P2
+    // from — apply it now that `refreshed` reflects the server round-trip
+    // above, not from the pre-round-trip `tools` closure.
+    for (const t of refreshed) {
+      if (targetIds.has(t.id) && t.finger_hole_span !== wantsSpan) spanFingerHole(t.id, wantsSpan);
     }
   }
 
@@ -2146,6 +2202,14 @@ export function CombineEditor({
                 onClick={alignFingerHoles}
               >
                 ⟷ Align finger holes
+              </button>
+              <button
+                className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
+                disabled={busy || selectedTools.length < 2}
+                title="Copy the bottom-most selected tool's finger-hole style (on/off, span, diameter) onto every other selected tool — a tool with no hole yet gets its own auto-placed point, existing points never move"
+                onClick={() => void copyFingerHoleStyle()}
+              >
+                ⎘ Copy style
               </button>
               {alignButtons}
               {distributeButtons}

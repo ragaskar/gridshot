@@ -52,4 +52,5 @@ point. Every other tool's P1 always aligns to the reference's P1 line. Beyond th
   to move.
 
 Size is never touched by align, on either point — it only ever moves focal points onto a
-line.
+line. To match every selected tool's hole *type and size* to one tool's, without moving
+anything, see [Copy style](combine-editor-copy-finger-hole-style.md) instead.

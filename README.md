@@ -439,6 +439,9 @@ Features added on top of the original public release, newest last:
 - Align finger holes now understands span holes in a mixed selection — a span
   reference aligns every other span hole's second point too, on its own line (see
   [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
+- Copy finger-hole style: push one selected tool's hole type (off/single/span) and
+  diameter onto the rest of a multi-tool selection, without moving any existing point
+  (see [docs/combine-editor-copy-finger-hole-style.md](docs/combine-editor-copy-finger-hole-style.md))
 
 ## License
 
