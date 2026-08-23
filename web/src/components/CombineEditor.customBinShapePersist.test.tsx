@@ -13,7 +13,8 @@ vi.mock("../api", () => ({
   listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -73,6 +74,7 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([POCKET_PROFILE, CORRAL_PROFILE]);
+    mockPassthroughSaves(vi.mocked(saveBin));
   });
 
   afterEach(() => {
@@ -87,10 +89,11 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     const profileSelect = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
     await waitFor(() => expect(profileSelect.options.length).toBe(3)); // placeholder + 2 profiles
 
-    // 1 initial auto-pack + 1 auto-applied default profile (Pocket, first in
+    // 1 initial auto-pack + 1 for the mount-time auto-mint's own reload
+    // (adoptSavedBinIds) + 1 auto-applied default profile (Pocket, first in
     // the list) + 1 for this click.
     fireEvent.click(screen.getByText("Force bin size"));
-    await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(4));
 
     fireEvent.click(screen.getByText("Custom bin shape"));
     const removeCell = await screen.findByLabelText("Grid cell column 1, row 1");

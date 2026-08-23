@@ -15,7 +15,8 @@ vi.mock("../api", () => ({
   listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb, duplicateTool, listBinProfiles, saveBin } from "../api";
+import { combinePreview, combinePreviewGlb, duplicateTool, listBinProfiles, overwriteBin, saveBin } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 const STAMP: [number, number][] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
 
@@ -81,7 +82,7 @@ describe("CombineEditor Duplicate", () => {
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([]);
     vi.mocked(duplicateTool).mockReset();
-    vi.mocked(saveBin).mockReset();
+    mockPassthroughSaves(vi.mocked(saveBin), vi.mocked(overwriteBin));
   });
 
   afterEach(() => {
@@ -130,25 +131,19 @@ describe("CombineEditor Duplicate", () => {
 
   it("includes the duplicated tool's id when saving to the Bin Library", async () => {
     vi.mocked(duplicateTool).mockResolvedValue(DUPLICATED_TOOL);
-    vi.mocked(saveBin).mockResolvedValue({
-      id: "bin-1", label: "My Bin", created_ts: 0,
-      tool_ids: ["tool-a", "tool-b", "bintool-1-aaaaaa"],
-      tool_labels: ["Wrench", "Pliers", "Wrench (copy)"],
-      placements: [], overrides: [], overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
-      magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
-      force_gx: null, force_gy: null, removed_cells: null,
-      lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-      min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
-      tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
-      magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
-    });
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
+    // The mount-time auto-mint already called saveBin once, with just
+    // tool-a/tool-b — clear it so the assertion below is unambiguously
+    // about the *post-duplicate* save.
+    await waitFor(() => expect(saveBin).toHaveBeenCalled());
+    vi.mocked(saveBin).mockClear();
+
     fireEvent.click(screen.getByText("Wrench"));
     fireEvent.click(await screen.findByText("⧉ Duplicate"));
     await screen.findAllByText("Wrench (copy)");
 
-    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
+    fireEvent.click(screen.getByText("Save As…"));
     fireEvent.click(screen.getByText("Save As"));
 
     await waitFor(() => expect(saveBin).toHaveBeenCalled());

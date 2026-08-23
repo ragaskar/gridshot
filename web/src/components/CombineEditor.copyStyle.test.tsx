@@ -13,7 +13,8 @@ vi.mock("../api", () => ({
   listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 // 20x10 rect, perimeter 60 — same convention as CombineEditor.fingerHole.test.tsx:
 // bottom edge arc [0,20) (midpoint arc 10, world (0,-5)); arc 15 → world (5,-5).
@@ -117,6 +118,7 @@ describe("CombineEditor copy finger-hole style", () => {
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([]);
+    mockPassthroughSaves(vi.mocked(saveBin));
   });
 
   afterEach(() => cleanup());

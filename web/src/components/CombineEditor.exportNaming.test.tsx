@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { CombineEditor } from "./CombineEditor";
+import { CombineEditor, defaultBinName } from "./CombineEditor";
 import type { CombineToolOverride, Placement } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 vi.mock("../api", () => ({
   combinePreview: vi.fn(),
@@ -74,11 +75,13 @@ describe("CombineEditor export filenames", () => {
     cleanup();
   });
 
-  it("names a fresh (unsaved) export after the selected tools", async () => {
+  it("names a fresh export after the auto-minted bin's default name", async () => {
+    mockPassthroughSaves(vi.mocked(saveBin));
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
+    await waitFor(() => expect(saveBin).toHaveBeenCalled()); // mount-time auto-mint
 
     fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
 
@@ -86,7 +89,7 @@ describe("CombineEditor export filenames", () => {
       expect(combineLibrary).toHaveBeenCalled();
     });
     const filename = vi.mocked(combineLibrary).mock.calls[0][2];
-    expect(filename).toBe("Wrench, Pliers");
+    expect(filename).toBe(defaultBinName());
   });
 
   it("names a reopened saved bin's export after the bin, not the tools", async () => {
@@ -132,12 +135,13 @@ describe("CombineEditor export filenames", () => {
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
+    await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(1)); // mount-time auto-mint
 
-    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
+    fireEvent.click(screen.getByText("Save As…"));
     const nameInput = screen.getByLabelText("Bin Library entry name") as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: "Fresh Save" } });
     fireEvent.click(screen.getByText("Save As"));
-    await waitFor(() => expect(saveBin).toHaveBeenCalled());
+    await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByText("↓ Export bin (3MF)"));
     await waitFor(() => expect(combineLibrary).toHaveBeenCalled());
@@ -146,16 +150,18 @@ describe("CombineEditor export filenames", () => {
   });
 
   it("names a slice export the same way as the full bin export", async () => {
+    mockPassthroughSaves(vi.mocked(saveBin));
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
     await screen.findByText("Wrench");
+    await waitFor(() => expect(saveBin).toHaveBeenCalled()); // mount-time auto-mint
 
     fireEvent.click(screen.getByText("↓ Export slice (3MF)"));
     fireEvent.click(screen.getByText("Export"));
 
     await waitFor(() => expect(combineLibrarySlice).toHaveBeenCalled());
     const filename = vi.mocked(combineLibrarySlice).mock.calls[0][2];
-    expect(filename).toBe("Wrench, Pliers");
+    expect(filename).toBe(defaultBinName());
   });
 });

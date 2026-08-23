@@ -78,7 +78,7 @@ describe("CombineEditor Save then edit", () => {
     cleanup();
   });
 
-  it("keeps the arrangement and forked ids in sync after Save, so a later edit doesn't collapse placements", async () => {
+  it("keeps the arrangement and forked ids in sync after the mount-time mint, so a later edit doesn't collapse placements", async () => {
     vi.mocked(saveBin).mockResolvedValue({
       id: "bin-1", label: "My Bin", created_ts: 0,
       tool_ids: ["bintool-a", "bintool-b"],
@@ -99,8 +99,9 @@ describe("CombineEditor Save then edit", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
-    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
-    fireEvent.click(screen.getByText("Save As"));
+    // The mount-time auto-mint already forked tool-a/tool-b into
+    // bintool-a/bintool-b (see CombineEditor's mintInitialSave) — wait for
+    // that round-trip to land before editing.
     await waitFor(() => expect(saveBin).toHaveBeenCalled());
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;

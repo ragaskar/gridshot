@@ -14,6 +14,7 @@ vi.mock("../api", () => ({
 }));
 
 import { combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 // 20x10 rect, perimeter 60: edge0 (-10,-5)->(10,-5) arc[0,20] (bottom edge,
 // midpoint arc 10), edge1 (10,-5)->(10,5) arc[20,30] (right edge), edge2
@@ -132,6 +133,7 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([]);
+    mockPassthroughSaves(vi.mocked(saveBin));
   });
 
   afterEach(() => cleanup());
@@ -442,31 +444,14 @@ describe("CombineEditor finger-hole selection and position editing", () => {
   it("a finger-hole nudge is included in what gets sent to Save", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
+    await waitFor(() => expect(saveBin).toHaveBeenCalled()); // mount-time auto-mint
 
     fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
     fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
 
-    vi.mocked(saveBin).mockResolvedValue({
-      id: "bin-1", label: "My Bin", created_ts: 0,
-      tool_ids: ["bintool-a", "bintool-b"],
-      tool_labels: ["Wrench", "Pliers"],
-      placements: [
-        { id: "bintool-a", tx: 0, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
-        { id: "bintool-b", tx: 40, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
-      ],
-      overrides: [],
-      overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
-      magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
-      force_gx: null, force_gy: null, removed_cells: null,
-      lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
-      min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
-      tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
-      magnet_hole_inset_from_edge_mm: null, applied_profile_id: null,
-    });
-
-    fireEvent.click(screen.getByText("💾 Save to Bin Library"));
+    fireEvent.click(screen.getByText("Save As…"));
     fireEvent.click(screen.getByText("Save As"));
-    await waitFor(() => expect(saveBin).toHaveBeenCalled());
+    await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(2));
 
     const [, , options] = vi.mocked(saveBin).mock.calls.at(-1)!;
     const overrideA = options?.overrides?.find((o) => o.id === "tool-a");

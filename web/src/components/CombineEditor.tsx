@@ -129,8 +129,10 @@ function mergeServerTools(
   });
 }
 
-/** "Combined Bin YYYY-MM-DD" using the browser's local date (not UTC). */
-function defaultBinName(): string {
+/** "Combined Bin YYYY-MM-DD" using the browser's local date (not UTC).
+ *  Exported so tests can predict the name a fresh combine session's
+ *  mount-time auto-mint (`mintInitialSave`) will use. */
+export function defaultBinName(): string {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -318,10 +320,10 @@ export function CombineEditor({
 }) {
   const binProfiles = useBinProfiles();
   // The `ids` prop is only this editor's *starting* set — Duplicate appends
-  // to this, and a successful Save/Save As adopts the (possibly just-forked)
-  // ids the server returns, so a second save in the session doesn't re-fork
-  // still-raw ids the client is holding locally (see saveToBinLibrary/
-  // saveInPlace below).
+  // to this, and a successful mint/Save As adopts the (possibly just-forked)
+  // ids the server returns, so a later save in the session doesn't re-fork
+  // still-raw ids the client is holding locally (see mintInitialSave/
+  // saveToBinLibrary below).
   const [toolIds, setToolIds] = useState<string[]>(ids);
   const [meta, setMeta] = useState<CombinePreview | null>(null);
   const [tools, setTools] = useState<CombineTool[]>([]);
@@ -364,10 +366,10 @@ export function CombineEditor({
   // races that load with a stale/empty placements array.
   const [autoPacked, setAutoPacked] = useState(false);
   const defaultProfileApplied = useRef(false);
-  // The Bin Library entry this editor is reopened from, if any — lets
-  // "Save" overwrite it in place instead of always creating a new entry
-  // ("Save As"). Updated once a fresh combine is saved for the first time,
-  // so a subsequent Save overwrites *that* new entry.
+  // The Bin Library entry this session is attached to — either reopened, or
+  // (for a fresh session) minted immediately at mount by mintInitialSave.
+  // Every edit from then on autosaves here; "Save As…" attaches to a new
+  // entry instead, forked off the current state.
   const [savedBinId, setSavedBinId] = useState<string | null>(initial?.id ?? null);
   const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
@@ -412,6 +414,9 @@ export function CombineEditor({
   const fingerDrag = useRef<{ toolId: string; pointIndex: 0 | 1; moved: boolean } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
+  // Non-null exactly while a debounced autosave is scheduled but hasn't
+  // fired yet — Close flushes it immediately instead of losing the edit.
+  const pendingAutosaveTimer = useRef<number | null>(null);
   const depthCheckboxRef = useRef<HTMLInputElement>(null);
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
@@ -574,7 +579,10 @@ export function CombineEditor({
         undefined, undefined, undefined, undefined, undefined, toolIds, initial.liveGrid,
       );
     } else {
-      void load().then(() => setAutoPacked(true)); // auto-pack on open
+      void load().then(async (freshTools) => {
+        setAutoPacked(true); // auto-pack on open
+        if (freshTools) await mintInitialSave(freshTools);
+      });
     }
   }, []); // eslint-disable-line
 
@@ -913,6 +921,38 @@ export function CombineEditor({
     previewSequence.current += 1;
     if (glbUrlRef.current) URL.revokeObjectURL(glbUrlRef.current);
   }, []);
+
+  const AUTOSAVE_DEBOUNCE_MS = 1500;
+  // Persists the recipe automatically once this session has its own bin
+  // (see mintInitialSave) — same debounced-settle shape as the GLB preview
+  // effect above, and the same "everything that defines the saved recipe"
+  // dependency list, just with its own (longer) debounce and a save instead
+  // of a preview rebuild. Deliberately doesn't touch `tools`/`setTools` at
+  // all, so it can never interact with undo/redo (see `autoSave` above).
+  useEffect(() => {
+    if (!savedBinId) return;
+    const timer = window.setTimeout(() => {
+      pendingAutosaveTimer.current = null;
+      void autoSave();
+    }, AUTOSAVE_DEBOUNCE_MS);
+    pendingAutosaveTimer.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
+    };
+  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells]); // eslint-disable-line
+
+  /** Close never silently drops a still-debouncing autosave — flush it right
+   *  now (the request survives this component unmounting; only the local
+   *  success/error UI feedback wouldn't be seen, which is fine on Close). */
+  function handleClose() {
+    if (pendingAutosaveTimer.current !== null) {
+      window.clearTimeout(pendingAutosaveTimer.current);
+      pendingAutosaveTimer.current = null;
+      void autoSave();
+    }
+    onClose();
+  }
 
   function toData(e: React.PointerEvent): Pt {
     const svg = svgRef.current!;
@@ -1495,11 +1535,11 @@ export function CombineEditor({
     }
   }
 
-  function saveOptions() {
+  function saveOptions(toolsOverride: CombineTool[] = tools) {
     const force = forceSize && forceGx && forceGy;
     return {
-      placements: placementsFor(tools),
-      overrides: overridesFor(tools),
+      placements: placementsFor(toolsOverride),
+      overrides: overridesFor(toolsOverride),
       overallHeight,
       lip,
       fillHeightPct, liveGrid,
@@ -1570,23 +1610,39 @@ export function CombineEditor({
     }
   }
 
-  /** "Save": overwrites the Bin Library entry this editor was reopened from
-   *  (or already saved once this session), keeping its id/name. Only
-   *  reachable once `savedBinId` is set. */
-  async function saveInPlace() {
-    if (!savedBinId) return;
-    setSaveBusy(true);
-    setSaveErr(null);
+  /** Mints this fresh combine's own Bin Library entry immediately at mount —
+   *  every new session (never a reopened one; see the mount effect below)
+   *  always has its own bin-tool copies from the start, rather than only
+   *  forking on an explicit first Save. `freshTools` is the auto-pack's own
+   *  result, passed explicitly rather than read off the `tools` closure —
+   *  this runs inside that same `load()`'s `.then()`, before React has
+   *  re-rendered with the auto-pack's `setTools`, so the closure's `tools`
+   *  is still the pre-auto-pack `[]`. */
+  async function mintInitialSave(freshTools: CombineTool[]) {
     try {
-      const label = savedLabel || defaultBinName();
-      const saved = await overwriteBin(savedBinId, label, toolIds, saveOptions());
+      const label = defaultBinName();
+      const saved = await saveBin(label, toolIds, saveOptions(freshTools));
+      setSavedBinId(saved.id);
+      setSavedLabel(label);
       await adoptSavedBinIds(saved);
+    } catch (e) {
+      setSaveErr((e as Error).message);
+    }
+  }
+
+  /** Persists the current recipe to the bin this session is already attached
+   *  to (`savedBinId`) — called from the debounced autosave effect below, and
+   *  flushed immediately on Close if one is still pending. Never re-forks or
+   *  reloads: once `toolIds` are bin-tool ids, the server's own fork step is
+   *  a no-op, so nothing about local state could change from this response. */
+  async function autoSave() {
+    if (!savedBinId) return;
+    try {
+      await overwriteBin(savedBinId, savedLabel ?? defaultBinName(), toolIds, saveOptions());
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
       setSaveErr((e as Error).message);
-    } finally {
-      setSaveBusy(false);
     }
   }
 
@@ -2479,16 +2535,9 @@ export function CombineEditor({
             </div>
           )}
           {savedBinId ? (
-            <div className="grid grid-cols-2 gap-1">
+            <>
               <button
-                className="btn text-xs"
-                disabled={busy || saveBusy || !tools.length || Boolean(err)}
-                onClick={() => void saveInPlace()}
-              >
-                💾 Save
-              </button>
-              <button
-                className="btn btn-ghost text-xs"
+                className="btn w-full text-xs"
                 disabled={busy || !tools.length || Boolean(err)}
                 onClick={() => {
                   setSaveName(savedLabel ?? defaultBinName());
@@ -2498,19 +2547,26 @@ export function CombineEditor({
               >
                 Save As…
               </button>
-            </div>
+              {saveErr && !saveDialogOpen && <p className="mt-1 text-orange">{saveErr}</p>}
+            </>
           ) : (
-            <button
-              className="btn w-full text-xs"
-              disabled={busy || !tools.length || Boolean(err)}
-              onClick={() => {
-                setSaveName(defaultBinName());
-                setSaveErr(null);
-                setSaveDialogOpen(true);
-              }}
-            >
-              💾 Save to Bin Library
-            </button>
+            <div className="font-mono text-[10px]">
+              <p className="text-muted">
+                {saveErr ? "Couldn't create this bin's Bin Library entry." : "Creating this bin's Bin Library entry…"}
+              </p>
+              {saveErr && (
+                <>
+                  <p className="mt-1 text-orange">{saveErr}</p>
+                  <button
+                    className="btn w-full text-xs mt-1"
+                    disabled={busy || !tools.length}
+                    onClick={() => void mintInitialSave(tools)}
+                  >
+                    ⟳ Retry
+                  </button>
+                </>
+              )}
+            </div>
           )}
           {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
           {saveDialogOpen && (
@@ -2545,7 +2601,7 @@ export function CombineEditor({
               </div>
             </div>
           )}
-          <button className="btn w-full" onClick={onClose}>Close</button>
+          <button className="btn w-full" onClick={handleClose}>Close</button>
         </div>
       </div>
     </div>

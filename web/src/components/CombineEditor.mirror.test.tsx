@@ -13,7 +13,8 @@ vi.mock("../api", () => ({
   listBinProfiles: vi.fn(),
 }));
 
-import { combinePreview, combinePreviewGlb, listBinProfiles } from "../api";
+import { combinePreview, combinePreviewGlb, listBinProfiles, saveBin } from "../api";
+import { mockPassthroughSaves } from "./combineTestSupport";
 
 // Asymmetric about both axes so mirroring is detectable point-by-point
 // (a symmetric rectangle would just permute onto itself).
@@ -78,6 +79,7 @@ describe("CombineEditor mirror toggle", () => {
     );
     vi.mocked(combinePreviewGlb).mockResolvedValue(new Blob());
     vi.mocked(listBinProfiles).mockResolvedValue([]);
+    mockPassthroughSaves(vi.mocked(saveBin));
   });
 
   afterEach(() => cleanup());
