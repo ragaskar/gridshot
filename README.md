@@ -419,6 +419,15 @@ Features added on top of the original public release, newest last:
   height scaled by the given percentage, everywhere outside each tool's own wall and
   any `live_grid` socket cell — instead of just falling back to `0`'s geometry (see
   [docs/bin-profiles.md](docs/bin-profiles.md))
+- Mirror horizontal/mirror vertical toggle for a single selected tool in the multi-tool
+  combine editor — a genuinely different transform from rotation, since a mirror can't
+  be expressed as any rotation angle (see
+  [docs/combine-editor-mirror.md](docs/combine-editor-mirror.md))
+- Finger-hole position is now free-form: click a hole in Arrange 2D to select it, then
+  drag it anywhere on the tool's own outline or nudge it with the arrow keys (Up/Down
+  jump it across to the opposite side) — replacing the old "Switch sides" toggle and
+  offset slider/number field (see
+  [docs/combine-finger-hole-position.md](docs/combine-finger-hole-position.md))
 
 ## License
 
