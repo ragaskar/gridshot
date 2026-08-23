@@ -114,6 +114,7 @@ def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
         pocket_depth_mm=source.pocket_depth_mm,
         round_tool=source.round_tool,
         finger_hole=source.finger_hole,
+        finger_hole_arc_mm=source.finger_hole_arc_mm,
         finger_hole_side_flip=source.finger_hole_side_flip,
         finger_hole_offset_mm=source.finger_hole_offset_mm,
         lip=source.lip,

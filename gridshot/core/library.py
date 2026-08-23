@@ -112,8 +112,13 @@ class LibraryTool(BaseModel):
     pocket_depth_mm: float | None = None
     round_tool: bool = False  # domed/barrel → auto depth off ~2× widest-outline height
     finger_hole: bool = True  # full-depth pockets need a scallop to lift the tool out
-    # Bin-time-only plumbing for the combine editor's finger-hole side/offset
+    # Bin-time-only plumbing for the combine editor's finger-hole position
     # override (see CombineToolOverride) — no library-page UI sets these.
+    # `finger_hole_arc_mm` (arc-length along the pocket outline) is the
+    # current model; `None` falls back to the deprecated `_side_flip`/
+    # `_offset_mm` bbox-edge model, kept only so an existing tool/bin's hole
+    # keeps its exact position until it's next explicitly repositioned.
+    finger_hole_arc_mm: float | None = None
     finger_hole_side_flip: bool = False
     finger_hole_offset_mm: float = 0.0
     lip: bool = True
@@ -284,6 +289,7 @@ def derive_tool_spec(
             overall_height_mm=overall_height_mm,
             lip=tool.lip if lip is None else lip,
             finger_hole=tool.finger_hole,
+            finger_hole_arc_mm=tool.finger_hole_arc_mm,
             finger_hole_side_flip=tool.finger_hole_side_flip,
             finger_hole_offset_mm=tool.finger_hole_offset_mm,
             round_tool=tool.round_tool,

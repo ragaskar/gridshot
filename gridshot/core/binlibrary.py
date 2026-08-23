@@ -40,6 +40,7 @@ class SavedBinOverride(BaseModel):
     id: str
     finger_hole: Optional[bool] = None
     clearance_mm: Optional[float] = None
+    finger_hole_arc_mm: Optional[float] = None
     finger_hole_side_flip: Optional[bool] = None
     finger_hole_offset_mm: Optional[float] = None
     locked_rotation_deg: Optional[float] = None

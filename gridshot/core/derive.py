@@ -69,6 +69,17 @@ class BinSettings:
     overall_height_mm: float | None = None
     lip: bool = True
     finger_hole: bool = False
+    # `finger_hole_arc_mm` is the current position model: arc-length in mm
+    # along the pocket outline, measured from its first vertex. `None` means
+    # "not yet explicitly placed" and falls back to `finger_hole_side_flip`/
+    # `finger_hole_offset_mm` — the discrete bbox-edge model this replaced —
+    # which is otherwise unused by new saves. Keeping the old fields and the
+    # legacy placement code lets an existing saved tool/bin's hole resolve to
+    # the exact same point it had before, without persisting raw coordinates
+    # anywhere: the first time it's touched (dragged/nudged), the frontend
+    # commits an explicit `finger_hole_arc_mm` and the legacy fields stop
+    # being consulted for that tool.
+    finger_hole_arc_mm: float | None = None
     finger_hole_side_flip: bool = False
     finger_hole_offset_mm: float = 0.0
     round_tool: bool = False
@@ -99,8 +110,11 @@ class DerivedBinSpec:
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     finger_holes: list[tuple[float, float, float]] = field(default_factory=list)
-    finger_hole_side: str | None = None
-    finger_hole_offset_max_mm: float = 0.0
+    # The arc-length actually used to place `finger_holes[0]` — concrete even
+    # when the request left `BinSettings.finger_hole_arc_mm` unset (the
+    # legacy-fallback point's own arc-length), so a caller always has a real
+    # position to seed dragging/nudging from.
+    finger_hole_arc_mm: float = 0.0
     reserved_cells: list[tuple[float, float]] = field(default_factory=list)
     available_cells: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -160,6 +174,75 @@ def _align_for_bin(shape, wall: float):
 _MIRROR_SIDE = {"bottom": "top", "top": "bottom", "left": "right", "right": "left"}
 
 
+def _ring_points(shape) -> list[tuple[float, float]]:
+    """A shapely polygon's exterior ring as a plain point list, without the
+    closing duplicate — the form every arc-length helper below walks."""
+    coords = [(float(x), float(y)) for x, y in shape.exterior.coords]
+    if len(coords) > 1 and coords[0] == coords[-1]:
+        coords = coords[:-1]
+    return coords
+
+
+def _ring_length(ring: list[tuple[float, float]]) -> float:
+    if len(ring) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(len(ring)):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % len(ring)]
+        total += math.hypot(x1 - x0, y1 - y0)
+    return total
+
+
+def _point_at_arc_length(ring: list[tuple[float, float]], arc_mm: float) -> tuple[float, float]:
+    """Walk `ring` from its first vertex for `arc_mm` and interpolate. Callers
+    wrap `arc_mm` into `[0, _ring_length(ring))` first; a value outside that
+    range (or a degenerate ring) resolves to the first vertex."""
+    if not ring:
+        return (0.0, 0.0)
+    if len(ring) < 2 or arc_mm <= 0:
+        return ring[0]
+    remaining = arc_mm
+    for i in range(len(ring)):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % len(ring)]
+        seg_len = math.hypot(x1 - x0, y1 - y0)
+        if seg_len <= 1e-12:
+            continue
+        if remaining <= seg_len:
+            t = remaining / seg_len
+            return (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
+        remaining -= seg_len
+    return ring[0]
+
+
+def _arc_length_at_point(ring: list[tuple[float, float]], target: tuple[float, float]) -> float:
+    """Inverse of `_point_at_arc_length`: the arc-length of whichever point on
+    `ring` is nearest `target` (its projection onto the nearest edge)."""
+    if len(ring) < 2:
+        return 0.0
+    tx, ty = target
+    best_dist: float | None = None
+    best_arc = 0.0
+    traveled = 0.0
+    for i in range(len(ring)):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % len(ring)]
+        dx, dy = x1 - x0, y1 - y0
+        seg_len2 = dx * dx + dy * dy
+        if seg_len2 <= 1e-24:
+            continue
+        seg_len = math.sqrt(seg_len2)
+        t = max(0.0, min(1.0, ((tx - x0) * dx + (ty - y0) * dy) / seg_len2))
+        px, py = x0 + dx * t, y0 + dy * t
+        dist = math.hypot(tx - px, ty - py)
+        if best_dist is None or dist < best_dist:
+            best_dist = dist
+            best_arc = traveled + t * seg_len
+        traveled += seg_len
+    return best_arc
+
+
 def _side_anchor(bounds: tuple[float, float, float, float], side: str) -> Point:
     """The bbox edge-midpoint for one of the four named finger-hole sides."""
     minx, miny, maxx, maxy = bounds
@@ -170,6 +253,70 @@ def _side_anchor(bounds: tuple[float, float, float, float], side: str) -> Point:
     if side == "left":
         return Point(minx, (miny + maxy) / 2)
     return Point(maxx, (miny + maxy) / 2)  # "right"
+
+
+def _legacy_finger_hole_point(pocket_shape, wall: float, settings: "BinSettings") -> Point:
+    """Deprecated bbox-edge-snap placement, kept only so an existing saved
+    tool/bin whose finger hole was never explicitly repositioned (no
+    `finger_hole_arc_mm`) resolves to the exact point it always has —
+    `derive_bin_spec` converts this point to its equivalent arc-length so new
+    saves go through `finger_hole_arc_mm` from then on. See `BinSettings`."""
+    base_grid = grid_mod.auto_grid(contour_mod.from_shapely(pocket_shape), wall=wall)
+    minx, miny, maxx, maxy = pocket_shape.bounds
+    anchors = [
+        pocket_shape.representative_point(),
+        Point((minx + maxx) / 2, miny),
+        Point((minx + maxx) / 2, maxy),
+        Point(minx, (miny + maxy) / 2),
+        Point(maxx, (miny + maxy) / 2),
+    ]
+    point = None
+    for anchor in anchors:
+        candidate = nearest_points(pocket_shape.exterior, anchor)[0]
+        candidate_shape = pocket_shape.union(candidate.buffer(10.0))
+        candidate_grid = grid_mod.auto_grid(
+            contour_mod.from_shapely(candidate_shape), wall=wall
+        )
+        if point is None:
+            point = candidate
+        if candidate_grid == base_grid:
+            point = candidate
+            break
+
+    bbox_w, bbox_h = maxx - minx, maxy - miny
+    edge_gaps = {
+        "bottom": point.y - miny,
+        "top": maxy - point.y,
+        "left": point.x - minx,
+        "right": maxx - point.x,
+    }
+    nearest_side = min(edge_gaps, key=edge_gaps.get)
+    near_threshold = max(
+        1.0,
+        0.25 * (bbox_w if nearest_side in ("bottom", "top") else bbox_h),
+    )
+    chosen_side = nearest_side if edge_gaps[nearest_side] <= near_threshold else "center"
+
+    if (
+        settings.finger_hole_side_flip or settings.finger_hole_offset_mm
+    ) and chosen_side != "center":
+        side = (
+            _MIRROR_SIDE[chosen_side]
+            if settings.finger_hole_side_flip
+            else chosen_side
+        )
+        offset_anchor = _side_anchor(pocket_shape.bounds, side)
+        if side in ("bottom", "top"):
+            offset_anchor = Point(
+                offset_anchor.x + settings.finger_hole_offset_mm, offset_anchor.y
+            )
+        else:
+            offset_anchor = Point(
+                offset_anchor.x, offset_anchor.y + settings.finger_hole_offset_mm
+            )
+        point = nearest_points(pocket_shape.exterior, offset_anchor)[0]
+
+    return point
 
 
 def _derivation_key(
@@ -214,6 +361,8 @@ def derive_bin_spec(
         raise ValueError("clearance must be >= 0")
     if not math.isfinite(settings.finger_hole_offset_mm):
         raise ValueError("finger hole offset must be finite")
+    if settings.finger_hole_arc_mm is not None and not math.isfinite(settings.finger_hole_arc_mm):
+        raise ValueError("finger hole arc length must be finite")
     if not (0.0 <= settings.fill_height_pct <= 100.0):
         raise ValueError(
             f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
@@ -297,79 +446,19 @@ def derive_bin_spec(
 
     fingers: list[tuple[float, float, float]] = []
     sizing = pocket_shape
-    finger_hole_side: str | None = None
-    finger_hole_offset_max_mm = 0.0
+    finger_hole_arc_mm = 0.0
     if settings.finger_hole:
-        base_grid = grid_mod.auto_grid(
-            contour_mod.from_shapely(pocket_shape), wall=wall
-        )
-        minx, miny, maxx, maxy = pocket_shape.bounds
-        anchors = [
-            pocket_shape.representative_point(),
-            Point((minx + maxx) / 2, miny),
-            Point((minx + maxx) / 2, maxy),
-            Point(minx, (miny + maxy) / 2),
-            Point(maxx, (miny + maxy) / 2),
-        ]
-        placed = None
-        for anchor in anchors:
-            point = nearest_points(pocket_shape.exterior, anchor)[0]
-            candidate_shape = pocket_shape.union(point.buffer(10.0))
-            candidate_grid = grid_mod.auto_grid(
-                contour_mod.from_shapely(candidate_shape), wall=wall
-            )
-            if placed is None:
-                placed = (point, candidate_shape)
-            if candidate_grid == base_grid:
-                placed = (point, candidate_shape)
-                break
-        point, sizing = placed
+        ring = _ring_points(pocket_shape)
+        total_len = _ring_length(ring)
+        if settings.finger_hole_arc_mm is not None:
+            arc = settings.finger_hole_arc_mm % total_len if total_len > 1e-9 else 0.0
+            point = Point(_point_at_arc_length(ring, arc))
+        else:
+            point = _legacy_finger_hole_point(pocket_shape, wall, settings)
+            arc = _arc_length_at_point(ring, (point.x, point.y)) if total_len > 1e-9 else 0.0
 
-        # Classify the winning point by which bbox edge it actually sits
-        # nearest to — independent of which anchor produced it, since the
-        # interior/representative-point anchor often snaps onto a real edge
-        # too. Only a point that isn't close to any edge (e.g. deep in a
-        # concave notch) is left as "center", where flip/offset don't apply.
-        bbox_w, bbox_h = maxx - minx, maxy - miny
-        edge_gaps = {
-            "bottom": point.y - miny,
-            "top": maxy - point.y,
-            "left": point.x - minx,
-            "right": maxx - point.x,
-        }
-        nearest_side = min(edge_gaps, key=edge_gaps.get)
-        near_threshold = max(
-            1.0,
-            0.25 * (bbox_w if nearest_side in ("bottom", "top") else bbox_h),
-        )
-        chosen_side = nearest_side if edge_gaps[nearest_side] <= near_threshold else "center"
-
-        if (
-            settings.finger_hole_side_flip or settings.finger_hole_offset_mm
-        ) and chosen_side != "center":
-            side = (
-                _MIRROR_SIDE[chosen_side]
-                if settings.finger_hole_side_flip
-                else chosen_side
-            )
-            offset_anchor = _side_anchor(pocket_shape.bounds, side)
-            if side in ("bottom", "top"):
-                offset_anchor = Point(
-                    offset_anchor.x + settings.finger_hole_offset_mm, offset_anchor.y
-                )
-            else:
-                offset_anchor = Point(
-                    offset_anchor.x, offset_anchor.y + settings.finger_hole_offset_mm
-                )
-            point = nearest_points(pocket_shape.exterior, offset_anchor)[0]
-            sizing = pocket_shape.union(point.buffer(10.0))
-            chosen_side = side
-
-        finger_hole_side = chosen_side
-        if chosen_side != "center":
-            minx, miny, maxx, maxy = pocket_shape.bounds
-            edge_length = (maxx - minx) if chosen_side in ("bottom", "top") else (maxy - miny)
-            finger_hole_offset_max_mm = max(0.0, edge_length / 2)
+        sizing = pocket_shape.union(point.buffer(10.0))
+        finger_hole_arc_mm = arc
         fingers.append((float(point.x), float(point.y), 20.0))
 
     # Centre the complete cut envelope, including the optional scallop.
@@ -443,8 +532,7 @@ def derive_bin_spec(
         magnet_hole_diameter_mm=settings.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=settings.magnet_hole_depth_mm,
         finger_holes=fingers,
-        finger_hole_side=finger_hole_side,
-        finger_hole_offset_max_mm=finger_hole_offset_max_mm,
+        finger_hole_arc_mm=finger_hole_arc_mm,
         reserved_cells=reserved_cells,
         available_cells=available_cells,
         warnings=warnings,
