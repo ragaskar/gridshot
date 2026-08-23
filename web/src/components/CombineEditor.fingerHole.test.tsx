@@ -78,6 +78,12 @@ function binRect(): SVGRectElement {
 function arrangeDiv(): HTMLElement {
   return document.querySelector('div[tabindex="0"]')!;
 }
+function allFingerCircles(): SVGCircleElement[] {
+  return Array.from(document.querySelectorAll("circle"));
+}
+function undoButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement;
+}
 
 describe("CombineEditor finger-hole selection and position editing", () => {
   beforeAll(() => {
@@ -320,6 +326,40 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     // tool-single's one point now shares the reference's P1 world x.
     const target = lobes[2];
     expect(Number(target.getAttribute("cx"))).toBeCloseTo(refLobesBefore[0].cx, 0);
+  });
+
+  it("nudging one tool's finger hole, then another's within the coalescing window, undoes only the second one", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-single"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    // tool-a's hole: world (0, -5).
+    fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+    const aAfterFirstNudge = {
+      cx: Number(allFingerCircles()[0].getAttribute("cx")),
+      cy: Number(allFingerCircles()[0].getAttribute("cy")),
+    };
+
+    // Immediately (same coalescing window), select and nudge tool-single's
+    // hole instead — world (8, 15) (tx=8, ty=20; local point (0, -5)).
+    fireEvent.pointerDown(allFingerCircles()[1], { clientX: 8, clientY: 15, pointerId: 2 });
+    const bBefore = {
+      cx: Number(allFingerCircles()[1].getAttribute("cx")),
+      cy: Number(allFingerCircles()[1].getAttribute("cy")),
+    };
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+    const bAfter = {
+      cx: Number(allFingerCircles()[1].getAttribute("cx")),
+      cy: Number(allFingerCircles()[1].getAttribute("cy")),
+    };
+    expect(bAfter.cx).not.toBeCloseTo(bBefore.cx);
+
+    fireEvent.click(undoButton());
+
+    // A single undo should only revert tool-single's nudge (the most recent
+    // discrete action) — tool-a's earlier, already-committed nudge must survive.
+    expect(Number(allFingerCircles()[1].getAttribute("cx"))).toBeCloseTo(bBefore.cx);
+    expect(Number(allFingerCircles()[0].getAttribute("cx"))).toBeCloseTo(aAfterFirstNudge.cx);
   });
 
   it("Shift+ArrowUp is an explicit no-op, even when a plain ArrowUp would move the hole", async () => {

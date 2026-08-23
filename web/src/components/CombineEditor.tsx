@@ -560,6 +560,13 @@ export function CombineEditor({
   const [redoStack, setRedoStack] = useState<Snapshot[]>([]);
   const burstActive = useRef(false);
   const burstTimer = useRef<number | null>(null);
+  // What the current burst is *of* — a tool's rotation, a specific finger
+  // hole's arc position, etc. A burst only continues coalescing into the
+  // same undo step while every call names the same key; a different key
+  // (nudging a different tool, or a different finger hole) ends the
+  // previous burst and starts its own step instead, even if it lands inside
+  // the previous burst's coalescing window.
+  const burstKey = useRef<string | null>(null);
 
   function snapshot(): Snapshot {
     return {
@@ -592,15 +599,23 @@ export function CombineEditor({
   /** Same as `pushSnapshot`, but for a *burst* of rapid-fire actions (nudge
    *  keys, fine-rotate clicks, typing a rotation value) — pushes once at the
    *  start of the burst, then holds off until `NUDGE_BURST_MS` after the
-   *  last call, so undo reverts the whole burst in one step. */
-  function pushSnapshotCoalesced() {
-    if (!burstActive.current) {
+   *  last call, so undo reverts the whole burst in one step.
+   *
+   *  `key` scopes the burst to what's actually being changed (e.g.
+   *  `rotate:${toolId}`, `fingerArc:${toolId}:${pointIndex}`): a call with a
+   *  different key always starts a fresh step, even inside the previous
+   *  burst's coalescing window, so nudging tool A then quickly nudging tool
+   *  B's finger hole doesn't silently merge B's change into A's undo step. */
+  function pushSnapshotCoalesced(key: string) {
+    if (!burstActive.current || burstKey.current !== key) {
       pushSnapshot();
       burstActive.current = true;
+      burstKey.current = key;
     }
     if (burstTimer.current !== null) window.clearTimeout(burstTimer.current);
     burstTimer.current = window.setTimeout(() => {
       burstActive.current = false;
+      burstKey.current = null;
       burstTimer.current = null;
     }, NUDGE_BURST_MS);
   }
@@ -1038,7 +1053,7 @@ export function CombineEditor({
   }
   function rotate(deg: number) {
     if (!selectedTool) return;
-    pushSnapshotCoalesced();
+    pushSnapshotCoalesced(`rotate:${selectedTool.id}`);
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: t.rot + deg } : t)));
   }
@@ -1100,7 +1115,7 @@ export function CombineEditor({
   }
   function nudgeSelected(dx: number, dy: number) {
     if (!selectedIds.size) return;
-    pushSnapshotCoalesced();
+    pushSnapshotCoalesced(`nudge:${selectionKey}`);
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
@@ -1136,7 +1151,7 @@ export function CombineEditor({
       e.preventDefault();
       const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
       const current = selectedFingerPointIndex === 1 ? tool.finger_hole_arc2_mm : tool.finger_hole_arc_mm;
-      pushSnapshotCoalesced();
+      pushSnapshotCoalesced(`fingerArc:${tool.id}:${selectedFingerPointIndex}`);
       commitFingerHoleArc(tool.id, current + (e.key === "ArrowLeft" ? -step : step), selectedFingerPointIndex);
       return;
     }
@@ -1151,7 +1166,7 @@ export function CombineEditor({
   }
   function setRotation(deg: number) {
     if (!selectedTool || !Number.isFinite(deg)) return;
-    pushSnapshotCoalesced();
+    pushSnapshotCoalesced(`rotate:${selectedTool.id}`);
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: deg } : t)));
   }
@@ -1870,7 +1885,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={1} min={1}
                     value={forceGx}
-                    onChange={(event) => { pushSnapshotCoalesced(); setForceGx(event.target.value); }}
+                    onChange={(event) => { pushSnapshotCoalesced("forceGx"); setForceGx(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1881,7 +1896,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={1} min={1}
                     value={forceGy}
-                    onChange={(event) => { pushSnapshotCoalesced(); setForceGy(event.target.value); }}
+                    onChange={(event) => { pushSnapshotCoalesced("forceGy"); setForceGy(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1955,7 +1970,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0.1}
                     value={magnetHoleDiameter}
-                    onChange={(event) => { pushSnapshotCoalesced(); setMagnetHoleDiameter(event.target.value); }}
+                    onChange={(event) => { pushSnapshotCoalesced("magnetHoleDiameter"); setMagnetHoleDiameter(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
@@ -1966,7 +1981,7 @@ export function CombineEditor({
                     className="mono-input min-w-0 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0.1} max={4.7}
                     value={magnetHoleDepth}
-                    onChange={(event) => { pushSnapshotCoalesced(); setMagnetHoleDepth(event.target.value); }}
+                    onChange={(event) => { pushSnapshotCoalesced("magnetHoleDepth"); setMagnetHoleDepth(event.target.value); }}
                     ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
                   />
                 </label>
