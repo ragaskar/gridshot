@@ -975,6 +975,8 @@ export interface Placement {
   tx: number;
   ty: number;
   rot: number;
+  mirror_x: boolean;
+  mirror_y: boolean;
 }
 
 export interface CombineToolOverride {

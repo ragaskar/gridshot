@@ -32,7 +32,7 @@ function baseTool(id: string, label: string, tx: number) {
     finger_holes: [] as [number, number, number][],
     derivation_key: `${id}-key`,
     stamp: STAMP,
-    tx, ty: 0, rot: 0,
+    tx, ty: 0, rot: 0, mirror_x: false, mirror_y: false,
   };
 }
 

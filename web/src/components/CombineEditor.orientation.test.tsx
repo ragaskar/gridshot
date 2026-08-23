@@ -30,7 +30,7 @@ function baseTool(id: string, label: string, tx: number, ty: number) {
     finger_holes: [] as [number, number, number][],
     derivation_key: `${id}-key`,
     stamp: STAMP,
-    tx, ty, rot: 0,
+    tx, ty, rot: 0, mirror_x: false, mirror_y: false,
   };
 }
 

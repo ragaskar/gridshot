@@ -32,7 +32,7 @@ function baseTool(id: string, label: string, tx: number, ty: number) {
     finger_holes: [] as [number, number, number][],
     derivation_key: `${id}-key`,
     stamp: STAMP,
-    tx, ty, rot: 0,
+    tx, ty, rot: 0, mirror_x: false, mirror_y: false,
   };
 }
 
@@ -83,8 +83,8 @@ describe("CombineEditor Save then edit", () => {
       tool_ids: ["bintool-a", "bintool-b"],
       tool_labels: ["Wrench", "Pliers"],
       placements: [
-        { id: "bintool-a", tx: -20, ty: 7, rot: 0 },
-        { id: "bintool-b", tx: 20, ty: -7, rot: 0 },
+        { id: "bintool-a", tx: -20, ty: 7, rot: 0, mirror_x: false, mirror_y: false },
+        { id: "bintool-b", tx: 20, ty: -7, rot: 0, mirror_x: false, mirror_y: false },
       ],
       overrides: [],
       overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,

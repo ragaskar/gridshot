@@ -2429,6 +2429,8 @@ class Placement(BaseModel):
     tx: float
     ty: float
     rot: float = 0.0
+    mirror_x: bool = False
+    mirror_y: bool = False
 
 
 class CombineToolOverride(BaseModel):
@@ -2504,11 +2506,22 @@ def _combine_layout(req: "CombineRequest") -> dict:
     envelope, its effective settings, and a placement (auto-packed, or from the
     request for manual arrange), all centred in the sized gridfinity footprint."""
     from shapely.affinity import rotate as srotate
+    from shapely.affinity import scale as sscale
     from shapely.affinity import translate as stranslate
     from shapely.geometry import Point, box
     from shapely.ops import unary_union
 
     from gridshot.core import binpack as binpack_mod
+
+    def _mirror_local(shape, mirror_x: bool, mirror_y: bool):
+        """Flip a stamp-frame shape (centroid at the origin) across its own
+        local axes before rotation — the local-frame step of the shared
+        mirror-then-rotate-then-translate placement pipeline."""
+        if not mirror_x and not mirror_y:
+            return shape
+        return sscale(
+            shape, xfact=-1 if mirror_x else 1, yfact=-1 if mirror_y else 1, origin=(0, 0)
+        )
 
     printer = bench_mod.load_profile() or bench_mod.default_profile()
     override_map = {item.id: item for item in req.overrides or []}
@@ -2633,8 +2646,11 @@ def _combine_layout(req: "CombineRequest") -> dict:
     if req.placements:  # manual arrange → honour the given transforms
         pmap = {p.id: p for p in req.placements}
         tfs = [
-            {"tx": pmap[t.id].tx, "ty": pmap[t.id].ty, "rot": pmap[t.id].rot}
-            if t.id in pmap else {"tx": 0.0, "ty": 0.0, "rot": 0.0}
+            {
+                "tx": pmap[t.id].tx, "ty": pmap[t.id].ty, "rot": pmap[t.id].rot,
+                "mirror_x": pmap[t.id].mirror_x, "mirror_y": pmap[t.id].mirror_y,
+            }
+            if t.id in pmap else {"tx": 0.0, "ty": 0.0, "rot": 0.0, "mirror_x": False, "mirror_y": False}
             for t in tools
         ]
     else:
@@ -2673,15 +2689,18 @@ def _combine_layout(req: "CombineRequest") -> dict:
                 detail=f"{label} doesn't fit — {e}",
             )
 
-    placed_envelopes = [
-        binpack_mod.place_stamp(
-            pack_stamps[i], tfs[i]["tx"], tfs[i]["ty"], tfs[i]["rot"]
-        )
-        for i in range(len(pack_stamps))
-    ]
+    placed_envelopes = []
+    for i in range(len(pack_stamps)):
+        shape = contour_mod.to_shapely(binpack_mod.stamp_poly(pack_stamps[i]))
+        shape = _mirror_local(shape, tfs[i].get("mirror_x", False), tfs[i].get("mirror_y", False))
+        shape = srotate(shape, tfs[i]["rot"], origin=(0, 0))
+        shape = stranslate(shape, tfs[i]["tx"], tfs[i]["ty"])
+        placed_envelopes.append(contour_mod.from_shapely(shape))
     placed_pockets, placed_fingers = [], []
     for i, stamp in enumerate(pocket_stamps):
+        mirror_x, mirror_y = tfs[i].get("mirror_x", False), tfs[i].get("mirror_y", False)
         shape = contour_mod.to_shapely(stamp)
+        shape = _mirror_local(shape, mirror_x, mirror_y)
         shape = srotate(shape, tfs[i]["rot"], origin=(0, 0))
         shape = stranslate(shape, tfs[i]["tx"], tfs[i]["ty"])
         placed_pockets.append(contour_mod.from_shapely(shape))
@@ -2689,8 +2708,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
         c, s = math.cos(angle), math.sin(angle)
         placed_fingers.append([
             (
-                x * c - y * s + tfs[i]["tx"],
-                x * s + y * c + tfs[i]["ty"],
+                (-x if mirror_x else x) * c - (-y if mirror_y else y) * s + tfs[i]["tx"],
+                (-x if mirror_x else x) * s + (-y if mirror_y else y) * c + tfs[i]["ty"],
                 diameter,
             )
             for x, y, diameter in fingers[i]
@@ -2738,7 +2757,10 @@ def _combine_layout(req: "CombineRequest") -> dict:
             (float(x + dx), float(y + dy), float(diameter))
             for x, y, diameter in placed_fingers[i]
         ])
-        ctfs.append({"tx": tfs[i]["tx"] + dx, "ty": tfs[i]["ty"] + dy, "rot": tfs[i]["rot"]})
+        ctfs.append({
+            "tx": tfs[i]["tx"] + dx, "ty": tfs[i]["ty"] + dy, "rot": tfs[i]["rot"],
+            "mirror_x": tfs[i].get("mirror_x", False), "mirror_y": tfs[i].get("mirror_y", False),
+        })
 
     if included_cells is not None:
         # Authoritative server-side check behind the client's interactive
@@ -2882,6 +2904,8 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "stamp": [[round(float(x), 2), round(float(y), 2)] for x, y in stamp.exterior],
             "tx": round(lay["tfs"][i]["tx"], 2), "ty": round(lay["tfs"][i]["ty"], 2),
             "rot": round(lay["tfs"][i]["rot"], 1),
+            "mirror_x": bool(lay["tfs"][i].get("mirror_x", False)),
+            "mirror_y": bool(lay["tfs"][i].get("mirror_y", False)),
         })
     return {
         "fill_height_pct": req.fill_height_pct, "live_grid": req.live_grid,
@@ -3123,6 +3147,8 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
             binlibrary_mod.SavedBinPlacement(
                 id=tool_ids[i],
                 tx=lay["tfs"][i]["tx"], ty=lay["tfs"][i]["ty"], rot=lay["tfs"][i]["rot"],
+                mirror_x=lay["tfs"][i].get("mirror_x", False),
+                mirror_y=lay["tfs"][i].get("mirror_y", False),
             )
             for i in range(len(tool_ids))
         ],

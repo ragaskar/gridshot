@@ -32,6 +32,8 @@ class SavedBinPlacement(BaseModel):
     tx: float
     ty: float
     rot: float = 0.0
+    mirror_x: bool = False
+    mirror_y: bool = False
 
 
 class SavedBinOverride(BaseModel):

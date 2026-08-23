@@ -30,16 +30,25 @@ const BIN_CORNER_R = 3.75;
 
 type Pt = [number, number];
 
-/** Apply a placement to a centroid-normalised stamp — rotate CCW about the
- *  origin (matching shapely on the server), then translate. */
-function placed(stamp: Pt[], tx: number, ty: number, rot: number): Pt[] {
+/** Apply a placement to a centroid-normalised stamp — mirror about the local
+ *  axes, then rotate CCW about the origin (matching shapely on the server),
+ *  then translate. Mirror is a separate transform from rotation (it can't be
+ *  expressed as any `rot` value — a flip reverses handedness, a rotation
+ *  never does), so it's applied first, in the same local frame `rot` uses. */
+function placed(
+  stamp: Pt[], tx: number, ty: number, rot: number,
+  mirrorX = false, mirrorY = false,
+): Pt[] {
   const a = (rot * Math.PI) / 180;
   const c = Math.cos(a), s = Math.sin(a);
-  return stamp.map(([x, y]) => [x * c - y * s + tx, x * s + y * c + ty]);
+  return stamp.map(([px, py]) => {
+    const x = mirrorX ? -px : px, y = mirrorY ? -py : py;
+    return [x * c - y * s + tx, x * s + y * c + ty];
+  });
 }
 
-function placedPoint(point: Pt, tx: number, ty: number, rot: number): Pt {
-  return placed([point], tx, ty, rot)[0];
+function placedPoint(point: Pt, tx: number, ty: number, rot: number, mirrorX = false, mirrorY = false): Pt {
+  return placed([point], tx, ty, rot, mirrorX, mirrorY)[0];
 }
 
 function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: number } {
@@ -57,7 +66,7 @@ function allEqual<T, V>(items: T[], key: (item: T) => V): V | undefined {
 }
 
 function placementsFor(tools: CombineTool[]): Placement[] {
-  return tools.map(({ id, tx, ty, rot }) => ({ id, tx, ty, rot }));
+  return tools.map(({ id, tx, ty, rot, mirror_x, mirror_y }) => ({ id, tx, ty, rot, mirror_x, mirror_y }));
 }
 
 /** "Combined Bin YYYY-MM-DD" using the browser's local date (not UTC). */
@@ -630,6 +639,8 @@ export function CombineEditor({
       tool.tx,
       tool.ty,
       tool.rot,
+      tool.mirror_x,
+      tool.mirror_y,
       tool.finger_hole_override,
       tool.clearance_mm_override,
       tool.finger_hole_side_flip_override,
@@ -644,9 +655,9 @@ export function CombineEditor({
   // forced gx/gy and never re-fit to wherever tools currently sit (drag included).
   const layout = useMemo(() => {
     if (!meta || !tools.length) return null;
-    const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot));
+    const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y));
     const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter]) => {
-      const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot);
+      const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y);
       return { toolId: tool.id, cx, cy, radius: diameter / 2 };
     }));
     const xs = [
@@ -841,7 +852,7 @@ export function CombineEditor({
   function alignSelected(edge: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") {
     if (selectedTools.length < 2) return;
     pushSnapshot();
-    const boxes = new Map(selectedTools.map((t) => [t.id, bboxOf(placed(t.stamp, t.tx, t.ty, t.rot))]));
+    const boxes = new Map(selectedTools.map((t) => [t.id, bboxOf(placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y))]));
     const all = [...boxes.values()];
     if (edge === "left" || edge === "right" || edge === "hcenter") {
       const target = edge === "left" ? Math.min(...all.map((b) => b.minx))
@@ -876,7 +887,7 @@ export function CombineEditor({
     pushSnapshot();
     const entries = selectedTools
       .map((t) => {
-        const b = bboxOf(placed(t.stamp, t.tx, t.ty, t.rot));
+        const b = bboxOf(placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y));
         return { id: t.id, center: axis === "horizontal" ? (b.minx + b.maxx) / 2 : (b.miny + b.maxy) / 2 };
       })
       .sort((a, b) => a.center - b.center);
@@ -919,6 +930,20 @@ export function CombineEditor({
     pushSnapshotCoalesced();
     const id = selectedTool.id;
     setTools((ts) => ts.map((t) => (t.id === id ? { ...t, rot: deg } : t)));
+  }
+
+  /** Flip the selected tool's own outline across its local horizontal or
+   *  vertical axis — a genuinely different transform from rotation (it
+   *  reverses handedness, which no `rot` value can), so it's a pair of
+   *  independent booleans rather than folded into `rot`. Only meaningful
+   *  for a single selected tool — never shown during multi-select. */
+  function toggleMirror(axis: "x" | "y") {
+    if (!selectedTool) return;
+    pushSnapshot();
+    const id = selectedTool.id;
+    setTools((ts) => ts.map((t) => (t.id === id
+      ? axis === "x" ? { ...t, mirror_x: !t.mirror_x } : { ...t, mirror_y: !t.mirror_y }
+      : t)));
   }
 
   async function setFingerHole(enabled: boolean | null) {
@@ -1692,6 +1717,24 @@ export function CombineEditor({
             <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-1)}>−1°</button>
             <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(1)}>+1°</button>
             <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(15)}>+15°</button>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_x ? "btn-primary" : "btn-ghost"}`}
+              disabled={!selectedTool}
+              aria-pressed={selectedTool?.mirror_x ?? false}
+              onClick={() => toggleMirror("x")}
+            >
+              ↔ Mirror horizontal
+            </button>
+            <button
+              className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_y ? "btn-primary" : "btn-ghost"}`}
+              disabled={!selectedTool}
+              aria-pressed={selectedTool?.mirror_y ?? false}
+              onClick={() => toggleMirror("y")}
+            >
+              ↕ Mirror vertical
+            </button>
           </div>
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
