@@ -63,6 +63,14 @@
   .btn-ghost:hover {
     box-shadow: 4px 4px 0 theme("colors.teal");
   }
+  /* .btn-ghost's dark text/border (inherited from .btn) assumes the light
+     page background. bg-field panels (tool inspector cards, thumbnails,
+     etc.) are that same dark color, so any ghost button dropped inside one
+     needs the light tokens instead — scoped here so a new button in one of
+     these panels doesn't have to remember text-knockout/border-line by hand. */
+  .bg-field .btn-ghost {
+    @apply text-knockout border-line;
+  }
   .btn:disabled {
     @apply opacity-40 cursor-not-allowed;
     transform: none;
