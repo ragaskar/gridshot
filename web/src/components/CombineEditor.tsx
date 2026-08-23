@@ -1051,6 +1051,37 @@ export function CombineEditor({
     if (direction === "down" && currentlyBottom) return null;
     return arcOnOppositeSide(tool, tool.finger_hole_arc_mm);
   }
+  /** The local-frame direction of the ring segment containing (already-
+   *  wrapped) `arcMm` — the ring is piecewise-linear, so this is the exact
+   *  tangent there, not an approximation. Mirrors `pointAtArcLength`'s own
+   *  segment walk so the two agree on which segment "contains" a boundary
+   *  arc length. */
+  function segmentDirectionAtArc(ring: Pt[], arcMm: number): Pt {
+    if (ring.length < 2) return [1, 0];
+    let remaining = arcMm;
+    for (let i = 0; i < ring.length; i++) {
+      const [x0, y0] = ring[i];
+      const [x1, y1] = ring[(i + 1) % ring.length];
+      const segLen = Math.hypot(x1 - x0, y1 - y0);
+      if (segLen <= 1e-12) continue;
+      if (remaining <= segLen) return [x1 - x0, y1 - y0];
+      remaining -= segLen;
+    }
+    return [1, 0];
+  }
+  /** Whether *increasing* local arc-length at `arcMm` moves the placed point
+   *  toward world +x (screen right) — the ring's own tangent there, carried
+   *  through the tool's current mirror/rotation. Left/Right nudging uses
+   *  this to flip the arc-length step's sign as needed, so ArrowLeft/
+   *  ArrowRight always mean "toward screen left/right," not "toward this
+   *  tool's own increasing/decreasing local arc parametrization" — which
+   *  would otherwise visually rotate along with the tool. */
+  function arcIncreasesWorldX(tool: CombineTool, arcMm: number): boolean {
+    const [dx, dy] = segmentDirectionAtArc(tool.stamp, wrapArcLength(tool.stamp, arcMm));
+    const lx = tool.mirror_x ? -dx : dx, ly = tool.mirror_y ? -dy : dy;
+    const rad = (tool.rot * Math.PI) / 180;
+    return lx * Math.cos(rad) - ly * Math.sin(rad) >= 0;
+  }
   function rotate(deg: number) {
     if (!selectedTool) return;
     pushSnapshotCoalesced(`rotate:${selectedTool.id}`);
@@ -1151,8 +1182,14 @@ export function CombineEditor({
       e.preventDefault();
       const step = (Number(nudge) || 0.1) * (e.shiftKey ? 10 : 1);
       const current = selectedFingerPointIndex === 1 ? tool.finger_hole_arc2_mm : tool.finger_hole_arc_mm;
+      // Screen-relative, not tool-relative: flip the arc step's sign so
+      // ArrowRight always moves the hole toward world +x here, regardless
+      // of which way that maps onto the tool's own rotated arc direction.
+      const wantsRight = e.key === "ArrowRight";
+      const arcGoesRight = arcIncreasesWorldX(tool, current);
+      const delta = (arcGoesRight === wantsRight) ? step : -step;
       pushSnapshotCoalesced(`fingerArc:${tool.id}:${selectedFingerPointIndex}`);
-      commitFingerHoleArc(tool.id, current + (e.key === "ArrowLeft" ? -step : step), selectedFingerPointIndex);
+      commitFingerHoleArc(tool.id, current + delta, selectedFingerPointIndex);
       return;
     }
     if (e.key === "ArrowUp" || e.key === "ArrowDown") {

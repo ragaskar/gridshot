@@ -54,6 +54,10 @@ const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
   // Single-point hole, off-axis in x and well above tool-span's world y, so
   // it's never the align reference.
   "tool-single": baseTool("tool-single", "Chisel", 8, 20, true),
+  // Same rectangle, rotated 180° — world (0, 5) instead of tool-a's (0, -5)
+  // for the same arc-10 local point. Used to check that keyboard nudging
+  // stays screen-relative instead of following the tool's own rotation.
+  "tool-rot180": { ...baseTool("tool-rot180", "Upside-down", 0, 0, true), rot: 180 },
 };
 
 function buildResponse(ids: string[], placements: Placement[] | null | undefined) {
@@ -360,6 +364,24 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     // discrete action) — tool-a's earlier, already-committed nudge must survive.
     expect(Number(allFingerCircles()[1].getAttribute("cx"))).toBeCloseTo(bBefore.cx);
     expect(Number(allFingerCircles()[0].getAttribute("cx"))).toBeCloseTo(aAfterFirstNudge.cx);
+  });
+
+  it("ArrowRight moves the hole toward screen-right even on a tool rotated 180°", async () => {
+    render(<CombineEditor ids={["tool-rot180"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Upside-down");
+    // World (0, 5) — the bottom-edge midpoint (arc 10), flipped by the 180°
+    // rotation to what is now the top edge.
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: 5, pointerId: 1 });
+    const before = { cx: Number(fingerCircle().getAttribute("cx")), cy: Number(fingerCircle().getAttribute("cy")) };
+
+    fireEvent.keyDown(arrangeDiv(), { key: "ArrowRight" });
+
+    // Same screen-right sense as the unrotated case (world x increases),
+    // regardless of which way this increases/decreases the tool's own
+    // local arc-length parametrization.
+    const after = fingerCircle();
+    expect(Number(after.getAttribute("cx"))).toBeGreaterThan(before.cx);
+    expect(Number(after.getAttribute("cy"))).toBeCloseTo(before.cy);
   });
 
   it("Shift+ArrowUp is an explicit no-op, even when a plain ArrowUp would move the hole", async () => {
