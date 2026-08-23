@@ -20,6 +20,7 @@ import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
 import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength } from "../geometry/perimeter";
+import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
 import { useBinProfiles } from "../useBinProfiles";
 
 const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
@@ -338,6 +339,10 @@ export function CombineEditor({
   // within its click-to-select slop radius — renders a "select hint" ring.
   const [hoveredFingerPoint, setHoveredFingerPoint] = useState<{ toolId: string; pointIndex: 0 | 1 } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // The direction of the most recent tool nudge, while it's still "live" —
+  // drives the "distance to next tool" annotation. Cleared on deselect/
+  // reselect and on any non-nudge action (see pushSnapshot/pushSnapshotCoalesced).
+  const [nudgeAnnotationDir, setNudgeAnnotationDir] = useState<CardinalDirection | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<"arrange" | "preview">("arrange");
@@ -425,6 +430,7 @@ export function CombineEditor({
 
   useEffect(() => {
     setDepthOverrideDraft(null);
+    setNudgeAnnotationDir(null);
   }, [selectionKey]);
 
   // Esc clears the selection, and Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z undo/redo,
@@ -672,6 +678,7 @@ export function CombineEditor({
   function pushSnapshot() {
     setUndoStack((s) => [...s.slice(-(UNDO_HISTORY_LIMIT - 1)), snapshot()]);
     setRedoStack([]);
+    setNudgeAnnotationDir(null);
   }
 
   /** Same as `pushSnapshot`, but for a *burst* of rapid-fire actions (nudge
@@ -873,6 +880,21 @@ export function CombineEditor({
   }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
+
+  // "Distance to next tool" nudge annotation — a ray from the selected
+  // tool's own placed bbox center, in the direction just nudged, to wherever
+  // it first meets another tool's placed outline. Kept out of the `layout`
+  // memo above so nudging (which only changes `tools`/`nudgeAnnotationDir`,
+  // both already deps here) doesn't force it to recompute bin/grid geometry.
+  const nudgeAnnotation = useMemo(() => {
+    if (!selectedTool || !nudgeAnnotationDir || !layout) return null;
+    const selfIndex = tools.findIndex((t) => t.id === selectedTool.id);
+    if (selfIndex < 0) return null;
+    const box = bboxOf(layout.polys[selfIndex]);
+    const center: Pt = [(box.minx + box.maxx) / 2, (box.miny + box.maxy) / 2];
+    const polys = tools.map((t, i) => ({ id: t.id, poly: layout.polys[i] }));
+    return nextToolAlongRay(center, nudgeAnnotationDir, polys, selectedTool.id);
+  }, [tools, layout, selectedTool, nudgeAnnotationDir]);
 
   // Generate after the arrangement settles. This endpoint calls the same solid
   // builder as 3MF export; no browser-side mesh approximation is involved.
@@ -1258,6 +1280,9 @@ export function CombineEditor({
     if (!selectedIds.size) return;
     pushSnapshotCoalesced(`nudge:${selectionKey}`);
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
+    // Only a single selected tool has an unambiguous "own center" to annotate
+    // from — a multi-tool nudge shows no annotation at all.
+    setNudgeAnnotationDir(selectedIds.size === 1 ? (dx !== 0 ? (dx > 0 ? "right" : "left") : (dy > 0 ? "up" : "down")) : null);
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
     const active = document.activeElement;
@@ -1951,6 +1976,23 @@ export function CombineEditor({
                     )}
                   </g>;
                 })}
+                {nudgeAnnotation && (() => {
+                  const [sx, sy] = nudgeAnnotation.start;
+                  const [ex, ey] = nudgeAnnotation.end;
+                  const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+                  return (
+                    <g>
+                      <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#2f8f95" strokeWidth={0.4} strokeDasharray="1.5 1" />
+                      {/* Counter-flip: the parent group mirrors y for display,
+                          which would otherwise draw this label upside down. */}
+                      <g transform={`translate(${mx} ${my}) scale(1,-1)`}>
+                        <text x={0} y={-2} textAnchor="middle" fontSize={3} fill="#2f8f95" style={{ fontFamily: "monospace" }}>
+                          {nudgeAnnotation.distanceMm.toFixed(2)} mm
+                        </text>
+                      </g>
+                    </g>
+                  );
+                })()}
               </g>
             )}
             </svg> : (

@@ -449,6 +449,10 @@ Features added on top of the original public release, newest last:
   from then on, superseding the explicit "💾 Save"/"💾 Save to Bin Library" buttons;
   "Save As…" (fork an independent copy under a new name) is the only manual action
   left (see [docs/bin-library.md](docs/bin-library.md))
+- Distance-to-next-tool annotation while nudging a single selected tool in the
+  multi-tool combine editor — a line and 0.01mm gap label from its outline, in the
+  nudge direction, to the next tool it would hit (see
+  [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
 
 ## License
 

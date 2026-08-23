@@ -28,3 +28,19 @@ works normally).
 Nudging is a client-side move, exactly like dragging — the exact 3D preview
 and export both re-solve from the new position a moment after you stop
 nudging.
+
+## Distance-to-next-tool annotation
+
+While exactly one tool is selected and you're actively nudging it, a thin
+line and label appear in the arrange view: from that tool's own outline, in
+the direction you just nudged, to wherever it first meets another tool's
+outline — labeled with the gap at 0.01mm resolution, so you can read off how
+close you're getting as you nudge.
+
+- Only shows for a **single** selected tool — nudging a multi-tool selection
+  together never shows it (there's no one "this tool's own center" to
+  measure from).
+- If nothing lies in the nudged direction, nothing is drawn.
+- Clears as soon as you deselect, select something else, or do anything
+  other than nudge (rotate, drag, etc.) — it only tracks the *current*
+  nudging streak.
