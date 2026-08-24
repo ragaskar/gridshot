@@ -31,6 +31,15 @@ Every existing tool/bin's finger hole keeps the exact position it always
 had the first time you open it — GridShot only starts tracking the new
 free-form position once you actually move it.
 
+**One-time fix note:** a server-side bug meant a moved hole's saved position
+could resolve to the wrong spot once reopened or rendered in 3D — the exact
+point shown live while dragging in Arrange 2D, but a *different* point once
+that same arc-length number was re-interpreted server-side. This is fixed
+going forward; a hole moved and saved *before* the fix may show up somewhere
+else the next time you open that bin. Re-drag or re-Align it once and it's
+fine from then on — this only affects the first reopen after the fix, not
+the position model itself.
+
 ## Coordinates
 
 The X/Y readout in the Inspector is in millimetres, from the *overall*

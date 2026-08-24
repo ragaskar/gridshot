@@ -82,6 +82,57 @@ class TestFingerHoleArcLength:
             derive_mod.derive_bin_spec(tool, settings, bench_mod.default_profile())
 
 
+class TestFingerHoleArcMatchesShippedRing:
+    """`spec.finger_holes[0]` (the actual x/y a client renders) and
+    `spec.finger_hole_arc_mm` (the number a client echoes back as an
+    override next request) must describe the *same* point when the
+    arc-length is re-walked against `spec.pocket_poly` — the exact ring a
+    client receives as a tool's "stamp" and re-parametrizes its own
+    drag/nudge/align math against.
+
+    Regression: `derive_bin_spec` used to compute `finger_hole_arc_mm`
+    against its own internal, not-yet-oriented `pocket_shape`, while
+    `contour_mod.from_shapely` (used both for `pocket_poly` here and for
+    every "stamp" ever sent to a client) forces the exterior ring
+    counter-clockwise. When the internal ring came out clockwise — which it
+    does for a plain rectangle once the capture's y-down-to-y-up flip
+    reverses its handedness — the two rings walked in opposite directions
+    from the same starting vertex, so the *same* arc-length number resolved
+    to two different points depending which ring read it: correct in the
+    client's own local re-derivation (2D drag/align), wrong wherever the
+    server re-derives a point from a stored arc-length (3D render, and
+    anything reloaded from a saved bin). `test_arc_mm_zero_...` above can't
+    catch this: arc 0 always lands on the shared starting vertex regardless
+    of which direction the ring is walked, which is exactly why this needs
+    a nonzero arc to discriminate."""
+
+    def test_reported_arc_length_reproduces_the_reported_point(self, printer):
+        for arc in (10.0, 25.0, 40.0):
+            spec = _spec(WIDE_OUTLINE, finger_hole_arc_mm=arc)
+            recon = derive_mod._point_at_arc_length(
+                list(spec.pocket_poly.exterior), spec.finger_hole_arc_mm
+            )
+            assert recon == pytest.approx(spec.finger_holes[0][:2], abs=1e-6)
+
+    def test_holds_for_the_legacy_fallback_arc_length_too(self, printer):
+        spec = _spec(WIDE_OUTLINE)  # finger_hole_arc_mm left unset
+        recon = derive_mod._point_at_arc_length(
+            list(spec.pocket_poly.exterior), spec.finger_hole_arc_mm
+        )
+        assert recon == pytest.approx(spec.finger_holes[0][:2], abs=1e-6)
+
+    def test_holds_for_the_span_hole_second_point(self, printer):
+        spec = _spec(
+            WIDE_OUTLINE, finger_hole_arc_mm=5.0, finger_hole_span=True,
+            finger_hole_arc2_mm=30.0,
+        )
+        ring = list(spec.pocket_poly.exterior)
+        recon1 = derive_mod._point_at_arc_length(ring, spec.finger_hole_arc_mm)
+        recon2 = derive_mod._point_at_arc_length(ring, spec.finger_hole_arc2_mm)
+        assert recon1 == pytest.approx(spec.finger_holes[0][:2], abs=1e-6)
+        assert recon2 == pytest.approx(spec.finger_holes[1][:2], abs=1e-6)
+
+
 class TestLegacyFingerHoleFallback:
     """`finger_hole_arc_mm=None` (the default) — an existing saved tool/bin
     whose hole was never explicitly repositioned must keep resolving to

@@ -464,6 +464,56 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect(overrideA?.finger_hole_arc_mm).toBeCloseTo(10.1);
   });
 
+  it("a finger-hole mouse drag is included in what gets sent to Save", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    await waitFor(() => expect(saveBin).toHaveBeenCalled()); // mount-time auto-mint
+
+    fireEvent.pointerDown(allFingerCircles()[0], { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.pointerMove(document.querySelector("svg")!, { clientX: -10, clientY: 0, pointerId: 1 });
+    fireEvent.pointerUp(document.querySelector("svg")!, { pointerId: 1 });
+
+    fireEvent.click(screen.getByText("Save As…"));
+    fireEvent.click(screen.getByText("Save As"));
+    await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(2));
+
+    const [, , options] = vi.mocked(saveBin).mock.calls.at(-1)!;
+    const overrideA = options?.overrides?.find((o) => o.id === "tool-a");
+    // Dragged to the left edge's midpoint (world (-10, 0)) — arc 55, same
+    // target as the "picked up by the next 3D preview request" drag test.
+    expect(overrideA?.finger_hole_arc_mm).toBeCloseTo(55);
+  });
+
+  it("Align finger holes is included in what gets sent to Save", async () => {
+    render(<CombineEditor ids={["tool-span", "tool-single"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Vise");
+    await waitFor(() => expect(saveBin).toHaveBeenCalled()); // mount-time auto-mint
+
+    const before = visibleFingerCircles();
+    const refP1 = { cx: Number(before[0].getAttribute("cx")), cy: Number(before[0].getAttribute("cy")) };
+    fireEvent.pointerDown(before[0], { clientX: refP1.cx, clientY: -refP1.cy, pointerId: 1 });
+    const targetPos = { cx: Number(before[2].getAttribute("cx")), cy: Number(before[2].getAttribute("cy")) };
+    fireEvent.pointerDown(before[2], { clientX: targetPos.cx, clientY: -targetPos.cy, pointerId: 2, shiftKey: true });
+    fireEvent.click(screen.getByText("⟷ Align finger holes"));
+
+    const alignedTarget = visibleFingerCircles()[2];
+    const alignedCx = Number(alignedTarget.getAttribute("cx"));
+
+    fireEvent.click(screen.getByText("Save As…"));
+    fireEvent.click(screen.getByText("Save As"));
+    await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(2));
+
+    const [, , options] = vi.mocked(saveBin).mock.calls.at(-1)!;
+    const overrideSingle = options?.overrides?.find((o) => o.id === "tool-single");
+    // tool-single's saved override must reflect the post-Align arc-length,
+    // not its pre-align one (arc 15, world (8,15) area) or null (unset).
+    expect(overrideSingle?.finger_hole_arc_mm).not.toBeNull();
+    const { pointAtArcLength } = await import("../geometry/perimeter");
+    const [lx] = pointAtArcLength([[-10, -5], [10, -5], [10, 5], [-10, 5]], overrideSingle!.finger_hole_arc_mm!);
+    const worldX = 8 + lx; // tool-single's tx offset, rot=0/no mirror
+    expect(worldX).toBeCloseTo(alignedCx, 0);
+  });
+
   it("ArrowRight moves the hole toward screen-right even on a tool rotated 180°", async () => {
     render(<CombineEditor ids={["tool-rot180"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Upside-down");

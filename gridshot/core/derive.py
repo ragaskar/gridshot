@@ -20,6 +20,7 @@ from shapely.affinity import rotate as shapely_rotate
 from shapely.affinity import scale as shapely_scale
 from shapely.affinity import translate
 from shapely.geometry import LineString, Point
+from shapely.geometry.polygon import orient
 from shapely.ops import nearest_points
 
 from . import bench as bench_mod
@@ -432,7 +433,18 @@ def derive_bin_spec(
     aligned_tool = apply_rotation(flip_tool)
     minx, miny, maxx, maxy = aligned.bounds
     tx, ty = -(minx + maxx) / 2, -(miny + maxy) / 2
-    pocket_shape = translate(aligned, tx, ty)
+    # Canonicalize winding here, once, before any arc-length math below reads
+    # this ring: `contour_mod.from_shapely` (used for `pocket_poly` below,
+    # and for every "stamp" a client ever sees) forces exterior-CCW via the
+    # same `orient(sign=1.0)`. Without doing it here too, `_ring_points`
+    # walks whatever winding this shape's upstream ops happened to produce
+    # (the y-flip a few lines up reverses handedness on its own) — a
+    # different direction than the ring the client parametrizes its own
+    # arc-length against, so the *same* `finger_hole_arc_mm` number resolves
+    # to two different points depending on which ring reads it. `orient`
+    # preserves the starting vertex and only reverses walk direction when
+    # needed, so this is a no-op whenever the shape was already CCW.
+    pocket_shape = orient(translate(aligned, tx, ty), sign=1.0)
     tool_bin_shape = translate(aligned_tool, tx, ty)
 
     if settings.pocket_depth_mm is None:
