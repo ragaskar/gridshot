@@ -107,6 +107,117 @@ class TestFreeze:
         assert frozen.calibration is None
 
 
+class TestToolshapeSurvivesForking:
+    """A toolshape has no source tool, so it only ever reaches _fork() via
+    Duplicate or a bin Save (which freezes every tool) — regression coverage
+    for _fork()'s explicit field allowlist silently dropping the new
+    toolshape_* fields and leaving an uneditable static outline behind."""
+
+    def test_duplicate_keeps_the_toolshape_params(self, config_dir):
+        source = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=25.0, radius_mm=2.0, fillet_bottom=True,
+        )
+
+        forked = bintools_mod.duplicate(source, "bintool-2-bbbbbb")
+
+        assert forked.toolshape_type == "rounded_rect"
+        assert forked.toolshape_width_mm == 30.0
+        assert forked.toolshape_length_mm == 25.0
+        assert forked.toolshape_radius_mm == 2.0
+        assert forked.toolshape_fillet_bottom is True
+        assert forked.outline == source.outline
+
+    def test_freeze_keeps_the_toolshape_params(self, config_dir):
+        source = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=25.0, radius_mm=2.0, fillet_bottom=True,
+        )
+
+        frozen = bintools_mod.freeze(source, "bintool-2-bbbbbb")
+
+        assert frozen.toolshape_type == "rounded_rect"
+        assert frozen.toolshape_width_mm == 30.0
+        assert frozen.toolshape_fillet_bottom is True
+
+    def test_a_plain_tool_forks_with_no_toolshape_fields(self, config_dir):
+        source = library_mod.save(_library_tool())
+
+        forked = bintools_mod.duplicate(source, "bintool-1-aaaaaa")
+
+        assert forked.toolshape_type is None
+        assert forked.toolshape_fillet_bottom is False
+
+
+class TestCreateToolshape:
+    def test_generates_an_outline_from_the_params(self, config_dir):
+        tool = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+        )
+
+        assert tool.id.startswith("bintool-")
+        assert tool.toolshape_type == "rounded_rect"
+        assert tool.toolshape_width_mm == 30.0
+        assert tool.toolshape_length_mm == 20.0
+        assert tool.toolshape_radius_mm == 1.0
+        assert tool.toolshape_fillet_bottom is False
+        assert tool.outline is not None
+        assert tool.outline == tool.raw_outline
+        assert tool.thickness_mm > 0  # has a default height, editable afterward
+
+    def test_never_appears_in_the_tool_library(self, config_dir):
+        bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+        )
+
+        assert library_mod.list_tools() == []
+
+    def test_is_persisted_and_reloadable(self, config_dir):
+        tool = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+        )
+
+        assert bintools_mod.load(tool.id).toolshape_width_mm == 30.0
+
+    def test_rejects_an_unknown_toolshape_type(self, config_dir):
+        with pytest.raises(ValueError):
+            bintools_mod.create_toolshape(
+                "hexagon", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+            )
+
+
+class TestUpdateToolshape:
+    def test_changing_width_regenerates_the_outline(self, config_dir):
+        tool = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+        )
+
+        updated = bintools_mod.update_toolshape(tool, width_mm=50.0)
+
+        assert updated.toolshape_width_mm == 50.0
+        assert updated.toolshape_length_mm == 20.0  # untouched fields stay put
+        assert updated.outline != tool.outline
+        assert updated.outline == updated.raw_outline
+
+    def test_omitted_fields_keep_their_current_value(self, config_dir):
+        tool = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=True,
+        )
+
+        updated = bintools_mod.update_toolshape(tool, radius_mm=2.0)
+
+        assert updated.toolshape_width_mm == 30.0
+        assert updated.toolshape_length_mm == 20.0
+        assert updated.toolshape_fillet_bottom is True
+
+    def test_persists_the_change(self, config_dir):
+        tool = bintools_mod.create_toolshape(
+            "rounded_rect", width_mm=30.0, length_mm=20.0, radius_mm=1.0, fillet_bottom=False,
+        )
+
+        bintools_mod.update_toolshape(tool, fillet_bottom=True)
+
+        assert bintools_mod.load(tool.id).toolshape_fillet_bottom is True
+
+
 class TestResolveTool:
     def test_resolves_a_plain_id_from_the_library(self, config_dir):
         library_mod.save(_library_tool(id="tool-a"))

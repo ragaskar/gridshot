@@ -21,7 +21,7 @@ from shapely.affinity import translate as shapely_translate
 from shapely.geometry import Point, box
 from shapely.ops import unary_union
 
-from .contour import to_shapely
+from .contour import from_shapely, to_shapely
 from .models import Poly
 
 PITCH = 42.0
@@ -62,6 +62,17 @@ LIP_CHAMFER_LOFT_STEPS = 8
 EPS = 1e-3
 
 CIRCULAR_SEGMENTS = 64
+
+# Toolshapes (parametric, no-photo tool outlines — see gridshot/core/bintools.py
+# `create_toolshape`) round their pocket's bottom interior corner by this
+# fixed radius when the shape's "fillet bottom" option is on. Hardcoded
+# rather than user-configurable for now: visible without being dramatic.
+TOOLSHAPE_FILLET_RADIUS_MM = 1.5
+
+# Facets approximating the fillet's quarter-circle profile — see
+# _pocket_bottom_fillet. Purely cosmetic, so far fewer than
+# LIP_CHAMFER_LOFT_STEPS's structural chamfer is plenty.
+FILLET_LOFT_STEPS = 8
 
 # Legacy (fill_height_pct, live_grid) mapping — exact and lossless. See
 # docs/bin-profiles-v2-proposal.md. Used both to translate old `style` values
@@ -333,6 +344,44 @@ def _chamfer_transition(
     return Manifold.batch_boolean(slabs, OpType.Add)
 
 
+def _pocket_bottom_fillet(
+    inner: CrossSection, floor_z: float, radius: float, ov: float = 0.05,
+) -> Manifold:
+    """Extra material to cut at a pocket's bottom interior corner, rounding
+    the join between the vertical wall and the horizontal floor instead of
+    leaving them meet at a hard right angle.
+
+    `inner` is the pocket's own cross-section (clearance already applied).
+    At height `h` above the floor (0 <= h <= radius) the cut's cross-section
+    is `inner` outset by `radius - sqrt(radius**2 - (radius - h)**2)` — zero
+    at h=radius (seamlessly continuing into the straight-walled cut above,
+    which already carves `inner` at every height), growing to a full
+    `radius` right at the floor (tangent to it, same as a round-over router
+    bit). Built as a stack of hulled plates like `_chamfer_transition`, just
+    following this curved offset profile instead of a straight one so the
+    facets approximate a real fillet rather than a single flat chamfer."""
+    def ring(outset: float) -> CrossSection:
+        return (
+            inner.offset(outset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
+            if outset > EPS else inner
+        )
+
+    def plate(outset: float, z: float) -> Manifold:
+        return Manifold.extrude(ring(outset), EPS).translate((0, 0, z))
+
+    slabs = []
+    for i in range(FILLET_LOFT_STEPS):
+        h0 = radius * i / FILLET_LOFT_STEPS
+        h1 = radius * (i + 1) / FILLET_LOFT_STEPS
+        o0 = radius - math.sqrt(max(0.0, radius * radius - (radius - h0) ** 2))
+        o1 = radius - math.sqrt(max(0.0, radius * radius - (radius - h1) ** 2))
+        slabs.append(Manifold.batch_hull([
+            plate(o0, floor_z + h0 - ov),
+            plate(o1, floor_z + h1),
+        ]))
+    return Manifold.batch_boolean(slabs, OpType.Add)
+
+
 def _lip_ring(
     outline: CrossSection,
     z_top: float,
@@ -472,6 +521,17 @@ def _rounded_rect_polygon(w: float, d: float, r: float):
         w / 2 - r,
         d / 2 - r,
     ).buffer(r, quad_segs=16)
+
+
+def toolshape_rounded_rect_outline(width_mm: float, length_mm: float, radius_mm: float) -> Poly:
+    """Parametric outline for the "rounded rectangle" toolshape — centred at
+    the origin, same convention as every photo-traced tool's stamp, so it
+    drops straight into the existing placement/rotation math."""
+    if width_mm <= 0 or length_mm <= 0:
+        raise ValueError("toolshape width/length must be > 0")
+    if radius_mm < 0:
+        raise ValueError("toolshape radius must be >= 0")
+    return from_shapely(_rounded_rect_polygon(width_mm, length_mm, radius_mm))
 
 
 def grid_candidate_cells(
@@ -775,6 +835,7 @@ def bin_solid(
         pk, depth = entry[0], entry[1]
         pk_fingers = entry[2] if len(entry) > 2 else ()
         pk_connector = entry[3] if len(entry) > 3 else None
+        pk_fillet_radius = entry[4] if len(entry) > 4 else None
         if not fast_path:
             if depth <= 0:
                 raise ValueError("recess depth must be > 0")
@@ -819,9 +880,15 @@ def bin_solid(
                 f"pocket depth {depth}mm needs ≥{BASE_H + min_floor_mm + depth:.1f}mm "
                 f"of bin height; increase height_u (now {height_u})"
             )
-        cut = Manifold.extrude(
-            _cross_section_from_poly(pk), depth + EPS
-        ).translate((0, 0, floor_z))
+        inner = _cross_section_from_poly(pk)
+        cut = Manifold.extrude(inner, depth + EPS).translate((0, 0, floor_z))
+        if pk_fillet_radius:
+            # Only meaningful on this straight-extrusion fast path — the
+            # general (corral/grid) construction never cuts a plain pocket
+            # cavity to begin with, so there's no bottom corner to round.
+            radius = min(pk_fillet_radius, max(0.0, depth - EPS))
+            if radius > EPS:
+                cut = cut + _pocket_bottom_fillet(inner, floor_z, radius)
         solid = solid - cut
         for fx, fy, dia in pk_fingers:
             cyl = Manifold.cylinder(

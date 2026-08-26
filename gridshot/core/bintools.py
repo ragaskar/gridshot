@@ -29,11 +29,19 @@ import time
 import uuid
 from pathlib import Path
 
+from . import gridfinity as grid_mod
 from . import library as library_mod
 from .library import LibraryTool
 from .models import config_dir
 
 BIN_TOOL_ID_PREFIX = "bintool-"
+
+# Default height for a freshly-placed toolshape — there's no photo to derive
+# one from, so this seeds a generic, plausible tool height; the user edits it
+# via the same "height" field as any other tool once it's placed.
+TOOLSHAPE_DEFAULT_HEIGHT_MM = 20.0
+
+TOOLSHAPE_LABELS: dict[str, str] = {"rounded_rect": "Rounded Rectangle"}
 
 
 def is_bin_tool_id(tool_id: str) -> bool:
@@ -124,6 +132,11 @@ def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
         magnet_holes=source.magnet_holes,
         magnet_hole_diameter_mm=source.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=source.magnet_hole_depth_mm,
+        toolshape_type=source.toolshape_type,
+        toolshape_width_mm=source.toolshape_width_mm,
+        toolshape_length_mm=source.toolshape_length_mm,
+        toolshape_radius_mm=source.toolshape_radius_mm,
+        toolshape_fillet_bottom=source.toolshape_fillet_bottom,
         created_ts=int(time.time()),
     )
     return save(forked)
@@ -144,6 +157,60 @@ def freeze(source: LibraryTool, new_id: str) -> LibraryTool:
     label unchanged; unlike `duplicate()`, this isn't a second instance the
     user asked for."""
     return _fork(source, new_id, label=source.label)
+
+
+def _toolshape_outline(kind: str, *, width_mm: float, length_mm: float, radius_mm: float):
+    if kind == "rounded_rect":
+        return grid_mod.toolshape_rounded_rect_outline(width_mm, length_mm, radius_mm)
+    raise ValueError(f"unknown toolshape type {kind!r}")
+
+
+def create_toolshape(
+    kind: str, *, width_mm: float, length_mm: float, radius_mm: float, fillet_bottom: bool,
+) -> LibraryTool:
+    """A brand-new bin-tool with no source tool at all — its outline is
+    generated in code from these parameters rather than traced from a photo.
+    Never appears in the Tool Library (see module docstring)."""
+    outline = _toolshape_outline(kind, width_mm=width_mm, length_mm=length_mm, radius_mm=radius_mm)
+    tool = LibraryTool(
+        id=new_bin_tool_id(),
+        label=TOOLSHAPE_LABELS.get(kind, kind),
+        thickness_mm=TOOLSHAPE_DEFAULT_HEIGHT_MM,
+        raw_outline=outline,
+        outline=outline,
+        toolshape_type=kind,
+        toolshape_width_mm=width_mm,
+        toolshape_length_mm=length_mm,
+        toolshape_radius_mm=radius_mm,
+        toolshape_fillet_bottom=fillet_bottom,
+        created_ts=int(time.time()),
+    )
+    return save(tool)
+
+
+def update_toolshape(
+    tool: LibraryTool, *,
+    width_mm: float | None = None,
+    length_mm: float | None = None,
+    radius_mm: float | None = None,
+    fillet_bottom: bool | None = None,
+) -> LibraryTool:
+    """Re-derive a toolshape's outline after a parameter edit. `tool` must
+    already be a toolshape (checked by the caller via `toolshape_type`)."""
+    w = tool.toolshape_width_mm if width_mm is None else width_mm
+    l = tool.toolshape_length_mm if length_mm is None else length_mm
+    r = tool.toolshape_radius_mm if radius_mm is None else radius_mm
+    fb = tool.toolshape_fillet_bottom if fillet_bottom is None else fillet_bottom
+    outline = _toolshape_outline(tool.toolshape_type, width_mm=w, length_mm=l, radius_mm=r)
+    updated = tool.model_copy(update={
+        "outline": outline,
+        "raw_outline": outline,
+        "toolshape_width_mm": w,
+        "toolshape_length_mm": l,
+        "toolshape_radius_mm": r,
+        "toolshape_fillet_bottom": fb,
+    })
+    return save(updated)
 
 
 def resolve_tool(tool_id: str) -> LibraryTool:

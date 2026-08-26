@@ -2057,6 +2057,54 @@ def bin_tools_duplicate(tool_id: str) -> dict:
     return _lib_json(duplicated)
 
 
+class ToolshapeCreate(BaseModel):
+    type: Literal["rounded_rect"]
+    width_mm: float = Field(gt=0)
+    length_mm: float = Field(gt=0)
+    radius_mm: float = Field(ge=0)
+    fillet_bottom: bool = False
+
+
+def bin_tools_create_toolshape(req: ToolshapeCreate) -> dict:
+    """A toolshape has no source tool — its outline is generated from these
+    parameters, never traced from a photo (see `bintools.create_toolshape`).
+    Never appears in the Tool Library."""
+    try:
+        tool = bintools_mod.create_toolshape(
+            req.type, width_mm=req.width_mm, length_mm=req.length_mm,
+            radius_mm=req.radius_mm, fillet_bottom=req.fillet_bottom,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _lib_json(tool)
+
+
+class ToolshapeUpdate(BaseModel):
+    width_mm: Optional[float] = Field(None, gt=0)
+    length_mm: Optional[float] = Field(None, gt=0)
+    radius_mm: Optional[float] = Field(None, ge=0)
+    fillet_bottom: Optional[bool] = None
+
+
+def bin_tools_update_toolshape(tool_id: str, upd: ToolshapeUpdate) -> dict:
+    if not bintools_mod.is_bin_tool_id(tool_id):
+        raise HTTPException(status_code=404, detail="no such tool")
+    try:
+        tool = bintools_mod.load(tool_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="no such tool")
+    if tool.toolshape_type is None:
+        raise HTTPException(status_code=422, detail="not a toolshape")
+    try:
+        updated = bintools_mod.update_toolshape(
+            tool, width_mm=upd.width_mm, length_mm=upd.length_mm,
+            radius_mm=upd.radius_mm, fillet_bottom=upd.fillet_bottom,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return _lib_json(updated)
+
+
 class LibraryUpdate(BaseModel):
     label: Optional[str] = None
     thickness_mm: Optional[float] = None
@@ -2983,6 +3031,11 @@ def library_combine_preview(req: CombineRequest) -> dict:
                 for x, y, diameter in lay["local_fingers"][i]
             ],
             "derivation_key": lay["specs"][i].derivation_key,
+            "toolshape_type": t.toolshape_type,
+            "toolshape_width_mm": t.toolshape_width_mm,
+            "toolshape_length_mm": t.toolshape_length_mm,
+            "toolshape_radius_mm": t.toolshape_radius_mm,
+            "toolshape_fillet_bottom": t.toolshape_fillet_bottom,
             "stamp": [[round(float(x), 2), round(float(y), 2)] for x, y in stamp.exterior],
             "tx": round(lay["tfs"][i]["tx"], 2), "ty": round(lay["tfs"][i]["ty"], 2),
             "rot": round(lay["tfs"][i]["rot"], 1),
@@ -3007,8 +3060,16 @@ def library_combine_preview(req: CombineRequest) -> dict:
 def _combine_solid(req: CombineRequest, lay: dict | None = None):
     """Build the exact solid shared by interactive GLB preview and 3MF export."""
     lay = lay or _combine_layout(req)
+    # `lay["tools"]` may be absent from a hand-built test layout stub — those
+    # carry no LibraryTool at all, so there's nothing to check for a
+    # toolshape's fillet-bottom flag; treat that as "no fillet" rather than
+    # erroring, same as any other tool that isn't a toolshape.
+    tools = lay.get("tools")
     pockets = [
-        (lay["centered"][i], lay["depths"][i], lay["fingers"][i], lay["connectors"][i])
+        (
+            lay["centered"][i], lay["depths"][i], lay["fingers"][i], lay["connectors"][i],
+            grid_mod.TOOLSHAPE_FILLET_RADIUS_MM if tools and tools[i].toolshape_fillet_bottom else None,
+        )
         for i in range(len(lay["centered"]))
     ]
     try:

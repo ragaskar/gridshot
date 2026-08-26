@@ -130,6 +130,16 @@ class LibraryTool(BaseModel):
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
+    # Toolshapes: a parametric, no-photo outline (e.g. "rounded rectangle")
+    # generated in code from these fields, rather than traced from a photo.
+    # Bin-tool-only (see gridshot/core/bintools.py) — `None` for every real,
+    # photo-backed tool. `outline`/`raw_outline` are still the tool's actual
+    # geometry, kept in sync with these params on every create/update.
+    toolshape_type: Optional[Literal["rounded_rect"]] = None
+    toolshape_width_mm: Optional[float] = None
+    toolshape_length_mm: Optional[float] = None
+    toolshape_radius_mm: Optional[float] = None
+    toolshape_fillet_bottom: bool = False
     # stored photo + calibration → SAM re-editing against the image in the library
     has_photo: bool = False
     calibration: Optional[Calibration] = None
