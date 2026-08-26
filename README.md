@@ -462,6 +462,11 @@ Features added on top of the original public release, newest last:
   selection — Copy style stays gated on tool selection, since it's the one action that
   still needs to target a tool with no hole yet (see
   [docs/combine-editor-align-finger-holes.md](docs/combine-editor-align-finger-holes.md))
+- The multi-tool combine editor's per-tool color palette no longer includes a
+  red close enough to the boundary-overflow warning color to be confused with
+  it, and the 3D-preview overlay's overflow message is now derived directly
+  from the current arrangement instead of a separately-latched error state,
+  so it can't outlive the condition that produced it
 
 ## License
 

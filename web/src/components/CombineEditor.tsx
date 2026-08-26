@@ -23,7 +23,10 @@ import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength } from ".
 import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
 import { useBinProfiles } from "../useBinProfiles";
 
-const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
+// No entry here should read as the same red as OVERFLOW_COLOR below — that
+// color is reserved for a tool actually crossing the bin boundary, and a
+// tool that merely happens to land on this index shouldn't look like one.
+const PAL = ["#9ec850", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 const OVERFLOW_COLOR = "#ff4d4d";
 // Mirrors gridshot/core/gridfinity.py's CORNER_R — the 2D preview's rounding
 // only needs to look right, not be manufacturing-exact (the server builds
@@ -892,6 +895,12 @@ export function CombineEditor({
   }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
+  // Derived straight from `hasOverflow` rather than latched into `previewErr`
+  // — a value that's just "the current state of the arrangement" can't get
+  // stuck showing a stale warning the way a one-shot `setState` can.
+  const previewMessage = hasOverflow
+    ? "A tool extends past the locked bin size (or over a removed grid cell) — move it back inside, or adjust the forced shape, before rendering."
+    : previewErr;
 
   // The slice coupon is a real cross-section of the actual solid (see
   // grid_mod.slice_layer) — the server already clamps the requested
@@ -951,11 +960,17 @@ export function CombineEditor({
   // Generate after the arrangement settles. This endpoint calls the same solid
   // builder as 3MF export; no browser-side mesh approximation is involved.
   useEffect(() => {
-    if (!meta || tools.length < 2) return;
+    // `previewErr` only ever holds a real fetch failure now — the overflow
+    // message is derived straight from `hasOverflow` at the render site
+    // instead, so it can never outlive the condition that produced it (a
+    // stale fetch error used to survive here too: this guard used to return
+    // before clearing it, so dropping back below 2 tools while an error was
+    // showing left it stuck until the editor was remounted).
+    if (!meta || tools.length < 2) { setPreviewErr(null); return; }
     const sequence = ++previewSequence.current;
     if (hasOverflow) {
       setPreviewBusy(false);
-      setPreviewErr("A tool extends past the locked bin size (or over a removed grid cell) — move it back inside, or adjust the forced shape, before rendering.");
+      setPreviewErr(null);
       return;
     }
     const placements = placementsFor(tools);
@@ -2115,14 +2130,14 @@ export function CombineEditor({
             </svg> : (
               <div className="relative h-[clamp(360px,62vh,620px)] w-full">
                 {glbUrl && <BinViewer url={glbUrl} />}
-                {!glbUrl && !previewErr && (
+                {!glbUrl && !previewMessage && (
                   <div className="absolute inset-0 grid place-items-center font-mono text-xs text-muted">
                     Building exact bin preview…
                   </div>
                 )}
-                {previewErr && (
+                {previewMessage && (
                   <div className="absolute inset-0 grid place-items-center p-6 text-center font-mono text-xs text-orange">
-                    {previewErr}
+                    {previewMessage}
                   </div>
                 )}
                 <span className="absolute bottom-2 left-3 font-mono text-[10px] text-line">
