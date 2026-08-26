@@ -623,6 +623,22 @@ function batchError(detail: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
+/** FastAPI's `detail` is a plain string for a hand-raised HTTPException, but
+ *  a Pydantic validation failure (e.g. a field outside its `ge`/`le` bound)
+ *  sends an array of `{msg, loc, ...}` objects instead — `new Error(detail)`
+ *  on that array stringifies to "[object Object]", not a message a user can
+ *  read. */
+function apiErrorMessage(detail: unknown, fallback: string): Error {
+  if (typeof detail === "string") return new Error(detail);
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((e) => (e && typeof e === "object" && "msg" in e ? String((e as { msg: unknown }).msg) : null))
+      .filter((m): m is string => m !== null);
+    if (msgs.length) return new Error(msgs.join("; "));
+  }
+  return new Error(fallback);
+}
+
 async function postBatchSelection<T>(
   session: string,
   action: "review" | "commit",
@@ -1164,7 +1180,7 @@ export async function combineLibrarySlice(
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
-    throw new Error(d.detail ?? "slice export failed");
+    throw apiErrorMessage(d.detail, "slice export failed");
   }
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");
@@ -1288,7 +1304,7 @@ export async function exportSavedBinSlice(
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
-    throw new Error(d.detail ?? "slice export failed");
+    throw apiErrorMessage(d.detail, "slice export failed");
   }
   const url = URL.createObjectURL(await r.blob());
   const a = document.createElement("a");

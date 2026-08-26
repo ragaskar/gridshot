@@ -387,6 +387,10 @@ export function CombineEditor({
   const [nudge, setNudge] = useState("0.1");
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
+  // Own error slot, separate from the shared `err` — a slice-export failure
+  // shouldn't disable Export bin/Save-to-library, which have nothing to do
+  // with the slice dialog.
+  const [sliceErr, setSliceErr] = useState<string | null>(null);
   const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
   const [forceSize, setForceSize] = useState(Boolean(initial?.forceGx && initial?.forceGy));
   const [forceGx, setForceGx] = useState(initial?.forceGx ? String(initial.forceGx) : "");
@@ -888,6 +892,22 @@ export function CombineEditor({
   }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
+
+  // The slice coupon is a real cross-section of the actual solid (see
+  // grid_mod.slice_layer) — the server already clamps the requested
+  // thickness down to the shallowest pocket's own depth
+  // (grid_mod.slice_window's `min_depth`), so anything past that is a no-op,
+  // not a genuinely larger slice. Cap the field at that same bound instead
+  // of an arbitrary fixed number, so a bin with deep pockets isn't stuck at
+  // a limit that was never about the geometry.
+  const SLICE_MIN_THICKNESS_MM = 0.5;
+  const maxSliceThicknessMm = tools.length
+    ? Math.min(...tools.map((t) => t.depth_mm))
+    : SLICE_MIN_THICKNESS_MM;
+  const sliceThicknessNum = Number(sliceThickness);
+  const sliceThicknessInvalid = !Number.isFinite(sliceThicknessNum)
+    || sliceThicknessNum < SLICE_MIN_THICKNESS_MM
+    || sliceThicknessNum > maxSliceThicknessMm;
 
   // "Distance to next tool" nudge annotation — a ray from the selected
   // tool's own placed bbox center, in the direction just nudged AND its
@@ -1594,9 +1614,12 @@ export function CombineEditor({
     }
   }
 
-  async function exportSlice(thicknessMm: number) {
+  /** Returns whether it succeeded — the caller keeps the slice dialog open
+   *  on failure so `sliceErr` (rendered inside it) stays visible instead of
+   *  vanishing along with the dialog. */
+  async function exportSlice(thicknessMm: number): Promise<boolean> {
     setBusy(true);
-    setErr(null);
+    setSliceErr(null);
     try {
       const force = forceSize && forceGx && forceGy;
       await combineLibrarySlice(toolIds, {
@@ -1614,8 +1637,10 @@ export function CombineEditor({
         removedCells: effectiveRemovedCells(fillHeightPct),
         ...structural,
       }, binExportName(savedLabel, tools.map((t) => t.label)));
+      return true;
     } catch (e) {
-      setErr((e as Error).message);
+      setSliceErr((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -2642,7 +2667,7 @@ export function CombineEditor({
           <button
             className="btn w-full text-xs"
             disabled={busy || !tools.length || Boolean(err)}
-            onClick={() => setSliceDialogOpen(true)}
+            onClick={() => { setSliceErr(null); setSliceDialogOpen(true); }}
             title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
           >
             ↓ Export slice (3MF)
@@ -2654,11 +2679,18 @@ export function CombineEditor({
                 <input
                   aria-label="Slice thickness in millimetres"
                   className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                  type="number" step={0.1} min={0.5} max={5}
+                  type="number" step={0.1} min={SLICE_MIN_THICKNESS_MM} max={maxSliceThicknessMm}
                   value={sliceThickness}
-                  onChange={(event) => setSliceThickness(event.target.value)}
+                  onChange={(event) => { setSliceThickness(event.target.value); setSliceErr(null); }}
                 />
               </label>
+              {sliceThicknessInvalid && (
+                <p className="mt-1 text-orange">
+                  Slice thickness must be between {SLICE_MIN_THICKNESS_MM}mm and {maxSliceThicknessMm.toFixed(1)}mm
+                  (the shallowest tool's own recess depth).
+                </p>
+              )}
+              {sliceErr && <p className="mt-1 text-orange">{sliceErr}</p>}
               <div className="mt-2 grid grid-cols-2 gap-1">
                 <button
                   className="btn text-xs"
@@ -2668,10 +2700,11 @@ export function CombineEditor({
                 </button>
                 <button
                   className="btn btn-primary text-xs"
-                  disabled={busy}
+                  disabled={busy || sliceThicknessInvalid}
                   onClick={() => {
-                    setSliceDialogOpen(false);
-                    void exportSlice(Number(sliceThickness));
+                    void exportSlice(sliceThicknessNum).then((ok) => {
+                      if (ok) setSliceDialogOpen(false);
+                    });
                   }}
                 >
                   Export

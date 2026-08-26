@@ -104,10 +104,29 @@ class TestCombineSlice:
 
         assert response.status_code == 422
 
-    def test_thickness_above_five_millimetres_is_rejected(self, client, monkeypatch):
+    def test_thickness_above_five_millimetres_is_accepted_and_clamped_to_the_shallowest_pocket(
+        self, client, monkeypatch
+    ):
+        # slice_window() clamps to the shallowest pocket's own depth (6.0mm
+        # here) regardless of what's requested — a bin with deep pockets
+        # shouldn't be stuck at an arbitrary fixed cap that has nothing to do
+        # with its own geometry.
+        import re
+
         _stub_layout(monkeypatch, depths=[6.0, 9.0])
 
         response = _post(client, slice_thickness_mm=6.0)
+
+        assert response.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            model_xml = zf.read("3D/3dmodel.model").decode()
+        z_values = [float(z) for z in re.findall(r'z="([-0-9.]+)"', model_xml)]
+        assert max(z_values) - min(z_values) == pytest.approx(6.0, abs=1e-2)
+
+    def test_an_unreasonably_large_thickness_is_still_rejected(self, client, monkeypatch):
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+
+        response = _post(client, slice_thickness_mm=150.0)
 
         assert response.status_code == 422
 

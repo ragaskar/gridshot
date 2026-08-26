@@ -324,9 +324,11 @@ Features added on top of the original public release, newest last:
   editor — arrow keys move the selected tool by a configurable step,
   Shift+arrow for 10× (see
   [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
-- Adjustable trace-tolerance slice thickness (0.5–5mm, default 1mm) when
-  exporting a multi-tool combine bin's slice, via a dialog before export
-  (see [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
+- Adjustable trace-tolerance slice thickness (0.5mm up to the shallowest
+  selected tool's own recess depth, default 1mm) when exporting a multi-tool
+  combine bin's slice, via a dialog before export — an out-of-range value is
+  flagged and blocks only that dialog's own Export button, as soon as you
+  type it (see [docs/trace-tolerance-slice.md](docs/trace-tolerance-slice.md))
 - Per-tool rotation lock for auto-pack in the multi-tool combine editor —
   keep a tool at its current angle while the rest re-pack around it (see
   [docs/combine-editor-rotation-lock.md](docs/combine-editor-rotation-lock.md))

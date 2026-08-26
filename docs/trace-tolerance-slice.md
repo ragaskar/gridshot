@@ -42,9 +42,17 @@ The slice is downloadable from everywhere the full bin's STL/3MF is:
 
 The default 1mm thickness is a starting point, not a fixed rule. Clicking
 **"Export slice (3MF)"** in the multi-tool combine editor opens a small
-dialog first — pick anywhere from **0.5mm to 5mm** before the file
-downloads (the field starts at 1mm). A thinner slice prints faster and uses
-less filament for a quick fit check; a thicker one is sturdier to handle and
+dialog first — pick anywhere from **0.5mm up to the shallowest selected
+tool's own recess depth** before the file downloads (the field starts at
+1mm). The upper end of that range isn't arbitrary: the slice is a real
+cross-section of the actual solid, and a thickness past the shallowest
+pocket's depth just gets silently clamped down to it (see
+[How multi-pocket bins pick one slice](#how-multi-pocket-bins-pick-one-slice)
+below) — so the field's max simply matches the largest thickness that could
+ever produce a different result. Out-of-range values are flagged, and the
+dialog's Export button disabled, as soon as you type them — no need to click
+Export first to find out. A thinner slice prints faster and uses less
+filament for a quick fit check; a thicker one is sturdier to handle and
 gives more of the wall to inspect at once. The "shallowest pocket too thin"
 rejection above still applies at whatever thickness you choose.
 

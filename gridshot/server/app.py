@@ -2474,7 +2474,10 @@ class CombineRequest(BaseModel):
     magnet_hole_depth_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
     # Only consulted by the /combine/slice route; None falls back to the
     # standard 1mm trace-tolerance thickness.
-    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=5.0)
+    # The upper bound here is just a sanity ceiling — slice_window() already
+    # clamps the effective thickness down to the shallowest pocket's own
+    # depth, so a value past that is a silent no-op, never a bigger slice.
+    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=100.0)
     # Force auto-pack to fit within an exact gx x gy gridfinity footprint
     # instead of the smallest one that fits. Both or neither; auto-pack only.
     force_gx: Optional[int] = Field(default=None, ge=1)
@@ -3105,7 +3108,10 @@ class BinUpdate(BaseModel):
 
 
 class BinSliceRequest(BaseModel):
-    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=5.0)
+    # The upper bound here is just a sanity ceiling — slice_window() already
+    # clamps the effective thickness down to the shallowest pocket's own
+    # depth, so a value past that is a silent no-op, never a bigger slice.
+    slice_thickness_mm: Optional[float] = Field(default=None, ge=0.5, le=100.0)
 
 
 def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRequest:
