@@ -127,3 +127,25 @@ class TestForcedSizeManualPlacementsDontRecentre:
         tool_b = next(t for t in body["tools"] if t["id"] == "tool-b")
         assert tool_a["tx"] != pytest.approx(40.0)
         assert tool_b["tx"] != pytest.approx(60.0)
+
+    def test_preserve_placements_opts_an_unforced_bin_out_of_recentring(self, client, library_dir):
+        # Same off-centre placements as the test above, but with
+        # preserve_placements set: a resized toolshape's own geometry
+        # changed while every tx/ty stayed put, so recentring here would
+        # shift the *other* tool for no reason the user asked for.
+        _seed_two_tools()
+        placements = [
+            {"id": "tool-a", "tx": 40.0, "ty": 25.0, "rot": 0.0},
+            {"id": "tool-b", "tx": 60.0, "ty": 25.0, "rot": 0.0},
+        ]
+
+        response = _preview(client, placements=placements, preserve_placements=True)
+
+        assert response.status_code == 200
+        body = response.json()
+        tool_a = next(t for t in body["tools"] if t["id"] == "tool-a")
+        tool_b = next(t for t in body["tools"] if t["id"] == "tool-b")
+        assert tool_a["tx"] == pytest.approx(40.0)
+        assert tool_a["ty"] == pytest.approx(25.0)
+        assert tool_b["tx"] == pytest.approx(60.0)
+        assert tool_b["ty"] == pytest.approx(25.0)

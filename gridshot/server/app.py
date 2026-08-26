@@ -2516,6 +2516,13 @@ class CombineRequest(BaseModel):
     fill_height_pct: float = Field(default=100.0, ge=0, le=100)
     live_grid: bool = False
     placements: Optional[list[Placement]] = None  # manual arrange; else auto-pack
+    # A manual arrangement normally still re-centres on every request (so
+    # dragging a tool near an edge keeps the auto-fit footprint hugging the
+    # group). Set this when the placements themselves haven't changed but a
+    # tool's own geometry has (e.g. resizing a toolshape) — re-centring in
+    # that case would shift every *other* tool purely because the edited
+    # tool's bounding box grew or shrank, which reads as an unrelated repack.
+    preserve_placements: bool = False
     overrides: Optional[list[CombineToolOverride]] = None
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
@@ -2849,7 +2856,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         except grid_mod.DisconnectedBinShapeError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
-    if req.force_gx is not None and req.placements:
+    if req.placements and (req.force_gx is not None or req.preserve_placements):
         # A forced size gives the bin a fixed, stable frame — the whole point
         # of dragging within it is that the frame itself doesn't move.
         # Re-centring on every request (as the auto-fit path below still
@@ -2857,6 +2864,10 @@ def _combine_layout(req: "CombineRequest") -> dict:
         # bounding box has drifted off-centre since the last round-trip —
         # e.g. after dragging one tool near an edge — which is exactly the
         # "toggling a checkbox repacks everything" bug this avoids.
+        # `preserve_placements` opts an *unforced* bin into the same
+        # no-shift behaviour for the one other case that needs it: a tool's
+        # own geometry changed (e.g. a resized toolshape) while every
+        # placement stayed the same.
         dx, dy = 0.0, 0.0
     else:
         dx, dy = -(minx + maxx) / 2, -(miny + maxy) / 2  # centre the group in the bin

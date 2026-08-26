@@ -603,6 +603,9 @@ export function CombineEditor({
     // immediately, before React re-renders with the new `toolIds` state.
     idsOverride: string[] = toolIds,
     liveGridOverride: boolean = liveGrid,
+    // Set only when placements themselves are unchanged but a tool's own
+    // geometry just changed (a resized toolshape) — see updateSelectedToolshape.
+    preservePlacementsOverride: boolean = false,
   ) {
     const baseline = tools; // local state as of the moment this request was built
     setBusy(true);
@@ -610,6 +613,7 @@ export function CombineEditor({
     try {
       const p = await combinePreview(idsOverride, {
         placements: placements ?? null,
+        preservePlacements: preservePlacementsOverride,
         overallHeight,
         lip: lipOverride,
         overrides,
@@ -1794,7 +1798,11 @@ export function CombineEditor({
     try {
       pushSnapshot();
       await updateToolshape(selectedTool.id, patch);
-      await load(placementsFor(tools), overridesFor(tools));
+      await load(
+        placementsFor(tools), overridesFor(tools), undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        true,
+      );
     } catch (e) {
       setToolshapeUpdateErr((e as Error).message);
     } finally {

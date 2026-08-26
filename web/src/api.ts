@@ -1105,6 +1105,11 @@ export interface CombinePreview {
  *  touching one interface and one body-builder, not five signatures. */
 export interface CombineOptions {
   placements?: Placement[] | null;
+  /** Skip the auto-fit recentring step even though this is an unforced bin —
+   *  for a request where `placements` haven't changed but a tool's own
+   *  geometry has (e.g. a resized toolshape), so the *other* tools don't
+   *  visibly shift just because the edited tool's bounding box did. */
+  preservePlacements?: boolean;
   overallHeight?: number | null;
   lip?: boolean;
   overrides?: CombineToolOverride[] | null;
@@ -1141,6 +1146,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
   return {
     ids,
     placements: options.placements ?? null,
+    preserve_placements: options.preservePlacements ?? false,
     overall_height: options.overallHeight ?? null,
     lip: options.lip ?? true,
     overrides: options.overrides ?? null,

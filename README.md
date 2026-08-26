@@ -472,6 +472,14 @@ Features added on top of the original public release, newest last:
   width/length/corner-radius and clicking the grid, with an optional
   hardcoded pocket-bottom fillet, no photo or Tool Library entry involved
   (see [docs/toolshapes.md](docs/toolshapes.md))
+- The Bin Library list now refreshes after closing the combine editor, "Save
+  As" redirects to the newly forked bin instead of leaving you editing the
+  old one, and the currently-open bin's name is shown (and editable) at the
+  top of the editor
+- Resizing a placed toolshape no longer shifts every other tool in an
+  auto-fit bin — only the edited tool's own footprint changes, instead of
+  the whole arrangement re-centring around it (see
+  [docs/toolshapes.md](docs/toolshapes.md))
 
 ## License
 

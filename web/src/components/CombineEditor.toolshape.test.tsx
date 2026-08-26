@@ -236,4 +236,19 @@ describe("CombineEditor toolshapes", () => {
 
     await waitFor(() => expect(updateToolshape).toHaveBeenCalledWith("bintool-1-aaaaaa", { width_mm: 50 }));
   });
+
+  it("resizing a toolshape asks the server to preserve every tool's placement", async () => {
+    vi.mocked(updateToolshape).mockResolvedValue({ ...CREATED_TOOLSHAPE, id: "bintool-1-aaaaaa" });
+    render(<CombineEditor ids={["tool-a", "bintool-1-aaaaaa"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findAllByText("Rounded Rectangle");
+    fireEvent.click(screen.getAllByText("Rounded Rectangle")[0]);
+    const widthInput = await screen.findByLabelText("Toolshape width in millimetres");
+
+    fireEvent.change(widthInput, { target: { value: "50" } });
+    fireEvent.blur(widthInput);
+
+    await waitFor(() => expect(updateToolshape).toHaveBeenCalled());
+    const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+    expect(last[1]?.preservePlacements).toBe(true);
+  });
 });
