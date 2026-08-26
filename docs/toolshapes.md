@@ -32,9 +32,10 @@ as it does for a photo-traced tool.
 
 Checking "Fillet bottom" rounds the pocket's bottom interior corner — the
 edge where the vertical pocket wall meets the horizontal floor — instead of
-leaving it a hard 90° edge. The radius is a fixed 1.5mm (`gridshot/core/
-gridfinity.py`'s `TOOLSHAPE_FILLET_RADIUS_MM`), not user-configurable: it's
-sized to be visible without being a dramatic bevel. It only has a visible
+leaving it a hard 90° edge. The radius is a fixed 1.5mm
+(`gridshot/core/gridfinity.py`'s `TOOLSHAPE_FILLET_RADIUS_MM`), not
+user-configurable: it's sized to be visible without being a dramatic
+bevel. It only has a visible
 effect at `fill_height_pct=100` (the default "pocket" bin style) — the
 corral/grid styles don't cut a plain pocket cavity to begin with, so there's
 no bottom corner to round there.

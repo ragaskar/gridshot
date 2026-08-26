@@ -2080,7 +2080,7 @@ export function CombineEditor({
                     <label className="block">
                       <span className="text-muted">Width (mm)</span>
                       <input
-                        aria-label="Toolshape width in millimetres"
+                        aria-label="New toolshape width in millimetres"
                         className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
                         type="number" min={1} step={0.5}
                         value={placingToolshape.width_mm}
@@ -2093,7 +2093,7 @@ export function CombineEditor({
                     <label className="block">
                       <span className="text-muted">Length (mm)</span>
                       <input
-                        aria-label="Toolshape length in millimetres"
+                        aria-label="New toolshape length in millimetres"
                         className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
                         type="number" min={1} step={0.5}
                         value={placingToolshape.length_mm}
@@ -2106,7 +2106,7 @@ export function CombineEditor({
                     <label className="block">
                       <span className="text-muted">Radius (mm)</span>
                       <input
-                        aria-label="Toolshape corner radius in millimetres"
+                        aria-label="New toolshape corner radius in millimetres"
                         className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
                         type="number" min={0} step={0.1}
                         value={placingToolshape.radius_mm}

@@ -144,9 +144,9 @@ describe("CombineEditor toolshapes", () => {
 
     fireEvent.click(screen.getByText("▢ Rounded Rectangle"));
 
-    expect((await screen.findByLabelText("Toolshape width in millimetres") as HTMLInputElement).value).toBe("30");
-    expect((screen.getByLabelText("Toolshape length in millimetres") as HTMLInputElement).value).toBe("30");
-    expect((screen.getByLabelText("Toolshape corner radius in millimetres") as HTMLInputElement).value).toBe("1");
+    expect((await screen.findByLabelText("New toolshape width in millimetres") as HTMLInputElement).value).toBe("30");
+    expect((screen.getByLabelText("New toolshape length in millimetres") as HTMLInputElement).value).toBe("30");
+    expect((screen.getByLabelText("New toolshape corner radius in millimetres") as HTMLInputElement).value).toBe("1");
     expect(screen.getByText("Click the grid to place · Esc to cancel")).toBeTruthy();
   });
 
@@ -154,11 +154,11 @@ describe("CombineEditor toolshapes", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(screen.getByText("▢ Rounded Rectangle"));
-    await screen.findByLabelText("Toolshape width in millimetres");
+    await screen.findByLabelText("New toolshape width in millimetres");
 
     fireEvent.keyDown(window, { key: "Escape" });
 
-    await waitFor(() => expect(screen.queryByLabelText("Toolshape width in millimetres")).toBeNull());
+    await waitFor(() => expect(screen.queryByLabelText("New toolshape width in millimetres")).toBeNull());
     expect(createToolshape).not.toHaveBeenCalled();
   });
 
@@ -167,7 +167,7 @@ describe("CombineEditor toolshapes", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(screen.getByText("▢ Rounded Rectangle"));
-    await screen.findByLabelText("Toolshape width in millimetres");
+    await screen.findByLabelText("New toolshape width in millimetres");
     const svg = document.querySelector("svg")!;
 
     fireEvent.pointerDown(svg, { clientX: 20, clientY: -10 });
@@ -191,7 +191,7 @@ describe("CombineEditor toolshapes", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(screen.getByText("▢ Rounded Rectangle"));
-    const widthInput = await screen.findByLabelText("Toolshape width in millimetres");
+    const widthInput = await screen.findByLabelText("New toolshape width in millimetres");
     const filletCheckbox = screen.getByText("Fillet bottom").previousElementSibling as HTMLInputElement;
 
     fireEvent.change(widthInput, { target: { value: "50" } });
