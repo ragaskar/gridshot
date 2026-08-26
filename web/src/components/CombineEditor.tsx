@@ -890,8 +890,9 @@ export function CombineEditor({
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
 
   // "Distance to next tool" nudge annotation — a ray from the selected
-  // tool's own placed bbox center, in the direction just nudged, to wherever
-  // it first meets another tool's placed outline. Kept out of the `layout`
+  // tool's own placed bbox center, in the direction just nudged AND its
+  // opposite, to wherever it first meets another tool's placed outline or
+  // (if nothing's closer) the grid's own edge. Kept out of the `layout`
   // memo above so nudging (which only changes `tools`/`nudgeAnnotationDir`,
   // both already deps here) doesn't force it to recompute bin/grid geometry.
   const nudgeAnnotation = useMemo(() => {
@@ -900,8 +901,31 @@ export function CombineEditor({
     if (selfIndex < 0) return null;
     const box = bboxOf(layout.polys[selfIndex]);
     const center: Pt = [(box.minx + box.maxx) / 2, (box.miny + box.maxy) / 2];
-    const polys = tools.map((t, i) => ({ id: t.id, poly: layout.polys[i] }));
-    return nextToolAlongRay(center, nudgeAnnotationDir, polys, selectedTool.id);
+    // A synthetic rectangle at the grid's own footprint edges, fed into the
+    // same ray cast as every other tool — the ray naturally prefers a real
+    // tool over this whenever one sits closer, and only ever reaches this
+    // rect's near edge (the far edge needs a negative ray parameter from
+    // inside the rect, so it never wins).
+    const gridBoundaryId = "__grid_edge__";
+    const halfW = layout.ow / 2, halfD = layout.od / 2;
+    const gridBoundary: Pt[] = [
+      [layout.cx - halfW, layout.cy - halfD],
+      [layout.cx + halfW, layout.cy - halfD],
+      [layout.cx + halfW, layout.cy + halfD],
+      [layout.cx - halfW, layout.cy + halfD],
+    ];
+    const polys = [
+      ...tools.map((t, i) => ({ id: t.id, poly: layout.polys[i] })),
+      { id: gridBoundaryId, poly: gridBoundary },
+    ];
+    const oppositeDir: CardinalDirection = nudgeAnnotationDir === "up" ? "down"
+      : nudgeAnnotationDir === "down" ? "up"
+      : nudgeAnnotationDir === "left" ? "right" : "left";
+    const toward = nextToolAlongRay(center, nudgeAnnotationDir, polys, selectedTool.id);
+    const away = nextToolAlongRay(center, oppositeDir, polys, selectedTool.id);
+    if (!toward && !away) return null;
+    const bold = toward !== null && away !== null && toward.distanceMm === away.distanceMm;
+    return { toward, away, bold };
   }, [tools, layout, selectedTool, nudgeAnnotationDir]);
 
   // Generate after the arrangement settles. This endpoint calls the same solid
@@ -2035,23 +2059,32 @@ export function CombineEditor({
                     )}
                   </g>;
                 })}
-                {nudgeAnnotation && (() => {
-                  const [sx, sy] = nudgeAnnotation.start;
-                  const [ex, ey] = nudgeAnnotation.end;
+                {nudgeAnnotation && [nudgeAnnotation.toward, nudgeAnnotation.away].map((hit, i) => {
+                  if (!hit) return null;
+                  const [sx, sy] = hit.start;
+                  const [ex, ey] = hit.end;
                   const mx = (sx + ex) / 2, my = (sy + ey) / 2;
                   return (
-                    <g>
-                      <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#2f8f95" strokeWidth={0.4} strokeDasharray="1.5 1" />
+                    <g key={i}>
+                      <line
+                        x1={sx} y1={sy} x2={ex} y2={ey} stroke="#2f8f95"
+                        strokeWidth={nudgeAnnotation.bold ? 0.8 : 0.4}
+                        strokeDasharray="1.5 1"
+                      />
                       {/* Counter-flip: the parent group mirrors y for display,
                           which would otherwise draw this label upside down. */}
                       <g transform={`translate(${mx} ${my}) scale(1,-1)`}>
-                        <text x={0} y={-2} textAnchor="middle" fontSize={3} fill="#2f8f95" style={{ fontFamily: "monospace" }}>
-                          {nudgeAnnotation.distanceMm.toFixed(2)} mm
+                        <text
+                          x={0} y={-2} textAnchor="middle" fontSize={3} fill="#2f8f95"
+                          fontWeight={nudgeAnnotation.bold ? "bold" : undefined}
+                          style={{ fontFamily: "monospace" }}
+                        >
+                          {hit.distanceMm.toFixed(2)} mm
                         </text>
                       </g>
                     </g>
                   );
-                })()}
+                })}
               </g>
             )}
             </svg> : (

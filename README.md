@@ -450,9 +450,10 @@ Features added on top of the original public release, newest last:
   "Save As…" (fork an independent copy under a new name) is the only manual action
   left (see [docs/bin-library.md](docs/bin-library.md))
 - Distance-to-next-tool annotation while nudging a single selected tool in the
-  multi-tool combine editor — a line and 0.01mm gap label from its outline, in the
-  nudge direction, to the next tool it would hit (see
-  [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
+  multi-tool combine editor — a line and 0.01mm gap label from its outline, in
+  both the nudge direction and its opposite, to the next tool (or the grid's
+  own edge, if nothing's closer) it would hit; bolded when both sides come out
+  equal (see [docs/combine-editor-nudge.md](docs/combine-editor-nudge.md))
 - Finger holes are now multi-selectable directly (shift-click, same gesture as tools) in
   the multi-tool combine editor; Align finger holes now requires selecting 2+ holes this
   way instead of 2+ tools, and Left/Right nudge (+ Shift ×10) works across that

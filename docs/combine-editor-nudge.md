@@ -32,15 +32,21 @@ nudging.
 ## Distance-to-next-tool annotation
 
 While exactly one tool is selected and you're actively nudging it, a thin
-line and label appear in the arrange view: from that tool's own outline, in
-the direction you just nudged, to wherever it first meets another tool's
-outline — labeled with the gap at 0.01mm resolution, so you can read off how
-close you're getting as you nudge.
+line and label appear in the arrange view **in both the nudge direction and
+its opposite**: from that tool's own outline to wherever it first meets
+another tool's outline — labeled with the gap at 0.01mm resolution, so you
+can read off how close you're getting as you nudge, on both sides at once.
 
 - Only shows for a **single** selected tool — nudging a multi-tool selection
   together never shows it (there's no one "this tool's own center" to
   measure from).
-- If nothing lies in the nudged direction, nothing is drawn.
+- If no other tool lies along the nudged axis in a given direction, the
+  bin's own grid edge stands in for it instead — nudging up with nothing
+  above shows the line all the way to the top of the bin. If neither
+  direction has a real tool, both lines land on grid edges.
+- If the two distances come out exactly equal (rounded to 0.01mm) — the
+  tool is exactly centered between whatever bounds it on each side — both
+  lines are drawn bold.
 - Clears as soon as you deselect, select something else, or do anything
   other than nudge (rotate, drag, etc.) — it only tracks the *current*
   nudging streak.

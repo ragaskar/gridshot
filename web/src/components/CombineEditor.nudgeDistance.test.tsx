@@ -40,8 +40,11 @@ function baseTool(id: string, label: string, tx: number, ty = 0) {
   };
 }
 
-function buildResponse(overrides: CombineToolOverride[] | null | undefined, placements: Placement[] | null | undefined) {
-  const bases = [baseTool("tool-a", "Wrench", -15), baseTool("tool-b", "Pliers", 15)];
+function buildResponse(
+  overrides: CombineToolOverride[] | null | undefined,
+  placements: Placement[] | null | undefined,
+  bases = [baseTool("tool-a", "Wrench", -15), baseTool("tool-b", "Pliers", 15)],
+) {
   const tools = bases.map((base) => {
     const override = overrides?.find((o) => o.id === base.id);
     const placement = placements?.find((p) => p.id === base.id);
@@ -109,6 +112,43 @@ describe("CombineEditor nudge-distance annotation", () => {
     expect(screen.getByText("9.90 mm")).toBeTruthy();
   });
 
+  it("also shows the opposite-direction distance, to whatever lies (or the grid edge) the other way", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(listRow("Wrench"));
+
+    const arrangeArea = document.querySelector("svg")!.parentElement!;
+    fireEvent.keyDown(arrangeArea, { key: "ArrowRight" });
+    // Toward tool-b (right): 9.90mm. Away from it (left, nothing there): the
+    // grid's own left edge.
+    expect(screen.getByText("9.90 mm")).toBeTruthy();
+    expect(screen.getByText("16.80 mm")).toBeTruthy();
+  });
+
+  it("bolds both lines when the two distances come out equal", async () => {
+    const bases = [
+      baseTool("tool-a", "Wrench", -39.9),
+      baseTool("tool-b", "Pliers", 0),
+      baseTool("tool-c", "Hammer", 40.1),
+    ];
+    vi.mocked(combinePreview).mockImplementation(
+      (_ids, options) => Promise.resolve(buildResponse(options?.overrides, options?.placements, bases)),
+    );
+    render(<CombineEditor ids={["tool-a", "tool-b", "tool-c"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Pliers");
+    fireEvent.click(listRow("Pliers"));
+
+    const arrangeArea = document.querySelector("svg")!.parentElement!;
+    // Starts 0.1mm off-center between its two neighbors; one nudge right
+    // (default step 0.1mm) lands it exactly centered — both gaps equal.
+    fireEvent.keyDown(arrangeArea, { key: "ArrowRight" });
+    expect(screen.getAllByText("20.00 mm")).toHaveLength(2);
+    const boldLines = [...document.querySelectorAll("line")].filter(
+      (l) => l.getAttribute("stroke-width") === "0.8",
+    );
+    expect(boldLines).toHaveLength(2);
+  });
+
   it("updates the distance on a second consecutive nudge instead of clearing it", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
@@ -159,13 +199,14 @@ describe("CombineEditor nudge-distance annotation", () => {
     expect(screen.queryByText(/mm$/, { selector: "text" })).toBeNull();
   });
 
-  it("shows no annotation when nothing lies in the nudged direction", async () => {
+  it("falls back to the grid edge in both directions when no tool lies along the nudged axis", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
 
     const arrangeArea = document.querySelector("svg")!.parentElement!;
-    fireEvent.keyDown(arrangeArea, { key: "ArrowUp" }); // nothing above tool-a
-    expect(screen.queryByText(/mm$/, { selector: "text" })).toBeNull();
+    fireEvent.keyDown(arrangeArea, { key: "ArrowUp" }); // nothing above or below tool-a — just the grid edges
+    expect(screen.getByText("15.70 mm")).toBeTruthy();
+    expect(screen.getByText("15.80 mm")).toBeTruthy();
   });
 });
