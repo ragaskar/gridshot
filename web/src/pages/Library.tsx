@@ -32,7 +32,7 @@ import { PhotoLightbox } from "../components/PhotoLightbox";
 import { ReadinessBadge, READINESS_LABEL, READINESS_TEXT_TONE } from "../components/ReadinessPanel";
 import { useLocation } from "wouter";
 import { commitOnChange } from "../domEvents";
-import { decodeUrlState, pathForCombine, pathForView } from "../urlState";
+import { decodeUrlState, pathForBinReopen, pathForCombine, pathForView } from "../urlState";
 import { applySelectionClick } from "../selection";
 import { useBinProfiles } from "../useBinProfiles";
 
@@ -993,6 +993,7 @@ export function Library() {
               ids={[...sel]}
               overallHeight={overallHeight === "" ? null : overallHeight}
               onClose={closeCombining}
+              onSaved={(saved) => navigate(pathForBinReopen(saved.id))}
             />
           </div>
         </div>

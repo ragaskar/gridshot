@@ -41,6 +41,7 @@ export function BinLibrary() {
 
   function closeReopen() {
     navigate(pathForView("bins"));
+    refresh();
   }
 
   async function rename(id: string, label: string) {
@@ -235,6 +236,15 @@ export function BinLibrary() {
               overallHeight={reopening.overall_height}
               initial={reopenInitial(reopening)}
               onClose={closeReopen}
+              onSaved={(saved) => {
+                // Optimistic: the reopen effect below keys off `bins`
+                // already containing the target id, so seed it directly
+                // instead of waiting on a refetch — avoids a flash where
+                // the modal briefly closes because the new bin isn't in
+                // `bins` yet when the path changes.
+                setBins((current) => [saved, ...current.filter((b) => b.id !== saved.id)]);
+                navigate(pathForBinReopen(saved.id));
+              }}
             />
           </div>
         </div>

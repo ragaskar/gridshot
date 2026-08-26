@@ -348,6 +348,7 @@ export function CombineEditor({
   overallHeight,
   initial,
   onClose,
+  onSaved,
 }: {
   ids: string[];
   overallHeight: number | null;
@@ -355,6 +356,11 @@ export function CombineEditor({
    *  of auto-packing fresh — see `initial`-aware mount effect below. */
   initial?: CombineEditorInitial;
   onClose: () => void;
+  /** Fired after "Save As" mints a new Bin Library entry (not the initial
+   *  auto-mint, and not a plain autosave to the same entry) — lets the
+   *  caller redirect to the new bin's own URL, so a later refresh/Back
+   *  reopens *that* bin instead of the one this session started from. */
+  onSaved?: (saved: SavedBin) => void;
 }) {
   const binProfiles = useBinProfiles();
   // The `ids` prop is only this editor's *starting* set — Duplicate appends
@@ -1864,6 +1870,7 @@ export function CombineEditor({
       setSaveDialogOpen(false);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
+      onSaved?.(saved);
     } catch (e) {
       setSaveErr((e as Error).message);
     } finally {
@@ -2005,9 +2012,21 @@ export function CombineEditor({
 
   return (
     <div className="panel !p-4 sm:!p-6 w-full max-w-[1180px] max-h-[calc(100dvh-2rem)] overflow-auto">
+      <div className="grp-label mb-1">Arrange multi-tool bin</div>
+      <input
+        aria-label="Bin name"
+        className="mb-2 block w-full min-w-0 bg-transparent border-b border-line font-mono text-lg text-knockout py-1 outline-none placeholder:text-muted disabled:opacity-50"
+        defaultValue={savedLabel ?? ""}
+        placeholder={defaultBinName()}
+        disabled={!savedBinId}
+        key={`${savedBinId ?? "pending"}-${savedLabel ?? ""}`}
+        ref={commitOnChange((raw) => {
+          const next = raw.trim() || defaultBinName();
+          if (next !== (savedLabel ?? "")) setSavedLabel(next);
+        })}
+      />
       <div className="grp-label mb-2 flex flex-wrap justify-between gap-2">
         <span className="flex items-center gap-2">
-          Arrange multi-tool bin
           <button
             type="button"
             className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
