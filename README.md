@@ -467,6 +467,11 @@ Features added on top of the original public release, newest last:
   it, and the 3D-preview overlay's overflow message is now derived directly
   from the current arrangement instead of a separately-latched error state,
   so it can't outlive the condition that produced it
+- Toolshapes: parametric tool outlines with no source tool at all — place a
+  rounded rectangle directly in the multi-tool combine editor by picking its
+  width/length/corner-radius and clicking the grid, with an optional
+  hardcoded pocket-bottom fillet, no photo or Tool Library entry involved
+  (see [docs/toolshapes.md](docs/toolshapes.md))
 
 ## License
 

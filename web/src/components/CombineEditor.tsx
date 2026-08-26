@@ -4,14 +4,17 @@ import {
   combineLibrarySlice,
   combinePreview,
   combinePreviewGlb,
+  createToolshape,
   duplicateTool,
   overwriteBin,
   saveBin,
+  updateToolshape,
   type BinProfile,
   type CombinePreview,
   type CombineTool,
   type CombineToolOverride,
   type Placement,
+  type RoundedRectToolshapeParams,
   type SavedBin,
 } from "../api";
 import { BinViewer } from "./BinViewer";
@@ -33,7 +36,38 @@ const OVERFLOW_COLOR = "#ff4d4d";
 // the real geometry), so this is a plain constant rather than fetched data.
 const BIN_CORNER_R = 3.75;
 
+// Defaults for the "Rounded Rectangle" toolshape's placement panel — see
+// gridshot/core/bintools.py TOOLSHAPE_DEFAULT_HEIGHT_MM for the (separate)
+// default height a freshly-placed toolshape gets.
+const DEFAULT_ROUNDED_RECT_TOOLSHAPE: RoundedRectToolshapeParams = {
+  width_mm: 30, length_mm: 30, radius_mm: 1, fillet_bottom: false,
+};
+
 type Pt = [number, number];
+
+/** A centroid-normalised rounded-rectangle outline for the placement-mode
+ *  ghost preview only — the authoritative outline is generated server-side
+ *  (gridfinity.py's toolshape_rounded_rect_outline) once a click commits the
+ *  placement, so this doesn't need to match it vertex-for-vertex, just look
+ *  right while dragging the shape around before that. */
+function roundedRectPreviewPoints(width: number, length: number, radius: number): Pt[] {
+  const hw = width / 2, hl = length / 2;
+  const r = Math.max(0, Math.min(radius, hw, hl));
+  if (r < 0.01) return [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
+  const segsPerCorner = 8;
+  const corners: [number, number, number][] = [
+    [hw - r, hl - r, 0], [-(hw - r), hl - r, 90],
+    [-(hw - r), -(hl - r), 180], [hw - r, -(hl - r), 270],
+  ];
+  const pts: Pt[] = [];
+  for (const [cx, cy, startDeg] of corners) {
+    for (let i = 0; i <= segsPerCorner; i++) {
+      const a = ((startDeg + (i / segsPerCorner) * 90) * Math.PI) / 180;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
+  return pts;
+}
 
 /** Apply a placement to a centroid-normalised stamp — mirror about the local
  *  axes, then rotate CCW about the origin (matching shapely on the server),
@@ -404,6 +438,16 @@ export function CombineEditor({
   );
   const [duplicateBusy, setDuplicateBusy] = useState(false);
   const [duplicateErr, setDuplicateErr] = useState<string | null>(null);
+  // Toolshape placement mode: non-null while the "Rounded Rectangle" palette
+  // control is active, carrying the params the panel edits before a click
+  // commits them. `ghostPos` (world mm) tracks the pointer for the live
+  // outline preview — see toData()/the arrange <svg>'s pointer handlers.
+  const [placingToolshape, setPlacingToolshape] = useState<RoundedRectToolshapeParams | null>(null);
+  const [ghostPos, setGhostPos] = useState<Pt | null>(null);
+  const [placeToolshapeBusy, setPlaceToolshapeBusy] = useState(false);
+  const [placeToolshapeErr, setPlaceToolshapeErr] = useState<string | null>(null);
+  const [toolshapeUpdateBusy, setToolshapeUpdateBusy] = useState(false);
+  const [toolshapeUpdateErr, setToolshapeUpdateErr] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -456,6 +500,11 @@ export function CombineEditor({
       const active = document.activeElement;
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       if (e.key === "Escape") {
+        if (placingToolshape) {
+          setPlacingToolshape(null);
+          setGhostPos(null);
+          return;
+        }
         setSelectedIds(new Set());
         setSelectedFingerHoleToolIds(new Set());
         setSelectedFingerPointIndex(0);
@@ -473,7 +522,7 @@ export function CombineEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, placingToolshape]);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -1685,6 +1734,68 @@ export function CombineEditor({
     }
   }
 
+  /** "Rounded Rectangle" toolshape palette control — enters placement mode
+   *  with defaults the panel can edit before a click on the canvas commits
+   *  them (see the arrange <svg>'s onPointerDown/onPointerMove below). */
+  function startPlacingToolshape() {
+    setSelectedIds(new Set());
+    setPlaceToolshapeErr(null);
+    setPlacingToolshape({ ...DEFAULT_ROUNDED_RECT_TOOLSHAPE });
+  }
+
+  function cancelPlacingToolshape() {
+    setPlacingToolshape(null);
+    setGhostPos(null);
+  }
+
+  /** Creates the toolshape bin-tool, then places it at the exact clicked
+   *  point (an explicit `Placement`, not auto-pack) the same way ⧉ Duplicate
+   *  appends a freshly-forked id and reloads with it — see `load`'s
+   *  `idsOverride` param. */
+  async function placeToolshapeAt(tx: number, ty: number) {
+    if (!placingToolshape) return;
+    setPlaceToolshapeBusy(true);
+    setPlaceToolshapeErr(null);
+    try {
+      const created = await createToolshape(placingToolshape);
+      pushSnapshot();
+      const nextIds = [...toolIds, created.id];
+      setToolIds(nextIds);
+      const placements: Placement[] = [
+        ...placementsFor(tools),
+        { id: created.id, tx, ty, rot: 0, mirror_x: false, mirror_y: false },
+      ];
+      await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      setSelectedIds(new Set([created.id]));
+      setPlacingToolshape(null);
+      setGhostPos(null);
+    } catch (e) {
+      setPlaceToolshapeErr((e as Error).message);
+    } finally {
+      setPlaceToolshapeBusy(false);
+    }
+  }
+
+  /** Editing a placed toolshape's own width/length/radius/fillet — unlike
+   *  clearance/depth/finger-hole, these change the tool's actual outline, so
+   *  (unlike those) there's no local-override shortcut: patch the bin-tool
+   *  record first (regenerating its outline server-side), then reload the
+   *  combine layout to pick up the new stamp/pockets. */
+  async function updateSelectedToolshape(patch: Partial<RoundedRectToolshapeParams>) {
+    if (!selectedTool || !selectedTool.toolshape_type) return;
+    setToolshapeUpdateBusy(true);
+    setToolshapeUpdateErr(null);
+    try {
+      pushSnapshot();
+      await updateToolshape(selectedTool.id, patch);
+      await load(placementsFor(tools), overridesFor(tools));
+    } catch (e) {
+      setToolshapeUpdateErr((e as Error).message);
+    } finally {
+      setToolshapeUpdateBusy(false);
+    }
+  }
+
   function saveOptions(toolsOverride: CombineTool[] = tools) {
     const force = forceSize && forceGx && forceGy;
     return {
@@ -1945,6 +2056,90 @@ export function CombineEditor({
               Preview 3D
             </button>
           </div>
+          {view === "arrange" && (
+            <div className="mb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[10px] uppercase text-muted">Toolshapes</span>
+                <button
+                  type="button"
+                  className={`btn text-[10px] !px-2 !py-1 ${placingToolshape ? "btn-primary" : "btn-ghost"}`}
+                  title="A parametric outline with no source tool — placed by clicking the grid"
+                  onClick={() => (placingToolshape ? cancelPlacingToolshape() : startPlacingToolshape())}
+                >
+                  ▢ Rounded Rectangle
+                </button>
+                {placingToolshape && (
+                  <span className="font-mono text-[10px] text-muted">
+                    {placeToolshapeBusy ? "Placing…" : "Click the grid to place · Esc to cancel"}
+                  </span>
+                )}
+              </div>
+              {placingToolshape && (
+                <div className="mt-2 border border-line bg-field p-2 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <label className="block">
+                      <span className="text-muted">Width (mm)</span>
+                      <input
+                        aria-label="Toolshape width in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={1} step={0.5}
+                        value={placingToolshape.width_mm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setPlacingToolshape((p) => p && { ...p, width_mm: v });
+                        }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-muted">Length (mm)</span>
+                      <input
+                        aria-label="Toolshape length in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={1} step={0.5}
+                        value={placingToolshape.length_mm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setPlacingToolshape((p) => p && { ...p, length_mm: v });
+                        }}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-muted">Radius (mm)</span>
+                      <input
+                        aria-label="Toolshape corner radius in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={0} step={0.1}
+                        value={placingToolshape.radius_mm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setPlacingToolshape((p) => p && { ...p, radius_mm: v });
+                        }}
+                      />
+                    </label>
+                    <label className="flex items-end gap-2 pb-1">
+                      <input
+                        type="checkbox"
+                        checked={placingToolshape.fillet_bottom}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setPlacingToolshape((p) => p && { ...p, fillet_bottom: checked });
+                        }}
+                      />
+                      <span className="text-muted">Fillet bottom</span>
+                    </label>
+                  </div>
+                  {placeToolshapeErr && <p className="mt-1 text-orange">{placeToolshapeErr}</p>}
+                  <button
+                    type="button"
+                    className="btn btn-ghost mt-2 w-full !py-1 text-[10px]"
+                    onClick={cancelPlacingToolshape}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div
             ref={arrangeRef}
             className="border border-line bg-field min-w-0 overflow-hidden"
@@ -1956,16 +2151,26 @@ export function CombineEditor({
             ref={svgRef}
             viewBox={vb}
             className="w-full touch-none"
-            style={{ minHeight: 360, maxHeight: "68vh", cursor: drag.current ? "grabbing" : "default" }}
+            style={{ minHeight: 360, maxHeight: "68vh", cursor: placingToolshape ? "crosshair" : drag.current ? "grabbing" : "default" }}
             preserveAspectRatio="xMidYMid meet"
-            onPointerMove={(e) => { move(e); moveFingerHole(e); }}
+            onPointerMove={(e) => {
+              if (placingToolshape) { setGhostPos(toData(e)); return; }
+              move(e); moveFingerHole(e);
+            }}
             onPointerUp={() => {
               const d = drag.current;
               if (d && d.clickNarrowsTo && !d.moved) setSelectedIds(new Set([d.clickNarrowsTo]));
               drag.current = null;
               fingerDrag.current = null;
             }}
-            onPointerDown={() => { setSelectedIds(new Set()); setSelectedFingerHoleToolIds(new Set()); setSelectedFingerPointIndex(0); }}
+            onPointerDown={(e) => {
+              if (placingToolshape) {
+                const [tx, ty] = toData(e);
+                void placeToolshapeAt(tx, ty);
+                return;
+              }
+              setSelectedIds(new Set()); setSelectedFingerHoleToolIds(new Set()); setSelectedFingerPointIndex(0);
+            }}
           >
             {layout && (
               // World y increases toward the back of the bin (standard
@@ -2125,6 +2330,15 @@ export function CombineEditor({
                     </g>
                   );
                 })}
+                {placingToolshape && ghostPos && (
+                  <polygon
+                    points={roundedRectPreviewPoints(
+                      placingToolshape.width_mm, placingToolshape.length_mm, placingToolshape.radius_mm,
+                    ).map(([x, y]) => `${x + ghostPos[0]},${y + ghostPos[1]}`).join(" ")}
+                    fill="#9ec85055" stroke="#9ec850" strokeWidth={0.8} strokeDasharray="2 1.5"
+                    pointerEvents="none"
+                  />
+                )}
               </g>
             )}
             </svg> : (
@@ -2429,6 +2643,74 @@ export function CombineEditor({
                     {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
                   </button>
                   {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
+                </div>
+              )}
+              {selectedTool?.toolshape_type === "rounded_rect" && (
+                <div className="mb-2 border-b border-line pb-2">
+                  <span className="font-mono text-[9px] uppercase text-muted">Rounded rectangle</span>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-muted">Width (mm)</span>
+                      <input
+                        aria-label="Toolshape width in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={1} step={0.5}
+                        disabled={busy || toolshapeUpdateBusy}
+                        defaultValue={selectedTool.toolshape_width_mm ?? 0}
+                        key={`${selectedTool.id}-tw-${selectedTool.toolshape_width_mm}`}
+                        ref={commitOnChange((raw) => {
+                          const value = Number(raw);
+                          if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_width_mm) {
+                            void updateSelectedToolshape({ width_mm: value });
+                          }
+                        })}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-muted">Length (mm)</span>
+                      <input
+                        aria-label="Toolshape length in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={1} step={0.5}
+                        disabled={busy || toolshapeUpdateBusy}
+                        defaultValue={selectedTool.toolshape_length_mm ?? 0}
+                        key={`${selectedTool.id}-tl-${selectedTool.toolshape_length_mm}`}
+                        ref={commitOnChange((raw) => {
+                          const value = Number(raw);
+                          if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_length_mm) {
+                            void updateSelectedToolshape({ length_mm: value });
+                          }
+                        })}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-muted">Radius (mm)</span>
+                      <input
+                        aria-label="Toolshape corner radius in millimetres"
+                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                        type="number" min={0} step={0.1}
+                        disabled={busy || toolshapeUpdateBusy}
+                        defaultValue={selectedTool.toolshape_radius_mm ?? 0}
+                        key={`${selectedTool.id}-tr-${selectedTool.toolshape_radius_mm}`}
+                        ref={commitOnChange((raw) => {
+                          const value = Number(raw);
+                          if (Number.isFinite(value) && value >= 0 && value !== selectedTool.toolshape_radius_mm) {
+                            void updateSelectedToolshape({ radius_mm: value });
+                          }
+                        })}
+                      />
+                    </label>
+                    <label className="flex items-end gap-2 pb-1">
+                      <input
+                        type="checkbox"
+                        disabled={busy || toolshapeUpdateBusy}
+                        checked={selectedTool.toolshape_fillet_bottom}
+                        onChange={(e) => void updateSelectedToolshape({ fillet_bottom: e.target.checked })}
+                      />
+                      <span className="text-muted">Fillet bottom</span>
+                    </label>
+                  </div>
+                  {toolshapeUpdateErr && <p className="mt-1 text-orange">{toolshapeUpdateErr}</p>}
                 </div>
               )}
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">

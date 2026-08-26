@@ -828,6 +828,46 @@ export async function duplicateTool(id: string): Promise<LibraryTool> {
   return r.json();
 }
 
+/** A "toolshape" (see gridshot/core/bintools.py `create_toolshape`) has no
+ *  source tool at all — its outline is generated in code from these
+ *  parameters, not traced from a photo. Never appears in the Tool Library. */
+export interface RoundedRectToolshapeParams {
+  width_mm: number;
+  length_mm: number;
+  radius_mm: number;
+  fillet_bottom: boolean;
+}
+
+export async function createToolshape(
+  params: RoundedRectToolshapeParams,
+): Promise<LibraryTool> {
+  const r = await fetch("/api/bin-tools/toolshape", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "rounded_rect", ...params }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "toolshape creation failed");
+  }
+  return r.json();
+}
+
+export async function updateToolshape(
+  id: string, params: Partial<RoundedRectToolshapeParams>,
+): Promise<LibraryTool> {
+  const r = await fetch(`/api/bin-tools/${id}/toolshape`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail ?? "toolshape update failed");
+  }
+  return r.json();
+}
+
 export interface LibraryEditResult extends OutlineEditSession {
   raw: Poly;
   corrected: Poly;
@@ -1033,6 +1073,11 @@ export interface CombineTool extends Placement {
   finger_hole_arc2_mm_override: number | null;
   finger_holes: [number, number, number][];
   stamp: [number, number][];
+  toolshape_type: "rounded_rect" | null;
+  toolshape_width_mm: number | null;
+  toolshape_length_mm: number | null;
+  toolshape_radius_mm: number | null;
+  toolshape_fillet_bottom: boolean;
 }
 
 export interface CombinePreview {
