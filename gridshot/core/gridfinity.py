@@ -53,6 +53,12 @@ LIP_INSET = LIP_CH_TOP + LIP_CH_BOT  # 2.6
 MIN_WALL_LIP = LIP_INSET + 0.8  # pocket clears the lip's cavity-floor edge; the
 # ledge is backed by solid body, so 0.8mm of top-face margin suffices
 
+# A concave (custom bin shape) chamfer transition is built as a stack of
+# this many thin steps instead of one hull — see _lip_ring. Each step's
+# riser is ~LIP_CH_TOP/this at the print scale involved (well under 0.3mm),
+# fine enough to be functionally indistinguishable from the true 45° plane.
+LIP_CHAMFER_LOFT_STEPS = 8
+
 EPS = 1e-3
 
 CIRCULAR_SEGMENTS = 64
@@ -273,6 +279,60 @@ LIP_RIM_FLAT = 0.4  # top rim flat: the spec draws a knife edge, which is both
 # engagement and clean geometry (foot seats 0.4mm shallower, laterally solid)
 
 
+def _is_convex(cross_section: CrossSection) -> bool:
+    """True if `cross_section` has no concave (reflex) region — its own area
+    equals its convex hull's. A plain rounded rect (every grid cell
+    included) always is; a custom bin shape with cells removed generally
+    isn't, whenever the removed cells notch into the outer boundary."""
+    area = cross_section.area()
+    return abs(area - cross_section.hull().area()) < 1e-6 * max(area, 1.0)
+
+
+def _chamfer_transition(
+    outline: CrossSection, inset_a: float, z_a: float, inset_b: float, z_b: float, ov: float = 0.05,
+) -> Manifold:
+    """A 45°-style chamfer between two (inset, z) offsets of the same
+    `outline` — normally just the convex hull of the two plates, which is
+    exact for a plain rounded rect (always convex). But `outline` can be a
+    concave custom-bin-shape polyomino, and hull() can't have a concavity:
+    given two plates that both carry the same notch, their hull bridges
+    straight across it with a flat diagonal face — used as `_lip_ring`'s
+    cavity, that carves the lip's socket too aggressively near the notch
+    corner and leaves an unsupported overhang there (reported as a Bambu
+    Studio "floating cantilever" warning on a real bin — force_gx=6,
+    force_gy=5, removed_cells=[(0,2),(0,3),(0,4)], lip=True — that
+    print-sliced cleanly with lip=False).
+
+    Falls back to a stack of thin steps for a concave outline instead —
+    each step uses the true offset outline at its own inset, so a notch
+    stays a notch throughout, at the cost of a very fine
+    (sub-0.3mm-riser) stair-step instead of a perfectly smooth plane."""
+    def rr(inset: float) -> CrossSection:
+        return outline.offset(-inset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
+
+    def plate(inset: float, z: float) -> Manifold:
+        return Manifold.extrude(rr(inset), EPS).translate((0, 0, z))
+
+    if _is_convex(outline):
+        return Manifold.batch_hull([plate(inset_a, z_a), plate(inset_b, z_b)])
+    if z_a > z_b:
+        inset_a, z_a, inset_b, z_b = inset_b, z_b, inset_a, z_a
+    steps = LIP_CHAMFER_LOFT_STEPS
+    slabs = []
+    for i in range(steps):
+        t0, t1 = i / steps, (i + 1) / steps
+        inset = inset_a + (inset_b - inset_a) * t0
+        step_z0 = z_a + (z_b - z_a) * t0
+        step_z1 = z_a + (z_b - z_a) * t1
+        # Each step overlaps its neighbours by `ov`, the same zero-overlap-
+        # seam guard used everywhere else in this file — two independently-
+        # extruded slabs meeting at an exact shared Z plane are exactly the
+        # "floating artifacts" failure mode this file already works around
+        # elsewhere.
+        slabs.append(Manifold.extrude(rr(inset), (step_z1 - step_z0) + 2 * ov).translate((0, 0, step_z0 - ov)))
+    return Manifold.batch_boolean(slabs, OpType.Add)
+
+
 def _lip_ring(
     outline: CrossSection,
     z_top: float,
@@ -316,21 +376,18 @@ def _lip_ring(
     def rr(inset: float) -> CrossSection:
         return outline.offset(-inset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
 
-    def plate(inset: float, z: float) -> Manifold:
-        return Manifold.extrude(rr(inset), EPS).translate((0, 0, z))
-
     # opening band: vertical at the rim-flat inset, over-tall for a clean cut
     opening = Manifold.extrude(rr(f), 1.0 + f + ov).translate((0, 0, z_hi - f - ov))
     # upper 45° chamfer (truncated by the rim flat, same spec plane)
-    upper = Manifold.batch_hull([plate(f, z_hi - f), plate(lip_chamfer_top_mm, z_hi - lip_chamfer_top_mm)])
+    upper = _chamfer_transition(outline, f, z_hi - f, lip_chamfer_top_mm, z_hi - lip_chamfer_top_mm, ov)
     # straight section, overlapping both chamfers
     straight = Manifold.extrude(
         rr(lip_chamfer_top_mm), lip_straight_mm + 2 * ov
     ).translate((0, 0, z_top + lip_chamfer_bottom_mm - ov))
     # lower 45° chamfer, extended 0.2 below the cavity floor so the boolean
     # never meets the body's top face edge-on (leaves a hidden micro-groove)
-    lower = Manifold.batch_hull(
-        [plate(lip_chamfer_top_mm, z_top + lip_chamfer_bottom_mm), plate(lip_inset + 0.2, z_top - 0.2)]
+    lower = _chamfer_transition(
+        outline, lip_chamfer_top_mm, z_top + lip_chamfer_bottom_mm, lip_inset + 0.2, z_top - 0.2, ov,
     )
     cavity = opening + upper + straight + lower
     return ring - cavity

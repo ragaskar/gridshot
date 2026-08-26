@@ -38,3 +38,15 @@ out wrong in the export until the overlap is fixed).
   is rejected with an error, both in the editor and if you export anyway.
 - Saved to the Bin Library and re-exported/reopened exactly like any other combine
   recipe (see [docs/bin-library.md](bin-library.md)).
+
+## Stacking lip on a notched shape
+
+A stacking lip follows a custom shape's outline exactly, including any notch
+a removed cell cuts into it — the lip's 45° chamfer transitions are built
+from the true offset outline at every step specifically so a concave notch
+stays a notch, rather than getting bridged over by a straight shortcut (a
+convex-hull-based chamfer, correct for a plain rectangle, can't represent a
+concavity at all: it used to bridge straight across a notch, over-carving
+the lip's inner socket right at that corner and leaving an unsupported
+overhang there — reported by slicers as a "floating cantilever" warning,
+specific to lip=True on a notched shape).
