@@ -6,6 +6,7 @@ import {
   combinePreviewGlb,
   createToolshape,
   duplicateTool,
+  listLibrary,
   overwriteBin,
   saveBin,
   updateToolshape,
@@ -13,6 +14,7 @@ import {
   type CombinePreview,
   type CombineTool,
   type CombineToolOverride,
+  type LibraryTool,
   type Placement,
   type RoundedRectToolshapeParams,
   type SavedBin,
@@ -483,6 +485,18 @@ export function CombineEditor({
   const [placeToolshapeErr, setPlaceToolshapeErr] = useState<string | null>(null);
   const [toolshapeUpdateBusy, setToolshapeUpdateBusy] = useState(false);
   const [toolshapeUpdateErr, setToolshapeUpdateErr] = useState<string | null>(null);
+  // "ADD TOOL": picking an existing Tool Library entry, then click-to-place
+  // it — same armed-mode/ghostPos/Esc-to-cancel shape as toolshape placement
+  // above, just sourced from a picker modal instead of a parametric form.
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
+  const [toolPickerTools, setToolPickerTools] = useState<LibraryTool[] | null>(null);
+  const [toolPickerBusy, setToolPickerBusy] = useState(false);
+  const [toolPickerErr, setToolPickerErr] = useState<string | null>(null);
+  const [placingTool, setPlacingTool] = useState<LibraryTool | null>(null);
+  const [placeToolBusy, setPlaceToolBusy] = useState(false);
+  const [placeToolErr, setPlaceToolErr] = useState<string | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -555,6 +569,15 @@ export function CombineEditor({
           setGhostPos(null);
           return;
         }
+        if (placingTool) {
+          setPlacingTool(null);
+          setGhostPos(null);
+          return;
+        }
+        if (toolPickerOpen) {
+          setToolPickerOpen(false);
+          return;
+        }
         setSelectedIds(new Set());
         setSelectedFingerHoleToolIds(new Set());
         setSelectedFingerPointIndex(0);
@@ -572,7 +595,7 @@ export function CombineEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, placingToolshape]);
+  }, [undo, redo, placingToolshape, placingTool, toolPickerOpen]);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -1838,6 +1861,8 @@ export function CombineEditor({
    *  with defaults the panel can edit before a click on the canvas commits
    *  them (see the arrange <svg>'s onPointerDown/onPointerMove below). */
   function startPlacingToolshape() {
+    setPlacingTool(null);
+    setToolPickerOpen(false);
     setSelectedIds(new Set());
     setPlaceToolshapeErr(null);
     setPlacingToolshape({ ...DEFAULT_ROUNDED_RECT_TOOLSHAPE });
@@ -1846,6 +1871,92 @@ export function CombineEditor({
   function cancelPlacingToolshape() {
     setPlacingToolshape(null);
     setGhostPos(null);
+  }
+
+  /** Opens the "Add tool" picker — mutually exclusive with toolshape
+   *  placement (starting one cancels the other), same as tool-select vs
+   *  finger-hole-select elsewhere in this editor. */
+  async function openToolPicker() {
+    cancelPlacingToolshape();
+    setPlacingTool(null);
+    setGhostPos(null);
+    setToolPickerErr(null);
+    setToolPickerOpen(true);
+    setToolPickerBusy(true);
+    try {
+      setToolPickerTools(await listLibrary());
+    } catch (e) {
+      setToolPickerErr((e as Error).message);
+    } finally {
+      setToolPickerBusy(false);
+    }
+  }
+
+  function pickToolToPlace(tool: LibraryTool) {
+    setToolPickerOpen(false);
+    setSelectedIds(new Set());
+    setPlaceToolErr(null);
+    setPlacingTool(tool);
+  }
+
+  function cancelPlacingTool() {
+    setPlacingTool(null);
+    setGhostPos(null);
+  }
+
+  /** Forks the picked Tool Library entry into a private bin-tool copy (the
+   *  same `duplicateTool` ⧉ Duplicate uses — see `duplicateSelectedTool`
+   *  below), then places it at the exact clicked point, mirroring
+   *  placeToolshapeAt's explicit-Placement/idsOverride pattern exactly. */
+  async function placeExistingToolAt(tx: number, ty: number) {
+    if (!placingTool) return;
+    setPlaceToolBusy(true);
+    setPlaceToolErr(null);
+    try {
+      const duplicated = await duplicateTool(placingTool.id);
+      pushSnapshot();
+      const nextIds = [...toolIds, duplicated.id];
+      setToolIds(nextIds);
+      const placements: Placement[] = [
+        ...placementsFor(tools),
+        { id: duplicated.id, tx, ty, rot: 0, mirror_x: false, mirror_y: false },
+      ];
+      await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      setSelectedIds(new Set([duplicated.id]));
+      setPlacingTool(null);
+      setGhostPos(null);
+    } catch (e) {
+      setPlaceToolErr((e as Error).message);
+    } finally {
+      setPlaceToolBusy(false);
+    }
+  }
+
+  /** Drops every currently-selected tool from this bin — the server requires
+   *  at least 2 tools with outlines (_combine_layout), so this refuses to go
+   *  below that rather than let the next reload 422. No backend call beyond
+   *  the reload itself: a tool id is just an entry in the ids array this
+   *  editor sends, with no per-bin "reference" bookkeeping to update — an
+   *  orphaned bin-tool (one forked via Duplicate/toolshape-place/Add and
+   *  then dropped without ever being saved) is swept up later the same way
+   *  an abandoned Duplicate already is (see `gridshot bin-tools gc`). */
+  async function removeSelectedTools() {
+    if (selectedIds.size === 0) return;
+    const nextIds = toolIds.filter((id) => !selectedIds.has(id));
+    if (nextIds.length < 2) {
+      setRemoveErr("A bin needs at least 2 tools — remove fewer, or add another first.");
+      return;
+    }
+    setRemoveErr(null);
+    setRemoveBusy(true);
+    try {
+      pushSnapshot();
+      setToolIds(nextIds);
+      setSelectedIds(new Set());
+      await load(placementsFor(tools), overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+    } finally {
+      setRemoveBusy(false);
+    }
   }
 
   /** Creates the toolshape bin-tool, then places it at the exact clicked
@@ -2224,11 +2335,31 @@ export function CombineEditor({
                 >
                   ▢ Rounded Rectangle
                 </button>
+                <button
+                  type="button"
+                  className={`btn text-[10px] !px-2 !py-1 leading-tight ${placingTool || toolPickerOpen ? "btn-primary" : "btn-ghost"}`}
+                  title="Add an existing tool from the Tool Library — placed by clicking the grid"
+                  onClick={() => {
+                    if (placingTool) { cancelPlacingTool(); return; }
+                    if (toolPickerOpen) { setToolPickerOpen(false); return; }
+                    void openToolPicker();
+                  }}
+                >
+                  ADD<br />TOOL
+                </button>
                 {placingToolshape && (
                   <span className="font-mono text-[10px] text-muted">
                     {placeToolshapeBusy ? "Placing…" : "Click the grid to place · Esc to cancel"}
                   </span>
                 )}
+                {placingTool && (
+                  <span className="font-mono text-[10px] text-muted">
+                    {placeToolBusy
+                      ? "Placing…"
+                      : `Click the grid to place "${placingTool.label || placingTool.id.slice(0, 8)}" · Esc to cancel`}
+                  </span>
+                )}
+                {placeToolErr && <span className="font-mono text-[10px] text-orange">{placeToolErr}</span>}
               </div>
               {placingToolshape && (
                 <div className="mt-2 border border-line bg-field p-2 font-mono text-[10px]" style={{ borderRadius: 2 }}>
@@ -2307,10 +2438,10 @@ export function CombineEditor({
             ref={svgRef}
             viewBox={vb}
             className="w-full touch-none"
-            style={{ minHeight: 360, maxHeight: "68vh", cursor: placingToolshape ? "crosshair" : drag.current ? "grabbing" : "default" }}
+            style={{ minHeight: 360, maxHeight: "68vh", cursor: (placingToolshape || placingTool) ? "crosshair" : drag.current ? "grabbing" : "default" }}
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={(e) => {
-              if (placingToolshape) { setGhostPos(toData(e)); return; }
+              if (placingToolshape || placingTool) { setGhostPos(toData(e)); return; }
               move(e); moveFingerHole(e); moveToolshapeResize(e);
             }}
             onPointerUp={() => {
@@ -2330,6 +2461,11 @@ export function CombineEditor({
               if (placingToolshape) {
                 const [tx, ty] = toData(e);
                 void placeToolshapeAt(tx, ty);
+                return;
+              }
+              if (placingTool) {
+                const [tx, ty] = toData(e);
+                void placeExistingToolAt(tx, ty);
                 return;
               }
               setSelectedIds(new Set()); setSelectedFingerHoleToolIds(new Set()); setSelectedFingerPointIndex(0);
@@ -2561,6 +2697,20 @@ export function CombineEditor({
                     pointerEvents="none"
                   />
                 )}
+                {/* An existing tool's real outline isn't known client-side
+                    (the Tool Library listing carries no geometry) — this
+                    approximates its footprint from grid_x/grid_y instead of
+                    omitting a ghost entirely. */}
+                {placingTool && ghostPos && (() => {
+                  const hw = (placingTool.grid_x * (meta?.pitch ?? 42)) / 2;
+                  const hl = (placingTool.grid_y * (meta?.pitch ?? 42)) / 2;
+                  const pts: Pt[] = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
+                  return <polygon
+                    points={pts.map(([x, y]) => `${x + ghostPos[0]},${y + ghostPos[1]}`).join(" ")}
+                    fill="#548cd655" stroke="#548cd6" strokeWidth={0.8} strokeDasharray="2 1.5"
+                    pointerEvents="none"
+                  />;
+                })()}
               </g>
             )}
             </svg> : (
@@ -2884,6 +3034,20 @@ export function CombineEditor({
                   {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
                 </div>
               )}
+              <div className="mb-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost w-full !py-1 text-[10px]"
+                  disabled={busy || removeBusy || toolIds.length - selectedIds.size < 2}
+                  title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
+                  onClick={() => void removeSelectedTools()}
+                >
+                  {removeBusy
+                    ? "Removing…"
+                    : `🗑 Remove${selectedTools.length > 1 ? ` ${selectedTools.length} tools` : ""}`}
+                </button>
+                {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
+              </div>
               {selectedTool?.toolshape_type === "rounded_rect" && (
                 <div className="mb-2 border-b border-line pb-2">
                   <span className="font-mono text-[9px] uppercase text-muted">Rounded rectangle</span>
@@ -3318,6 +3482,61 @@ export function CombineEditor({
           <button className="btn w-full" onClick={handleClose}>Close</button>
         </div>
       </div>
+      {toolPickerOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-4"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setToolPickerOpen(false)}
+        >
+          <div
+            className="panel w-full max-w-[720px] !p-4 sm:!p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="grp-label">Add tool from library</div>
+              <button
+                type="button"
+                className="btn btn-ghost text-[10px] !px-2 !py-1"
+                onClick={() => setToolPickerOpen(false)}
+              >
+                Esc to cancel
+              </button>
+            </div>
+            {toolPickerBusy && <p className="font-mono text-[10px] text-muted">Loading…</p>}
+            {toolPickerErr && <p className="font-mono text-[10px] text-orange">{toolPickerErr}</p>}
+            {toolPickerTools && toolPickerTools.length === 0 && (
+              <p className="font-mono text-[10px] text-muted">No tools in the Tool Library yet.</p>
+            )}
+            {toolPickerTools && toolPickerTools.length > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 max-h-[60vh] overflow-y-auto">
+                {toolPickerTools.map((t) => {
+                  const blocked = t.readiness.status === "block";
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="border bg-paper-2 overflow-hidden text-left disabled:opacity-50"
+                      style={{ borderRadius: 2, borderColor: "var(--c-line)" }}
+                      disabled={blocked}
+                      title={blocked ? "This tool isn't ready to place — see the Tool Library for details" : `Add ${t.label || t.id}`}
+                      onClick={() => pickToolToPlace(t)}
+                    >
+                      <img
+                        src={t.photo_thumb ?? t.thumb}
+                        alt={t.label || t.id}
+                        className="w-full aspect-square object-contain p-2 bg-field"
+                      />
+                      <div className="p-2 font-mono text-[10px] truncate text-field">
+                        {t.label || t.id.slice(0, 8)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

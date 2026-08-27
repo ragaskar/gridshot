@@ -493,6 +493,16 @@ Features added on top of the original public release, newest last:
   independent of base/floor/lip thickness — instead of only a raw overall
   height set before opening the editor (see
   [docs/combine-editor-usable-height.md](docs/combine-editor-usable-height.md))
+- Fixed toolshape edge-drag-resize hit-lines being only a couple of
+  screen pixels wide on anything but a small, close-up bin — they're now a
+  constant 4 on-screen pixels regardless of zoom/bin size (see
+  [docs/toolshapes.md](docs/toolshapes.md))
+- "ADD TOOL" button in the multi-tool combine editor: pick a tool from the
+  Tool Library and place it by clicking the grid, the same flow as
+  toolshape placement (which also gained an Esc-to-cancel to match); a new
+  "🗑 Remove" button drops the selected tool(s) from the arrangement,
+  disabled below the 2-tool minimum (see
+  [docs/combine-editor-add-remove-tools.md](docs/combine-editor-add-remove-tools.md))
 
 ## License
 
