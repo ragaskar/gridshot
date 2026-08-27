@@ -508,6 +508,20 @@ def height_u_for_overall(overall_mm: float, lip: bool, lip_height_mm: float = LI
     return max(1, round(body / UNIT_H))
 
 
+def usable_height_for_overall(
+    overall_mm: float, lip: bool, *,
+    floor_thickness_mm: float = FLOOR_THICKNESS, lip_height_mm: float = LIP_H,
+) -> float:
+    """Depth available below `fill_height_pct`'s 100% reference — the
+    finished height minus the base, the floor, and (if present) the lip.
+
+    Inverse of the `BASE_H + floor_thickness_mm + usable + (lip_height_mm if
+    lip)` split bin_solid's own fill-height math (deck_top, fill_top_z) is
+    built from — see the "usable" span there.
+    """
+    return overall_mm - BASE_H - floor_thickness_mm - (lip_height_mm if lip else 0.0)
+
+
 class PocketTooDeepError(ValueError):
     pass
 

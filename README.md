@@ -485,6 +485,14 @@ Features added on top of the original public release, newest last:
   length, with a directional cursor on hover; a finger hole on that same
   edge takes priority over starting a resize (see
   [docs/toolshapes.md](docs/toolshapes.md))
+- Fixed toolshape placement silently getting stuck when the placement click
+  landed on an existing tool or finger hole, instead of committing the new
+  toolshape there (see [docs/toolshapes.md](docs/toolshapes.md))
+- Usable height (mm) is now settable directly from the multi-tool combine
+  editor's arrange page — the depth available below the "100% fill" line,
+  independent of base/floor/lip thickness — instead of only a raw overall
+  height set before opening the editor (see
+  [docs/combine-editor-usable-height.md](docs/combine-editor-usable-height.md))
 
 ## License
 

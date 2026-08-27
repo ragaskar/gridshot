@@ -1088,6 +1088,16 @@ export interface CombinePreview {
   outer_w: number;
   outer_d: number;
   overall_height_mm: number;
+  /** Depth actually available below the "100% fill" reference — finished
+   *  height minus base, floor, and (if present) lip. base_h_mm/
+   *  floor_thickness_mm/lip_height_mm ride along so a "usable height" input
+   *  can convert back to overall_height_mm without duplicating gridfinity.py's
+   *  own constants client-side (their effective values depend on Bin Profile
+   *  overrides the client doesn't otherwise see resolved). */
+  usable_height_mm: number;
+  base_h_mm: number;
+  floor_thickness_mm: number;
+  lip_height_mm: number;
   pitch: number;
   bin_size: number;
   wall: number;

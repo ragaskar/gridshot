@@ -364,7 +364,7 @@ function CustomShapeGrid({
  *  inspect as the exact generated solid, then export the arrangement as one 3MF. */
 export function CombineEditor({
   ids,
-  overallHeight,
+  overallHeight: initialOverallHeight,
   initial,
   onClose,
   onSaved,
@@ -382,6 +382,10 @@ export function CombineEditor({
   onSaved?: (saved: SavedBin) => void;
 }) {
   const binProfiles = useBinProfiles();
+  // Editable from the arrange page itself (see the "Usable height" control),
+  // not just a fixed value the caller set before opening the editor — seeded
+  // once from the prop, same pattern as lip/magnetHoles/etc below.
+  const [overallHeight, setOverallHeight] = useState<number | null>(initialOverallHeight);
   // The `ids` prop is only this editor's *starting* set — Duplicate appends
   // to this, and a successful mint/Save As adopts the (possibly just-forked)
   // ids the server returns, so a later save in the session doesn't re-fork
@@ -640,6 +644,7 @@ export function CombineEditor({
     // Set only when placements themselves are unchanged but a tool's own
     // geometry just changed (a resized toolshape) — see updateSelectedToolshape.
     preservePlacementsOverride: boolean = false,
+    overallHeightOverride: number | null = overallHeight,
   ) {
     const baseline = tools; // local state as of the moment this request was built
     setBusy(true);
@@ -648,7 +653,7 @@ export function CombineEditor({
       const p = await combinePreview(idsOverride, {
         placements: placements ?? null,
         preservePlacements: preservePlacementsOverride,
-        overallHeight,
+        overallHeight: overallHeightOverride,
         lip: lipOverride,
         overrides,
         fillHeightPct: fillHeightPctOverride,
@@ -1896,6 +1901,38 @@ export function CombineEditor({
     }
   }
 
+  /** Convert a typed "usable height" (the depth below the 100% fill line —
+   *  what's left after base, floor, and any lip) into the equivalent
+   *  overall_height_mm, using the server's own base_h_mm/floor_thickness_mm/
+   *  lip_height_mm from the last preview — never duplicated as constants
+   *  client-side, since their effective values depend on Bin Profile
+   *  overrides this component doesn't otherwise resolve itself. */
+  function setUsableHeight(raw: string) {
+    if (!meta) return;
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      if (overallHeight === null) return;
+      pushSnapshot();
+      setOverallHeight(null);
+      void load(
+        placementsFor(tools), overridesFor(tools), undefined, undefined, undefined,
+        undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+        undefined, null,
+      );
+      return;
+    }
+    const usableMm = Number(trimmed);
+    if (!Number.isFinite(usableMm) || usableMm <= 0) return;
+    const nextOverall = usableMm + meta.base_h_mm + meta.floor_thickness_mm + (lip ? meta.lip_height_mm : 0);
+    pushSnapshot();
+    setOverallHeight(nextOverall);
+    void load(
+      placementsFor(tools), overridesFor(tools), undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      undefined, nextOverall,
+    );
+  }
+
   function saveOptions(toolsOverride: CombineTool[] = tools) {
     const force = forceSize && forceGx && forceGy;
     return {
@@ -2552,6 +2589,23 @@ export function CombineEditor({
               ))}
             </select>
           </div>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase text-muted">Usable height (mm)</span>
+            <input
+              aria-label="Usable height in millimetres"
+              className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+              type="number" step={1} min={0.1}
+              placeholder="auto (per tool)"
+              disabled={busy || !meta}
+              defaultValue={meta ? String(meta.usable_height_mm) : ""}
+              key={`${meta?.usable_height_mm ?? "pending"}-${overallHeight ?? "auto"}`}
+              ref={commitOnChange((raw) => setUsableHeight(raw))}
+            />
+            <span className="font-mono text-[10px] text-muted">
+              Depth below the 100% fill line — base + floor{lip ? " + lip" : ""} sit on top;
+              blank = auto per tool
+            </span>
+          </label>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"

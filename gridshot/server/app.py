@@ -3060,6 +3060,22 @@ def library_combine_preview(req: CombineRequest) -> dict:
         "overall_height_mm": round(
             grid_mod.finished_height_mm(lay["height_u"], lay["lip"], lay["lip_height_mm"]), 1
         ),
+        # The depth actually available below the "100% fill" reference —
+        # finished height minus base, floor, and (if present) lip. Reported
+        # (rather than left for the client to derive) because the effective
+        # floor_thickness_mm/lip_height_mm depend on Bin Profile overrides the
+        # client doesn't otherwise see resolved; base_h_mm/floor_thickness_mm/
+        # lip_height_mm ride along so an "usable height" input can convert
+        # back to overall_height without duplicating this constant client-side.
+        "usable_height_mm": round(
+            grid_mod.usable_height_for_overall(
+                grid_mod.finished_height_mm(lay["height_u"], lay["lip"], lay["lip_height_mm"]),
+                lay["lip"], floor_thickness_mm=lay["floor_thickness_mm"], lip_height_mm=lay["lip_height_mm"],
+            ), 1
+        ),
+        "base_h_mm": grid_mod.BASE_H,
+        "floor_thickness_mm": round(lay["floor_thickness_mm"], 2),
+        "lip_height_mm": round(lay["lip_height_mm"], 2),
         "pitch": grid_mod.PITCH, "bin_size": grid_mod.BIN_SIZE, "wall": lay["wall"],
         "lip": lay["lip"],
         "reserved_cells": [list(cell) for cell in lay["reserved_cells"]],

@@ -49,7 +49,7 @@ function buildResponse(
   });
   return {
     fill_height_pct: fillHeightPct, live_grid: false, gx: 4, gy: 4, outer_w: 168, outer_d: 168,
-    overall_height_mm: 25.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
+    overall_height_mm: 25.4, usable_height_mm: 18.45, base_h_mm: 4.75, floor_thickness_mm: 1.2, lip_height_mm: 4.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
     reserved_cells: [], available_cells: [], tools,
   };
 }
