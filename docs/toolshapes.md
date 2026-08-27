@@ -41,6 +41,30 @@ the shape enough to outgrow the current footprint, the bin grows to fit
 but the arrangement can end up sitting off-centre within it — drag a tool
 afterwards (or toggle "Force bin size") to re-centre if wanted.
 
+## Edge-drag resize
+
+Once a rounded rectangle is placed and selected, its own outline becomes
+draggable: hover the left or right edge for a width cursor, or the top or
+bottom edge for a length cursor, and drag to resize along that one axis only
+— the two dimensions are always independent, never adjusted together. The
+shape grows/shrinks live as you drag (a client-side approximation, same as
+the placement-mode ghost preview); the actual PATCH + relayout round-trip
+fires once on release, as a single undo step, the same as typing a new value
+into the Width/Length fields directly.
+
+The handles only appear while the toolshape itself is selected — selecting
+one of its finger holes instead (they can visually sit right on an edge)
+always deselects the tool first, so a finger-hole click on an overlapping
+spot takes priority over starting a resize. The finger hole itself is
+hidden for the duration of a resize gesture (from the first drag movement
+through the server round-trip settling) rather than shown mid-resize at a
+stale position, then reappears already at its new correct point on the
+outline once the resize concludes. A finger hole's position is stored as
+an arc-length distance along the outline, not a relative position on the
+shape, so that distance is what's preserved exactly across a resize — the
+hole can land on a different edge or corner than where it started, but
+it's always a valid point on the (new) outline, never floating off it.
+
 ## Fillet bottom
 
 Checking "Fillet bottom" rounds the pocket's bottom interior corner — the

@@ -43,6 +43,10 @@ const DEFAULT_ROUNDED_RECT_TOOLSHAPE: RoundedRectToolshapeParams = {
   width_mm: 30, length_mm: 30, radius_mm: 1, fillet_bottom: false,
 };
 
+// Floor for edge-drag-resize — keeps a dragged edge from ever crossing its
+// opposite one (width_mm/length_mm just need to stay > 0 server-side).
+const MIN_TOOLSHAPE_DIM_MM = 1;
+
 type Pt = [number, number];
 
 /** A centroid-normalised rounded-rectangle outline for the placement-mode
@@ -88,6 +92,21 @@ function placed(
 
 function placedPoint(point: Pt, tx: number, ty: number, rot: number, mirrorX = false, mirrorY = false): Pt {
   return placed([point], tx, ty, rot, mirrorX, mirrorY)[0];
+}
+
+/** Which resize cursor best matches a toolshape edge's outward normal —
+ *  `placed()` with no translation turns the local normal into a world-space
+ *  direction, which (since the arrange view's `<g transform="scale(1,-1)">`
+ *  and toData()'s own y-negation cancel out) reads directly as on-screen
+ *  up/right, so a rotated toolshape's edges still get an intuitively
+ *  directional cursor instead of a fixed ew/ns pair. */
+function resizeCursorFor(normalLocal: Pt, tool: CombineTool): string {
+  const [nx, ny] = placed([normalLocal], 0, 0, tool.rot, tool.mirror_x, tool.mirror_y)[0];
+  const deg = ((Math.atan2(ny, nx) * 180) / Math.PI + 360) % 180;
+  if (deg < 22.5 || deg >= 157.5) return "ew-resize";
+  if (deg < 67.5) return "nesw-resize";
+  if (deg < 112.5) return "ns-resize";
+  return "nwse-resize";
 }
 
 function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: number } {
@@ -479,6 +498,21 @@ export function CombineEditor({
     moved: boolean;
   } | null>(null);
   const fingerDrag = useRef<{ toolId: string; pointIndex: 0 | 1; moved: boolean } | null>(null);
+  // Edge-drag-resize of a selected rounded-rectangle toolshape: `valueMm` is
+  // kept current on every pointermove so onPointerUp can read the final
+  // dragged size synchronously (no reliance on React state having flushed
+  // between the last pointermove and the pointerup that commits it).
+  const toolshapeResizeDrag = useRef<{
+    toolId: string; axis: "width" | "length"; moved: boolean; valueMm: number;
+  } | null>(null);
+  // Drives the live preview polygon and hides the tool's finger hole for the
+  // duration of a resize gesture — set at drag start, and (unlike the ref
+  // above) not cleared until updateSelectedToolshape's round-trip actually
+  // lands, so the finger hole never flashes at its stale pre-resize spot
+  // before jumping to its new one.
+  const [toolshapeResizeLive, setToolshapeResizeLive] = useState<{
+    toolId: string; axis: "width" | "length"; valueMm: number;
+  } | null>(null);
   const previewSequence = useRef(0);
   const glbUrlRef = useRef<string | null>(null);
   // Non-null exactly while a debounced autosave is scheduled but hasn't
@@ -1220,13 +1254,49 @@ export function CombineEditor({
    *  undoing mirror/rotate/translate to reach the tool's local frame first
    *  (the inverse of `placed()`). */
   function localArcForWorldPoint(tool: CombineTool, mx: number, my: number): number {
+    return nearestArcLength(tool.stamp, worldToLocal(tool, mx, my));
+  }
+  /** World point → `tool`'s own local frame, undoing translate/rotate/mirror
+   *  (the inverse of `placed()`). Shared by finger-hole arc-length lookup
+   *  (above) and toolshape edge-drag-resize (below). */
+  function worldToLocal(tool: CombineTool, mx: number, my: number): Pt {
     const wx = mx - tool.tx, wy = my - tool.ty;
     const rad = (-tool.rot * Math.PI) / 180;
     const c = Math.cos(rad), s = Math.sin(rad);
     let lx = wx * c - wy * s, ly = wx * s + wy * c;
     if (tool.mirror_x) lx = -lx;
     if (tool.mirror_y) ly = -ly;
-    return nearestArcLength(tool.stamp, [lx, ly]);
+    return [lx, ly];
+  }
+  /** Start dragging one edge of the selected toolshape to resize it along a
+   *  single axis (width from left/right, length from top/bottom) — see the
+   *  arrange <svg>'s onPointerMove/onPointerUp below for the rest of the
+   *  gesture. Committing reuses updateSelectedToolshape, so a drag gets the
+   *  same single-undo-step and preserve-other-tools'-placements behaviour as
+   *  typing directly into the width/length fields. */
+  function downToolshapeResize(tool: CombineTool, axis: "width" | "length", e: React.PointerEvent) {
+    e.stopPropagation();
+    arrangeRef.current?.focus();
+    const valueMm = (axis === "width" ? tool.toolshape_width_mm : tool.toolshape_length_mm) ?? 0;
+    toolshapeResizeDrag.current = { toolId: tool.id, axis, moved: false, valueMm };
+    setToolshapeResizeLive({ toolId: tool.id, axis, valueMm });
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }
+  function moveToolshapeResize(e: React.PointerEvent) {
+    const d = toolshapeResizeDrag.current;
+    if (!d) return;
+    const tool = tools.find((t) => t.id === d.toolId);
+    if (!tool) return;
+    const [mx, my] = toData(e);
+    const [lx, ly] = worldToLocal(tool, mx, my);
+    // The shape stays centred on (tx, ty) as it resizes, so a dragged edge's
+    // distance from that centre *is* half the new dimension — true no matter
+    // which of the two edges on that axis was grabbed.
+    const raw = 2 * Math.abs(d.axis === "width" ? lx : ly);
+    const valueMm = Math.max(MIN_TOOLSHAPE_DIM_MM, Math.round(raw * 10) / 10);
+    d.moved = true;
+    d.valueMm = valueMm;
+    setToolshapeResizeLive({ toolId: d.toolId, axis: d.axis, valueMm });
   }
   /** Plain click replaces the finger-hole selection with just this tool's
    *  hole and starts a drag, exactly as before multi-select existed.
@@ -1792,7 +1862,10 @@ export function CombineEditor({
    *  record first (regenerating its outline server-side), then reload the
    *  combine layout to pick up the new stamp/pockets. */
   async function updateSelectedToolshape(patch: Partial<RoundedRectToolshapeParams>) {
-    if (!selectedTool || !selectedTool.toolshape_type) return;
+    if (!selectedTool || !selectedTool.toolshape_type) {
+      setToolshapeResizeLive(null);
+      return;
+    }
     setToolshapeUpdateBusy(true);
     setToolshapeUpdateErr(null);
     try {
@@ -1807,6 +1880,10 @@ export function CombineEditor({
       setToolshapeUpdateErr((e as Error).message);
     } finally {
       setToolshapeUpdateBusy(false);
+      // Cleared here (not at drag-end) so a resized toolshape's finger hole
+      // stays hidden through the round-trip above and reappears already at
+      // its correct new spot, instead of flashing at the stale one first.
+      setToolshapeResizeLive(null);
     }
   }
 
@@ -2182,13 +2259,20 @@ export function CombineEditor({
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={(e) => {
               if (placingToolshape) { setGhostPos(toData(e)); return; }
-              move(e); moveFingerHole(e);
+              move(e); moveFingerHole(e); moveToolshapeResize(e);
             }}
             onPointerUp={() => {
               const d = drag.current;
               if (d && d.clickNarrowsTo && !d.moved) setSelectedIds(new Set([d.clickNarrowsTo]));
               drag.current = null;
               fingerDrag.current = null;
+              const tr = toolshapeResizeDrag.current;
+              toolshapeResizeDrag.current = null;
+              if (tr && tr.moved) {
+                void updateSelectedToolshape(tr.axis === "width" ? { width_mm: tr.valueMm } : { length_mm: tr.valueMm });
+              } else if (tr) {
+                setToolshapeResizeLive(null);
+              }
             }}
             onPointerDown={(e) => {
               if (placingToolshape) {
@@ -2263,9 +2347,24 @@ export function CombineEditor({
                   const toolColor = layout.overflowIds.has(t.id) ? OVERFLOW_COLOR : color(i);
                   const isSelected = selectedIds.has(t.id);
                   const isHovered = hoverId === t.id && !isSelected;
+                  // Mid-resize, draw a client-side approximation of the new
+                  // outline (same one placement-mode's ghost preview uses)
+                  // instead of the stale server-computed polygon, so the
+                  // shape visibly tracks the drag before the round-trip lands.
+                  const resizing = toolshapeResizeLive?.toolId === t.id;
+                  const points = resizing
+                    ? placed(
+                        roundedRectPreviewPoints(
+                          toolshapeResizeLive!.axis === "width" ? toolshapeResizeLive!.valueMm : (t.toolshape_width_mm ?? 0),
+                          toolshapeResizeLive!.axis === "length" ? toolshapeResizeLive!.valueMm : (t.toolshape_length_mm ?? 0),
+                          t.toolshape_radius_mm ?? 0,
+                        ),
+                        t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y,
+                      )
+                    : layout.polys[i];
                   return <polygon
                     key={t.id}
-                    points={layout.polys[i].map((p) => `${p[0]},${p[1]}`).join(" ")}
+                    points={points.map((p) => `${p[0]},${p[1]}`).join(" ")}
                     fill={toolColor + (isSelected ? "88" : isHovered ? "70" : "55")}
                     stroke={toolColor} strokeWidth={isSelected ? 1.2 : isHovered ? 1 : 0.7}
                     strokeDasharray={isSelected ? "2 1.5" : undefined}
@@ -2276,10 +2375,44 @@ export function CombineEditor({
                     onPointerLeave={() => setHoverId((current) => (current === t.id ? null : current))}
                   />;
                 })}
+                {/* Edge-drag-resize handles for the selected rounded-rectangle
+                    toolshape only — invisible (transparent stroke) hit-lines
+                    along each straight edge, cursor-only affordance. Selecting
+                    a finger hole instead always clears the tool selection (see
+                    downFingerHole), so these disappear on their own the moment
+                    a finger hole takes over. */}
+                {selectedTool?.toolshape_type === "rounded_rect" && (() => {
+                  const t = selectedTool;
+                  const resizing = toolshapeResizeLive?.toolId === t.id;
+                  const liveWidth = resizing && toolshapeResizeLive!.axis === "width"
+                    ? toolshapeResizeLive!.valueMm : (t.toolshape_width_mm ?? 0);
+                  const liveLength = resizing && toolshapeResizeLive!.axis === "length"
+                    ? toolshapeResizeLive!.valueMm : (t.toolshape_length_mm ?? 0);
+                  const hw = liveWidth / 2, hl = liveLength / 2;
+                  const edges: { axis: "width" | "length"; testid: string; a: Pt; b: Pt; normal: Pt }[] = [
+                    { axis: "width", testid: "toolshape-resize-right", a: [hw, -hl], b: [hw, hl], normal: [1, 0] },
+                    { axis: "width", testid: "toolshape-resize-left", a: [-hw, -hl], b: [-hw, hl], normal: [-1, 0] },
+                    { axis: "length", testid: "toolshape-resize-top", a: [-hw, hl], b: [hw, hl], normal: [0, 1] },
+                    { axis: "length", testid: "toolshape-resize-bottom", a: [-hw, -hl], b: [hw, -hl], normal: [0, -1] },
+                  ];
+                  return edges.map((edge) => {
+                    const [x1, y1] = placedPoint(edge.a, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y);
+                    const [x2, y2] = placedPoint(edge.b, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y);
+                    return <line
+                      key={edge.testid}
+                      data-testid={edge.testid}
+                      x1={x1} y1={y1} x2={x2} y2={y2}
+                      stroke="transparent"
+                      strokeWidth={4}
+                      style={{ cursor: resizeCursorFor(edge.normal, t) }}
+                      onPointerDown={(e) => downToolshapeResize(t, edge.axis, e)}
+                    />;
+                  });
+                })()}
                 {/* finger-access scallops are part of the exact cut envelope —
                     rendered after (on top of) the tool polygons so a click
                     lands on the hole, not the pocket fill beneath it */}
-                {layout.fingerConnectors.map((conn) => {
+                {layout.fingerConnectors.filter((conn) => toolshapeResizeLive?.toolId !== conn.toolId).map((conn) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === conn.toolId);
                   const connColor = layout.overflowIds.has(conn.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   const isSelected = selectedFingerHoleToolIds.has(conn.toolId);
@@ -2291,7 +2424,7 @@ export function CombineEditor({
                     strokeLinecap="round"
                   />;
                 })}
-                {layout.fingerCircles.map((hole, index) => {
+                {layout.fingerCircles.filter((hole) => toolshapeResizeLive?.toolId !== hole.toolId).map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
                   const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   const holeSelected = selectedFingerHoleToolIds.has(hole.toolId);

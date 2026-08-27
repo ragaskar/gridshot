@@ -480,6 +480,11 @@ Features added on top of the original public release, newest last:
   auto-fit bin — only the edited tool's own footprint changes, instead of
   the whole arrangement re-centring around it (see
   [docs/toolshapes.md](docs/toolshapes.md))
+- Edge-drag resize for the rounded-rectangle toolshape: once selected, drag
+  its left/right edge to resize width or its top/bottom edge to resize
+  length, with a directional cursor on hover; a finger hole on that same
+  edge takes priority over starting a resize (see
+  [docs/toolshapes.md](docs/toolshapes.md))
 
 ## License
 
