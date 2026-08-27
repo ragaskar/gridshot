@@ -47,6 +47,12 @@ const DEFAULT_ROUNDED_RECT_TOOLSHAPE: RoundedRectToolshapeParams = {
 // opposite one (width_mm/length_mm just need to stay > 0 server-side).
 const MIN_TOOLSHAPE_DIM_MM = 1;
 
+// Edge-drag-resize hit-line width, in on-screen CSS pixels (not world mm —
+// see vectorEffect="non-scaling-stroke" where this is used): a ~2px buffer
+// straddling the outline on either side, so grabbing an edge doesn't require
+// pixel-precise aim on the exact boundary curve.
+const TOOLSHAPE_RESIZE_HIT_PX = 4;
+
 type Pt = [number, number];
 
 /** A centroid-normalised rounded-rectangle outline for the placement-mode
@@ -2426,7 +2432,16 @@ export function CombineEditor({
                     along each straight edge, cursor-only affordance. Selecting
                     a finger hole instead always clears the tool selection (see
                     downFingerHole), so these disappear on their own the moment
-                    a finger hole takes over. */}
+                    a finger hole takes over.
+
+                    vectorEffect="non-scaling-stroke" keeps the hit width a
+                    constant number of *screen* pixels regardless of the
+                    viewBox's current world-to-pixel scale (which varies with
+                    bin size/zoom) — a fixed mm-wide strip would otherwise
+                    shrink to a couple of screen pixels on a larger bin,
+                    making the outline effectively impossible to hover: the
+                    tool polygon's own "grab" cursor wins almost everywhere
+                    nearby instead. */}
                 {selectedTool?.toolshape_type === "rounded_rect" && (() => {
                   const t = selectedTool;
                   const resizing = toolshapeResizeLive?.toolId === t.id;
@@ -2449,7 +2464,8 @@ export function CombineEditor({
                       data-testid={edge.testid}
                       x1={x1} y1={y1} x2={x2} y2={y2}
                       stroke="transparent"
-                      strokeWidth={4}
+                      strokeWidth={TOOLSHAPE_RESIZE_HIT_PX}
+                      vectorEffect="non-scaling-stroke"
                       style={{ cursor: resizeCursorFor(edge.normal, t) }}
                       onPointerDown={(e) => downToolshapeResize(t, edge.axis, e)}
                     />;

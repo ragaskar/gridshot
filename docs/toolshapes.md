@@ -54,6 +54,12 @@ the placement-mode ghost preview); the actual PATCH + relayout round-trip
 fires once on release, as a single undo step, the same as typing a new value
 into the Width/Length fields directly.
 
+The hoverable/draggable zone straddling each edge is a constant 4 on-screen
+pixels wide (not 4mm of world space) — hitting the exact boundary curve
+isn't required or realistic, and a fixed mm-wide strip would shrink to a
+sliver of actual screen pixels on a larger bin, well below what a mouse can
+reliably land on.
+
 The handles only appear while the toolshape itself is selected — selecting
 one of its finger holes instead (they can visually sit right on an edge)
 always deselects the tool first, so a finger-hole click on an overlapping
