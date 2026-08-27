@@ -186,6 +186,28 @@ describe("CombineEditor toolshapes", () => {
     expect(screen.getByText("▢ Rounded Rectangle").className).not.toContain("btn-primary");
   });
 
+  it("placing on top of an existing tool still commits, instead of selecting that tool", async () => {
+    vi.mocked(createToolshape).mockResolvedValue(CREATED_TOOLSHAPE);
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(screen.getByText("▢ Rounded Rectangle"));
+    await screen.findByLabelText("New toolshape width in millimetres");
+
+    // Click directly on an existing tool's own polygon — its onPointerDown
+    // must defer to placement mode instead of selecting that tool and
+    // swallowing the click.
+    const existingPolygon = document.querySelector("polygon")!;
+    fireEvent.pointerDown(existingPolygon, { clientX: -15, clientY: 0 });
+
+    await waitFor(() => expect(createToolshape).toHaveBeenCalledWith({
+      width_mm: 30, length_mm: 30, radius_mm: 1, fillet_bottom: false,
+    }));
+    // Placement mode closed and the *new* toolshape is what's selected now,
+    // not the existing tool the click happened to land on.
+    expect(screen.queryByText("Click the grid to place · Esc to cancel")).toBeNull();
+    await screen.findByLabelText("Toolshape width in millimetres");
+  });
+
   it("editing the panel's params before placement changes what gets created", async () => {
     vi.mocked(createToolshape).mockResolvedValue(CREATED_TOOLSHAPE);
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);

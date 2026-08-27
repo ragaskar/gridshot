@@ -15,8 +15,10 @@ Rectangle"** under "Toolshapes". A panel appears with its parameters —
 width, length, corner radius (all in mm), and a "Fillet bottom" checkbox —
 defaulting to 30×30mm, 1mm radius, fillet off. Adjust them before placing if
 you like; the canvas shows a live outline preview following the pointer.
-Click anywhere on the grid to place it at that exact point. Esc cancels
-placement mode without creating anything.
+Click anywhere on the grid to place it at that exact point — including on
+top of an existing tool or its finger hole, which places the new toolshape
+there rather than selecting whatever was underneath. Esc cancels placement
+mode without creating anything.
 
 Once placed, the toolshape is auto-selected and behaves like any other
 tool: it gets its own id (`bintool-*`, private to this bin — see

@@ -1147,6 +1147,12 @@ export function CombineEditor({
     return [d.x, -d.y];
   }
   function down(id: string, e: React.PointerEvent) {
+    // Placement mode owns every click on the canvas while it's armed — let
+    // it bubble to the <svg>'s own onPointerDown instead of this tool
+    // grabbing it, or a click meant to place a new toolshape on top of an
+    // existing tool would silently select that tool instead and leave
+    // placement mode stuck open.
+    if (placingToolshape) return;
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedFingerHoleToolIds(new Set());
@@ -1307,6 +1313,9 @@ export function CombineEditor({
    *  actions (diameter, span toggle, Up/Down jump), which only apply while
    *  exactly one tool's hole is selected. */
   function downFingerHole(toolId: string, pointIndex: 0 | 1, e: React.PointerEvent) {
+    // Same reasoning as down() above — don't let an existing finger hole
+    // swallow a click meant to place a new toolshape.
+    if (placingToolshape) return;
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedIds(new Set());
