@@ -19,7 +19,20 @@ That is, the number typed here is `height_u`; the finished bin is
 - **ACTUAL \<n\>mm, USABLE \<n\>mm** — the actual finished height (base +
   floor + usable + lip), and the usable depth below the "100% fill" line
   (base + floor subtracted, lip too if on) that "Auto"/"Percentage" tool
-  heights (below) are computed against.
+  heights (below) are computed against. Hovering the ACTUAL figure shows a
+  right-aligned breakdown of exactly how it's built:
+
+  ```
+  base            4.75mm
+  floor            1.2mm
+  usable height   22.05mm
+  lip              4.4mm
+  -----------------------
+                  32.4mm = 4u + lip
+  ```
+
+  (the `lip` row, and the ` + lip` on the total line, are omitted when
+  Stacking Lip is off).
 - **"Tool height requires a min of \<n\>"** — shown whenever any tool in
   the bin is in **Fixed** height mode: a fixed mm depth needs a minimum
   number of units to physically fit (base + structural floor + that

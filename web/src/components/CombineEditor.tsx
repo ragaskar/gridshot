@@ -131,6 +131,28 @@ function allEqual<T, V>(items: T[], key: (item: T) => V): V | undefined {
   return items.every((item) => key(item) === first) ? first : undefined;
 }
 
+/** Plain-text, right-aligned breakdown of how ACTUAL (overall_height_mm) is
+ *  built from base + floor + usable + (lip, if on) — the "Bin height
+ *  (units)" hover tooltip. Rendered in a <pre>, so alignment is done here
+ *  with manual padding rather than left to CSS. */
+function formatActualHeightBreakdown(meta: CombinePreview, lip: boolean): string {
+  const rows: [string, number][] = [
+    ["base", meta.base_h_mm],
+    ["floor", meta.floor_thickness_mm],
+    ["usable height", meta.usable_height_mm],
+  ];
+  if (lip) rows.push(["lip", meta.lip_height_mm]);
+  const totalValue = `${meta.overall_height_mm}mm`;
+  const labelWidth = Math.max(...rows.map(([label]) => label.length));
+  const values = rows.map(([, v]) => `${v}mm`);
+  const valueWidth = Math.max(...values.map((v) => v.length), totalValue.length);
+  const lines = rows.map(([label], i) => `${label.padEnd(labelWidth)}  ${values[i].padStart(valueWidth)}`);
+  lines.push("-".repeat(labelWidth + 2 + valueWidth));
+  const totalLabel = `${meta.height_u}u${lip ? " + lip" : ""}`;
+  lines.push(`${" ".repeat(labelWidth)}  ${totalValue.padStart(valueWidth)} = ${totalLabel}`);
+  return lines.join("\n");
+}
+
 function placementsFor(tools: CombineTool[]): Placement[] {
   return tools.map(({ id, tx, ty, rot, mirror_x, mirror_y }) => ({ id, tx, ty, rot, mirror_x, mirror_y }));
 }
@@ -2827,7 +2849,16 @@ export function CombineEditor({
             )}
             {meta && (
               <span className="mt-1 block font-mono text-[10px] text-muted">
-                ACTUAL {meta.overall_height_mm}mm, USABLE {meta.usable_height_mm}mm
+                ACTUAL{" "}
+                <span className="group relative cursor-help underline decoration-dotted">
+                  {meta.overall_height_mm}mm
+                  <span
+                    className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-pre rounded border border-line bg-paper-2 p-2 font-mono text-[10px] normal-case text-knockout shadow-lg group-hover:block"
+                  >
+                    {formatActualHeightBreakdown(meta, lip)}
+                  </span>
+                </span>
+                , USABLE {meta.usable_height_mm}mm
               </span>
             )}
           </label>

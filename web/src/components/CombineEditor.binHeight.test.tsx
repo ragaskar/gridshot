@@ -104,7 +104,32 @@ describe("CombineEditor bin height (units)", () => {
     const input = await screen.findByLabelText("Bin height in gridfinity units") as HTMLInputElement;
     expect(Number(input.value)).toBe(3);
     // overall = 3*7 + 4.4 = 25.4, usable = 25.4 - 4.75 - 1.2 - 4.4 = 15.05
-    await screen.findByText(/ACTUAL 25\.4mm, USABLE 15\.05mm/);
+    await screen.findByText("25.4mm");
+    await screen.findByText(/, USABLE 15\.05mm/);
+  });
+
+  it("hovering the ACTUAL figure shows a right-aligned base/floor/usable/lip breakdown", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    await screen.findByLabelText("Bin height in gridfinity units");
+
+    // overall = 3*7 + 4.4 = 25.4
+    await screen.findByLabelText("Bin height in gridfinity units");
+    const trigger = document.querySelector(".group.relative.cursor-help") as HTMLElement;
+    expect(trigger).not.toBeNull();
+    expect(trigger.textContent).toContain("25.4mm");
+    const tooltip = trigger.querySelector("span");
+    expect(tooltip).not.toBeNull();
+    expect(tooltip!.textContent).toBe(
+      [
+        "base            4.75mm",
+        "floor            1.2mm",
+        "usable height  15.05mm",
+        "lip              4.4mm",
+        "-".repeat(22),
+        "                25.4mm = 3u + lip",
+      ].join("\n"),
+    );
   });
 
   it("has an info tooltip explaining the 7mm increment and that lip isn't included", async () => {

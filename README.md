@@ -512,6 +512,10 @@ Features added on top of the original public release, newest last:
   against the bin's current height on every request) — replacing the old
   "Override pocket depth" checkbox (see
   [docs/combine-editor-bin-height.md](docs/combine-editor-bin-height.md))
+- Hovering the ACTUAL figure in "Bin height (units)" shows a right-aligned,
+  fixed-width breakdown of exactly how it's built — base, floor, usable
+  height, and lip (if on) summing to the total (see
+  [docs/combine-editor-bin-height.md](docs/combine-editor-bin-height.md))
 
 ## License
 
