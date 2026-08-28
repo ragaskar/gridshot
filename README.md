@@ -488,11 +488,10 @@ Features added on top of the original public release, newest last:
 - Fixed toolshape placement silently getting stuck when the placement click
   landed on an existing tool or finger hole, instead of committing the new
   toolshape there (see [docs/toolshapes.md](docs/toolshapes.md))
-- Usable height (mm) is now settable directly from the multi-tool combine
-  editor's arrange page — the depth available below the "100% fill" line,
-  independent of base/floor/lip thickness — instead of only a raw overall
+- Bin height is now settable directly from the multi-tool combine editor's
+  arrange page, in whole gridfinity units — instead of only a raw overall
   height set before opening the editor (see
-  [docs/combine-editor-usable-height.md](docs/combine-editor-usable-height.md))
+  [docs/combine-editor-bin-height.md](docs/combine-editor-bin-height.md))
 - Fixed toolshape edge-drag-resize hit-lines being only a couple of
   screen pixels wide on anything but a small, close-up bin — they're now a
   constant 4 on-screen pixels regardless of zoom/bin size (see
@@ -503,6 +502,16 @@ Features added on top of the original public release, newest last:
   "🗑 Remove" button drops the selected tool(s) from the arrangement,
   disabled below the 2-tool minimum (see
   [docs/combine-editor-add-remove-tools.md](docs/combine-editor-add-remove-tools.md))
+- Bin height (units) replaces the old "Usable height (mm)" field — whole
+  gridfinity units instead of raw mm, with an info tooltip, an
+  actual/usable mm readout, a note when a fixed-depth tool forces a
+  minimum, and a confirm-gated "Clear all fixed tool heights" bulk revert.
+  Each tool's own pocket depth gains a Height dropdown — Auto (100% of the
+  bin's usable height, the new meaning of "automatic"), Fixed (the old
+  exact-mm override), or Percentage (a %-of-usable-height, resolved fresh
+  against the bin's current height on every request) — replacing the old
+  "Override pocket depth" checkbox (see
+  [docs/combine-editor-bin-height.md](docs/combine-editor-bin-height.md))
 
 ## License
 

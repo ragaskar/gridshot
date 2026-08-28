@@ -2507,6 +2507,10 @@ class CombineToolOverride(BaseModel):
     # persisted pocket_depth_mm. Null/omitted means inherit (library value,
     # or automatic if that's also unset).
     pocket_depth_mm: Optional[float] = Field(None, gt=0)
+    # Bin-time recess-depth-as-percentage-of-usable-bin-height override (see
+    # LibraryTool.pocket_depth_pct). Ignored whenever pocket_depth_mm (this
+    # override or the bin-tool's own persisted value) is set.
+    pocket_depth_pct: Optional[float] = Field(None, gt=0, le=100)
 
 
 class CombineRequest(BaseModel):
@@ -2639,6 +2643,14 @@ def _combine_layout(req: "CombineRequest") -> dict:
     clearances, inherited_clearances = [], []
     inherited_depths = []
     inherited_finger_diameters = []
+    # "fixed" (an explicit mm depth applies, this request or persisted on the
+    # bin tool itself) vs "percentage" (a %-of-usable-bin-height applies) vs
+    # "auto" (neither — 100% of usable bin height, same formula as
+    # percentage=100). Only "fixed" tools contribute to the bin's forced
+    # minimum height (see min_height_u below) — percentage/auto tools adapt
+    # to whatever height results instead of demanding one.
+    depth_kinds: list[str] = []
+    depth_pcts: list[float | None] = []
     for tid in req.ids:
         try:
             t = bintools_mod.resolve_tool(tid)
@@ -2696,6 +2708,21 @@ def _combine_layout(req: "CombineRequest") -> dict:
             if override is not None and override.pocket_depth_mm is not None
             else None
         )
+        pct_override = (
+            override.pocket_depth_pct
+            if override is not None and override.pocket_depth_pct is not None
+            else None
+        )
+        fixed_depth_mm = depth_override if depth_override is not None else t.pocket_depth_mm
+        pct = pct_override if pct_override is not None else t.pocket_depth_pct
+        if fixed_depth_mm is not None:
+            depth_kind = "fixed"
+        elif pct is not None:
+            depth_kind = "percentage"
+        else:
+            depth_kind = "auto"
+        depth_kinds.append(depth_kind)
+        depth_pcts.append(pct if depth_kind == "percentage" else None)
         effective_tool = t.model_copy(update={
             "finger_hole": finger,
             "fill_height_pct": req.fill_height_pct,
@@ -2916,14 +2943,53 @@ def _combine_layout(req: "CombineRequest") -> dict:
                         detail=f"{label} overlaps a removed grid cell — move it or restore that cell",
                     )
 
-    need_u = max(spec.height_u for spec in specs)
+    # Only "fixed" tools have a depth that's independent of the bin's own
+    # height, so only they impose a real minimum on it — "percentage"/"auto"
+    # tools adapt to whatever height results instead (see depth_kinds above).
+    # `min_height_u` is that forced floor; `natural_seed_u` additionally
+    # folds in percentage/auto tools' *legacy* automatic depth (full tool
+    # height + margin, independent of bin height — the same value `specs[i]`
+    # already carries from the ordinary derive_tool_spec call above, since
+    # their `effective_tool.pocket_depth_mm` was left None) purely to seed a
+    # sane default the first time a bin's height has never been explicitly
+    # set — the same role `overall_height=None` already played before this
+    # feature existed.
+    min_height_u = max(
+        (specs[i].height_u for i in range(len(specs)) if depth_kinds[i] == "fixed"),
+        default=1,
+    )
+    natural_seed_u = max(spec.height_u for spec in specs)
     height_u = (
         max(
-            need_u,
+            min_height_u,
             grid_mod.height_u_for_overall(req.overall_height, effective_lip, lip_height_mm),
         )
-        if req.overall_height else need_u
+        if req.overall_height else natural_seed_u
     )
+    # Resolve "percentage"/"auto" tools' actual recess depth now that the
+    # bin's own height is finalized — pocket_depth_pct=100 (the "auto"
+    # default) means "fill the whole usable span", so both share this same
+    # formula. `min_floor_mm` is folded in alongside `floor_thickness_mm`
+    # (they default to the same constant, but a Bin Profile can set them
+    # independently) so a 100%-fill tool can never resolve to a depth
+    # `bin_solid` would then reject as too deep for the *real* structural
+    # floor — see PocketTooDeepError at gridfinity.py's fast-path pocket cut.
+    usable_height_mm = grid_mod.usable_height_for_overall(
+        grid_mod.finished_height_mm(height_u, effective_lip, lip_height_mm),
+        effective_lip,
+        floor_thickness_mm=max(floor_thickness_mm, min_floor_mm),
+        lip_height_mm=lip_height_mm,
+    )
+    for i, kind in enumerate(depth_kinds):
+        if kind == "fixed":
+            continue
+        pct = depth_pcts[i] if kind == "percentage" else 100.0
+        depths[i] = max(0.01, round(pct / 100.0 * usable_height_mm, 2))
+        # inherited_depths[i] deliberately keeps whatever pass-1 already put
+        # there — the tool's own legacy natural depth (full height + margin,
+        # unrelated to bin height) — so switching this tool *into* fixed
+        # mode seeds the input with something tied to the tool, not the
+        # whole bin's current depth.
     grid_cuts = [
         (centered[i], depths[i], centered_fingers[i], centered_connectors[i])
         for i in range(len(centered))
@@ -2945,6 +3011,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "pack_stamps": pack_stamps, "pocket_stamps": pocket_stamps,
         "centered": centered, "tfs": ctfs,
         "depths": depths, "inherited_depths": inherited_depths, "fingers": centered_fingers,
+        "depth_kinds": depth_kinds, "depth_pcts": depth_pcts,
+        "min_height_u": min_height_u, "usable_height_mm": usable_height_mm,
         "connectors": centered_connectors, "local_fingers": fingers,
         "local_connectors": connectors, "spans": spans, "arc2s": arc2s,
         "inherited_fingers": inherited_fingers,
@@ -3008,7 +3076,10 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.pocket_depth_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
-        retention_override = t.pocket_depth_mm is not None
+        requested_depth_pct_override = next(
+            (item.pocket_depth_pct for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         spec = lay["specs"][i]
         tools_json.append({
             "id": t.id, "label": t.label,
@@ -3016,11 +3087,9 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "depth_mm": round(lay["depths"][i], 2),
             "depth_mm_inherited": round(lay["inherited_depths"][i], 2),
             "depth_mm_override": requested_depth_override,
-            "depth_mode": (
-                "override" if requested_depth_override is not None
-                else "library override" if retention_override
-                else "automatic"
-            ),
+            "depth_pct": lay["depth_pcts"][i],
+            "depth_pct_override": requested_depth_pct_override,
+            "depth_kind": lay["depth_kinds"][i],
             "clearance_mm": round(lay["clearances"][i], 2),
             "clearance_mm_inherited": round(lay["inherited_clearances"][i], 2),
             "clearance_mm_override": requested_clearance_override,
@@ -3061,21 +3130,30 @@ def library_combine_preview(req: CombineRequest) -> dict:
             grid_mod.finished_height_mm(lay["height_u"], lay["lip"], lay["lip_height_mm"]), 1
         ),
         # The depth actually available below the "100% fill" reference —
-        # finished height minus base, floor, and (if present) lip. Reported
-        # (rather than left for the client to derive) because the effective
-        # floor_thickness_mm/lip_height_mm depend on Bin Profile overrides the
-        # client doesn't otherwise see resolved; base_h_mm/floor_thickness_mm/
-        # lip_height_mm ride along so an "usable height" input can convert
-        # back to overall_height without duplicating this constant client-side.
-        "usable_height_mm": round(
-            grid_mod.usable_height_for_overall(
-                grid_mod.finished_height_mm(lay["height_u"], lay["lip"], lay["lip_height_mm"]),
-                lay["lip"], floor_thickness_mm=lay["floor_thickness_mm"], lip_height_mm=lay["lip_height_mm"],
-            ), 1
-        ),
+        # finished height minus base, floor, and (if present) lip. This is
+        # the exact same value "percentage"/"auto" tools' depth is resolved
+        # against (see min_height_u below), using max(floor_thickness_mm,
+        # min_floor_mm) rather than floor_thickness_mm alone so a 100%-fill
+        # tool can never come out deeper than the real structural floor
+        # allows even when a Bin Profile sets the two independently.
+        # Reported (rather than left for the client to derive) because the
+        # effective floor_thickness_mm/lip_height_mm depend on Bin Profile
+        # overrides the client doesn't otherwise see resolved;
+        # base_h_mm/floor_thickness_mm/lip_height_mm/unit_h_mm ride along so
+        # a "bin height" input can convert to/from overall_height without
+        # duplicating these constants client-side.
+        "usable_height_mm": round(lay["usable_height_mm"], 1),
         "base_h_mm": grid_mod.BASE_H,
         "floor_thickness_mm": round(lay["floor_thickness_mm"], 2),
         "lip_height_mm": round(lay["lip_height_mm"], 2),
+        "unit_h_mm": grid_mod.UNIT_H,
+        "height_u": lay["height_u"],
+        # The smallest height_u any "fixed"-depth tool in this bin can live
+        # with — 1 if none are fixed. The client shows this as a "tool
+        # height requires a minimum of Nu" note; the server itself already
+        # enforces it (height_u is clamped up to this, see min_height_u in
+        # _combine_layout).
+        "min_height_u": lay["min_height_u"],
         "pitch": grid_mod.PITCH, "bin_size": grid_mod.BIN_SIZE, "wall": lay["wall"],
         "lip": lay["lip"],
         "reserved_cells": [list(cell) for cell in lay["reserved_cells"]],

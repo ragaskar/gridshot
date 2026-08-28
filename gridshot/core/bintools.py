@@ -120,6 +120,7 @@ def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
         fill_height_pct=source.fill_height_pct,
         live_grid=source.live_grid,
         pocket_depth_mm=source.pocket_depth_mm,
+        pocket_depth_pct=source.pocket_depth_pct,
         round_tool=source.round_tool,
         finger_hole=source.finger_hole,
         finger_hole_arc_mm=source.finger_hole_arc_mm,

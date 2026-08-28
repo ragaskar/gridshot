@@ -52,9 +52,13 @@ class TestCombineDepthOverride:
 
         assert response.status_code == 200
         tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
-        assert tool_a["depth_mm"] == tool_a["depth_mm_inherited"]
+        # "auto" fills 100% of the bin's own usable height (see
+        # tests/test_combine_pocket_depth_pct.py) — depth_mm_inherited stays
+        # the tool's own legacy natural depth instead, as a seed value for
+        # switching this tool into "fixed" mode, so the two need not match.
+        assert tool_a["depth_mm"] == pytest.approx(response.json()["usable_height_mm"], abs=0.06)
         assert tool_a["depth_mm_override"] is None
-        assert tool_a["depth_mode"] == "automatic"
+        assert tool_a["depth_kind"] == "auto"
 
     def test_override_changes_effective_depth_for_one_tool_only(self, client, library_dir):
         _seed_two_tools()
@@ -65,10 +69,10 @@ class TestCombineDepthOverride:
         by_id = {t["id"]: t for t in response.json()["tools"]}
         assert by_id["tool-a"]["depth_mm"] == 5.0
         assert by_id["tool-a"]["depth_mm_override"] == 5.0
-        assert by_id["tool-a"]["depth_mode"] == "override"
+        assert by_id["tool-a"]["depth_kind"] == "fixed"
         assert by_id["tool-a"]["depth_mm_inherited"] != 5.0
         assert by_id["tool-b"]["depth_mm_override"] is None
-        assert by_id["tool-b"]["depth_mode"] == "automatic"
+        assert by_id["tool-b"]["depth_kind"] == "auto"
 
     def test_deep_override_grows_the_bin_height(self, client, library_dir):
         _seed_two_tools()
@@ -101,7 +105,7 @@ class TestCombineDepthOverride:
         assert response.status_code == 200
         tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
         assert tool_a["depth_mm_override"] is None
-        assert tool_a["depth_mode"] == "automatic"
+        assert tool_a["depth_kind"] == "auto"
 
     def test_override_on_tool_with_library_depth_shows_override_not_library_override(self, client, library_dir):
         library_mod.save(library_mod.LibraryTool(
@@ -118,4 +122,4 @@ class TestCombineDepthOverride:
         tool_a = next(t for t in response.json()["tools"] if t["id"] == "tool-a")
         assert tool_a["depth_mm"] == 8.0
         assert tool_a["depth_mm_inherited"] == 6.0
-        assert tool_a["depth_mode"] == "override"
+        assert tool_a["depth_kind"] == "fixed"

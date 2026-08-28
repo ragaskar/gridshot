@@ -110,6 +110,13 @@ class LibraryTool(BaseModel):
     live_grid: bool = False
     # Shared recess-depth override; effective value always comes from derivation.
     pocket_depth_mm: float | None = None
+    # Combine-editor-only: recess depth as a percentage of the bin's usable
+    # height (see gridshot.server.app._combine_layout), resolved fresh on
+    # every request against the bin's *current* height — never baked into a
+    # fixed mm value the way pocket_depth_mm is. Ignored whenever
+    # pocket_depth_mm is set (fixed always wins). No single-tool-capture or
+    # Tool Library UI sets this.
+    pocket_depth_pct: float | None = None
     round_tool: bool = False  # domed/barrel → auto depth off ~2× widest-outline height
     finger_hole: bool = True  # full-depth pockets need a scallop to lift the tool out
     # Bin-time-only plumbing for the combine editor's finger-hole position

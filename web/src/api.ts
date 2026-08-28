@@ -1045,6 +1045,7 @@ export interface CombineToolOverride {
   finger_hole_arc2_mm: number | null;
   locked_rotation_deg: number | null;
   pocket_depth_mm: number | null;
+  pocket_depth_pct: number | null;
 }
 
 export interface CombineTool extends Placement {
@@ -1052,9 +1053,20 @@ export interface CombineTool extends Placement {
   fill_height_pct: number;
   live_grid: boolean;
   depth_mm: number;
+  /** The tool's own legacy natural depth (full height + margin) — a seed
+   *  value for switching this tool *into* "fixed" mode, unrelated to the
+   *  bin's own height. Not what "auto"/"percentage" tools' depth_mm is
+   *  computed from (see depth_kind). */
   depth_mm_inherited: number;
   depth_mm_override: number | null;
-  depth_mode: "automatic" | "library override" | "override";
+  depth_pct: number | null;
+  depth_pct_override: number | null;
+  /** "fixed": depth_mm is an explicit mm value (this override, or persisted
+   *  on the bin tool itself) — never changes with bin height.
+   *  "percentage": depth_mm is depth_pct% of the bin's usable height.
+   *  "auto": depth_mm is 100% of the bin's usable height (same formula as
+   *  percentage=100), the default when neither of the above is set. */
+  depth_kind: "auto" | "fixed" | "percentage";
   clearance_mm: number;
   clearance_mm_inherited: number;
   clearance_mm_override: number | null;
@@ -1098,6 +1110,16 @@ export interface CombinePreview {
   base_h_mm: number;
   floor_thickness_mm: number;
   lip_height_mm: number;
+  /** Gridfinity's fixed height increment (7mm) — ride-along constant so a
+   *  "bin height (units)" input can convert to/from overall_height_mm
+   *  without hardcoding it client-side. */
+  unit_h_mm: number;
+  /** The resolved whole-unit height this preview actually used. */
+  height_u: number;
+  /** The smallest height_u any "fixed"-depth tool in this bin can live
+   *  with — 1 if none are fixed. The arrange page's bin-height field shows
+   *  a note using this whenever it's greater than 1. */
+  min_height_u: number;
   pitch: number;
   bin_size: number;
   wall: number;

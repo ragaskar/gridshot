@@ -28,7 +28,7 @@ const TOOLSHAPE_STAMP: [number, number][] = [[-15, -15], [15, -15], [15, 15], [-
 function baseTool(id: string, label: string, tx: number) {
   return {
     id, label, fill_height_pct: 100, live_grid: false,
-    depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_mode: "automatic" as const,
+    depth_mm: 5, depth_mm_inherited: 5, depth_mm_override: null, depth_pct: null, depth_pct_override: null, depth_kind: "auto" as const,
     clearance_mm: 1.0, clearance_mm_inherited: 1.0, clearance_mm_override: null,
     round_tool: false,
     finger: false, finger_hole: false, finger_hole_inherited: false, finger_hole_override: null,
@@ -84,7 +84,7 @@ function buildResponse(ids: string[], placements: Placement[] | null | undefined
   });
   return {
     fill_height_pct: 100, live_grid: false, gx: 3, gy: 2, outer_w: 125, outer_d: 83,
-    overall_height_mm: 25.4, usable_height_mm: 18.45, base_h_mm: 4.75, floor_thickness_mm: 1.2, lip_height_mm: 4.4, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
+    overall_height_mm: 25.4, usable_height_mm: 18.45, base_h_mm: 4.75, floor_thickness_mm: 1.2, lip_height_mm: 4.4, unit_h_mm: 7, height_u: 3, min_height_u: 1, pitch: 42, bin_size: 41.5, wall: 2, lip: true,
     reserved_cells: [], available_cells: [], tools,
   };
 }
