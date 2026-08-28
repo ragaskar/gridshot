@@ -336,7 +336,7 @@ Features added on top of the original public release, newest last:
   auto-pack fits within it or reports a clear error and disables export
   (see [docs/combine-force-bin-size.md](docs/combine-force-bin-size.md))
 - "⧉ Clone" button on each library card, to duplicate a tool under a new id
-  so two of the same tool can go in one combine/compose bin (see
+  so two of the same tool can go in one combine bin/compose drawer (see
   [docs/library-clone-tool.md](docs/library-clone-tool.md))
 - Multi-select (shift-click) in the multi-tool combine editor's 2D arrange view,
   with group drag/nudge — the foundation for align/distribute and bulk per-tool

@@ -1,7 +1,7 @@
 """Cloning a library tool: `library.clone()` duplicates an entry under a new
 id — same outline/settings/history/provenance, plus its thumbnail/photo
 assets on disk — so the clone can be selected alongside the original for a
-combine/compose bin without any instance-id plumbing."""
+combine bin/compose drawer without any instance-id plumbing."""
 
 from __future__ import annotations
 

@@ -2035,7 +2035,7 @@ def library_delete(tool_id: str) -> dict:
 
 def library_clone(tool_id: str) -> dict:
     """Duplicate a library entry under a new id, so the clone can be
-    selected alongside the original for a combine/compose bin."""
+    selected alongside the original for a combine bin/compose drawer."""
     new_id = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"  # same convention as library_add
     try:
         cloned = library_mod.clone(tool_id, new_id)

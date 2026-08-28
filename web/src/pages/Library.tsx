@@ -697,7 +697,7 @@ export function Library() {
                         <button
                           className="font-mono text-[10px] text-teal hover:underline"
                           onClick={() => void clone(t.id)}
-                          title="Duplicate this tool under a new id, so you can select two of the same tool in one combine/compose bin"
+                          title="Duplicate this tool under a new id, so you can select two of the same tool in one combine bin/compose drawer"
                         >
                           ⧉ Clone
                         </button>
@@ -898,7 +898,7 @@ export function Library() {
                       </span>
                       <button
                         className="shrink-0 font-mono text-sm text-teal hover:text-knockout"
-                        title="Duplicate this tool under a new id, so you can select two of the same tool in one combine/compose bin"
+                        title="Duplicate this tool under a new id, so you can select two of the same tool in one combine bin/compose drawer"
                         onClick={() => void clone(t.id)}
                       >
                         ⧉
