@@ -158,11 +158,11 @@ export function BinLibrary() {
                 className="border border-line bg-paper-2 overflow-hidden"
                 style={{ borderRadius: 2 }}
               >
-                <div className="p-3 space-y-3 text-field">
+                <div className="p-3 space-y-3 text-ink">
                   <label className="block">
                     <span className="font-mono text-[10px] uppercase text-muted">Name</span>
                     <input
-                      className="w-full bg-transparent border-b border-line font-mono text-sm text-field py-1 outline-none placeholder:text-muted"
+                      className="w-full bg-transparent border-b border-line font-mono text-sm text-ink py-1 outline-none placeholder:text-muted"
                       defaultValue={b.label}
                       placeholder="Unnamed bin"
                       key={`${b.id}-${b.label}`}
@@ -171,15 +171,15 @@ export function BinLibrary() {
                   </label>
                   <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 font-mono text-[10px] text-muted">
                     <dt>Saved</dt>
-                    <dd className="text-right text-field">
+                    <dd className="text-right text-ink">
                       {new Date(b.created_ts * 1000).toLocaleDateString()}
                     </dd>
                     <dt>Fill height</dt>
-                    <dd className="text-right text-field">{b.fill_height_pct}%{b.live_grid ? " + live grid" : ""}</dd>
+                    <dd className="text-right text-ink">{b.fill_height_pct}%{b.live_grid ? " + live grid" : ""}</dd>
                   </dl>
                   <div className="font-mono text-[10px] text-muted">
                     <span className="uppercase">Tools</span>
-                    <p className="mt-1 text-field">
+                    <p className="mt-1 text-ink">
                       {b.tool_labels.map((label) => label ?? "(deleted tool)").join(", ")}
                     </p>
                   </div>

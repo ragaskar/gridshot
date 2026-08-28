@@ -266,7 +266,7 @@ export function BinProfiles() {
               <div>
                 <label className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[10px] uppercase text-muted">Fill height</span>
-                  <span className="font-mono text-[10px] text-field">{draft.fill_height_pct}%</span>
+                  <span className="font-mono text-[10px] text-ink">{draft.fill_height_pct}%</span>
                 </label>
                 <input
                   aria-label="Fill height percent"
@@ -450,13 +450,13 @@ export function BinProfiles() {
                   <span className="font-mono text-[10px] text-muted">No preview yet</span>
                 )}
               </div>
-              <div className="p-3 space-y-2 text-field">
-                <div className="font-mono text-sm text-field">{p.name}</div>
+              <div className="p-3 space-y-2 text-ink">
+                <div className="font-mono text-sm text-ink">{p.name}</div>
                 <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 font-mono text-[10px] text-muted">
                   <dt>Fill height</dt>
-                  <dd className="text-right text-field">{p.fill_height_pct}%{p.live_grid ? " + live grid" : ""}</dd>
+                  <dd className="text-right text-ink">{p.fill_height_pct}%{p.live_grid ? " + live grid" : ""}</dd>
                   <dt>Lip</dt>
-                  <dd className="text-right text-field">{p.lip ? "on" : "off"}</dd>
+                  <dd className="text-right text-ink">{p.lip ? "on" : "off"}</dd>
                 </dl>
                 <button
                   type="button"

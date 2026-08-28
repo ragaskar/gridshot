@@ -82,7 +82,7 @@ export function PolygonEditor({
   const path = "M " + pts.map((p) => `${p[0]} ${p[1]}`).join(" L ") + " Z";
   const btn = (m: typeof mode, label: string) => (
     <button
-      className={`px-3 py-1 font-mono text-xs uppercase ${mode === m ? "bg-teal text-field" : "text-muted border border-line"}`}
+      className={`px-3 py-1 font-mono text-xs uppercase ${mode === m ? "bg-teal text-ink" : "text-muted border border-line"}`}
       style={{ letterSpacing: "0.08em", borderRadius: 2 }}
       onClick={() => setMode(m)}
     >

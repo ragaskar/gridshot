@@ -538,11 +538,11 @@ export function Library() {
                         ×
                       </button>
                     </div>
-                    <div className="p-3 space-y-3 text-field" onClick={(e) => e.stopPropagation()}>
+                    <div className="p-3 space-y-3 text-ink" onClick={(e) => e.stopPropagation()}>
                       <label className="block">
                         <span className="font-mono text-[10px] uppercase text-muted">Tool name</span>
                         <input
-                          className="w-full bg-transparent border-b border-line font-mono text-sm text-field py-1 outline-none placeholder:text-muted"
+                          className="w-full bg-transparent border-b border-line font-mono text-sm text-ink py-1 outline-none placeholder:text-muted"
                           defaultValue={t.label}
                           placeholder="Unnamed tool"
                           onBlur={(e) => e.target.value !== t.label && patch(t.id, { label: e.target.value })}
@@ -884,7 +884,7 @@ export function Library() {
                         <img src={thumbSrc(t)} alt="" className="h-full w-full object-contain" />
                       </button>
                       <button
-                        className="min-w-0 flex-1 truncate text-left font-mono text-sm text-field hover:text-teal hover:underline"
+                        className="min-w-0 flex-1 truncate text-left font-mono text-sm text-ink hover:text-teal hover:underline"
                         title='Reopen this tool as "current tool" — examine its full capture/calibration details, download its bin files, and regenerate it with adjusted settings'
                         onClick={() => reopenAsCurrent(t)}
                       >

@@ -2,19 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Blue-focused, bold/functional palette (general UI use — the 2D grid/arrange
+ * view keeps its own separate tool-color palette). Light values follow the
+ * ColorBrewer PuBu sequential scale from paper (lightest) to ink (darkest);
+ * dark mode redefines every token rather than inverting light values, since
+ * a straight invert doesn't hold contrast. `field`/`knockout` are the one
+ * pair that stays fixed across both themes: they're a dedicated dark surface
+ * (buttons, viewport/thumbnail panels) with light text on top, not the
+ * page's ink/background pair, so they don't need to flip. */
 :root {
-  --c-paper: #e9e3d3;
-  --c-field: #17191c;
-  --c-navy: #243049;
-  --c-knockout: #f3efe4;
-  --c-teal: #246e72;
-  --c-orange: #c8531e;
-  --c-line: #b9b19c;
+  color-scheme: light dark;
+
+  --c-paper: #fff7fb;
+  --c-paper-2: #ece7f2;
+  --c-ink: #023858;
+  --c-line: #a6bddb;
+  --c-muted: #0570b0;
+
+  --c-field: #0c1c2e;
+  --c-knockout: #fff7fb;
+
+  --c-teal: #0f74b8;
+  --c-orange: #ea580c;
+  --c-orange-text: #c2410c;
+  --c-red: #dc2626;
+  --c-olive: #16a34a;
+  --c-gold: #efa92e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-paper: #0b1a2b;
+    --c-paper-2: #142c46;
+    --c-ink: #eaf3fa;
+    --c-line: #3f6f96;
+    --c-muted: #8fb8dd;
+
+    --c-teal: #4098d7;
+    --c-orange: #fb923c;
+    --c-orange-text: #fdba74;
+    --c-red: #f87171;
+    --c-olive: #4ade80;
+    --c-gold: #f5c563;
+  }
 }
 
 @layer base {
   body {
-    @apply bg-paper text-field font-body;
+    @apply bg-paper text-ink font-body;
     font-size: 1rem;
     line-height: 1.6;
   }
@@ -58,7 +93,7 @@
     box-shadow: 4px 4px 0 theme("colors.field");
   }
   .btn-ghost {
-    @apply bg-transparent text-field;
+    @apply bg-transparent text-ink;
   }
   .btn-ghost:hover {
     box-shadow: 4px 4px 0 theme("colors.teal");
@@ -107,7 +142,7 @@
     border-radius: 2px;
   }
   .mono-input {
-    @apply font-mono text-base w-full bg-paper-2 border border-line px-3 py-2 text-field;
+    @apply font-mono text-base w-full bg-paper-2 border border-line px-3 py-2 text-ink;
     border-radius: 2px;
   }
   .mono-input:focus {
@@ -120,7 +155,7 @@
     @apply mx-auto flex max-w-container flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6;
   }
   .app-nav-brand {
-    @apply inline-flex shrink-0 items-center gap-1 font-display text-sm font-bold uppercase text-field;
+    @apply inline-flex shrink-0 items-center gap-1 font-display text-sm font-bold uppercase text-ink;
     letter-spacing: 0.08em;
   }
   .app-nav-brand span:first-child {
@@ -137,7 +172,7 @@
     letter-spacing: 0.1em;
   }
   .app-nav-link:hover {
-    @apply text-field;
+    @apply text-ink;
   }
   .app-nav-link[aria-current="page"] {
     @apply border-teal text-teal;

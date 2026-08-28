@@ -1,30 +1,32 @@
-/** 2046 Print Shop design tokens mapped into Tailwind. Single source of truth. */
+/** Design tokens mapped into Tailwind. Every value is a CSS custom property
+ *  (defined in index.css) so the light/dark palettes in there are the single
+ *  source of truth — this file just wires the token names up. Grid/arrange
+ *  tool colors are handled separately (hardcoded palettes in Library.tsx /
+ *  CombineEditor.tsx) and don't live here. */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     colors: {
       transparent: "transparent",
       // substrates
-      paper: "#E9E3D3",
-      "paper-2": "#DED7C2",
-      field: "#17191C",
-      navy: "#243049",
-      cobalt: "#1F3C74",
-      knockout: "#F3EFE4",
+      paper: "var(--c-paper)",
+      "paper-2": "var(--c-paper-2)",
+      // default body/ink text — flips with the theme
+      ink: "var(--c-ink)",
+      // fixed dark surface (buttons, viewport/thumbnail panels) — stays dark
+      // in both themes, paired with knockout text on top of it
+      field: "var(--c-field)",
+      knockout: "var(--c-knockout)",
       // spot inks
-      orange: "#C8531E",
-      red: "#C13322",
-      teal: "#246E72",
-      gold: "#EFA92E",
-      blue: "#2F6FB0",
-      // extended
-      olive: "#4B5337",
-      yellow: "#F2C21A",
-      water: "#2E6E8E",
+      orange: "var(--c-orange)",
+      "orange-text": "var(--c-orange-text)",
+      red: "var(--c-red)",
+      teal: "var(--c-teal)",
+      gold: "var(--c-gold)",
+      olive: "var(--c-olive)",
       // neutrals
-      line: "#B9B19C",
-      muted: "#625D50",
-      "orange-text": "#9B3C17",
+      line: "var(--c-line)",
+      muted: "var(--c-muted)",
     },
     fontFamily: {
       display: ['"Space Grotesk"', "sans-serif"],

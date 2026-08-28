@@ -329,7 +329,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <div className="font-mono text-xs mb-1 text-field flex items-center gap-2">
+      <div className="font-mono text-xs mb-1 text-ink flex items-center gap-2">
         <span>{label}</span>
         {info}
       </div>

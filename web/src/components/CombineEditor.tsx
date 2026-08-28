@@ -3652,7 +3652,7 @@ export function CombineEditor({
                         alt={t.label || t.id}
                         className="w-full aspect-square object-contain p-2 bg-field"
                       />
-                      <div className="p-2 font-mono text-[10px] truncate text-field">
+                      <div className="p-2 font-mono text-[10px] truncate text-ink">
                         {t.label || t.id.slice(0, 8)}
                       </div>
                     </button>
