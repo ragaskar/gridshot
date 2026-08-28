@@ -127,7 +127,7 @@ describe("CombineEditor bin height (units)", () => {
         "usable height  15.05mm",
         "lip              4.4mm",
         "-".repeat(22),
-        "                25.4mm = 3u + lip",
+        "3u + lip        25.4mm",
       ].join("\n"),
     );
   });

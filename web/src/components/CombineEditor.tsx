@@ -142,14 +142,14 @@ function formatActualHeightBreakdown(meta: CombinePreview, lip: boolean): string
     ["usable height", meta.usable_height_mm],
   ];
   if (lip) rows.push(["lip", meta.lip_height_mm]);
+  const totalLabel = `${meta.height_u}u${lip ? " + lip" : ""}`;
   const totalValue = `${meta.overall_height_mm}mm`;
-  const labelWidth = Math.max(...rows.map(([label]) => label.length));
+  const labelWidth = Math.max(...rows.map(([label]) => label.length), totalLabel.length);
   const values = rows.map(([, v]) => `${v}mm`);
   const valueWidth = Math.max(...values.map((v) => v.length), totalValue.length);
   const lines = rows.map(([label], i) => `${label.padEnd(labelWidth)}  ${values[i].padStart(valueWidth)}`);
   lines.push("-".repeat(labelWidth + 2 + valueWidth));
-  const totalLabel = `${meta.height_u}u${lip ? " + lip" : ""}`;
-  lines.push(`${" ".repeat(labelWidth)}  ${totalValue.padStart(valueWidth)} = ${totalLabel}`);
+  lines.push(`${totalLabel.padEnd(labelWidth)}  ${totalValue.padStart(valueWidth)}`);
   return lines.join("\n");
 }
 

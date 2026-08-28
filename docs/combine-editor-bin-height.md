@@ -25,10 +25,10 @@ That is, the number typed here is `height_u`; the finished bin is
   ```
   base            4.75mm
   floor            1.2mm
-  usable height   22.05mm
+  usable height  22.05mm
   lip              4.4mm
-  -----------------------
-                  32.4mm = 4u + lip
+  ----------------------
+  4u + lip        32.4mm
   ```
 
   (the `lip` row, and the ` + lip` on the total line, are omitted when
