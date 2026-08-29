@@ -86,8 +86,9 @@ corral/grid styles don't cut a plain pocket cavity to begin with, so there's
 no bottom corner to round there.
 
 For a pocket's *top* opening edge instead of its bottom interior corner, see
-the bin-level ["Bevel pockets"](combine-pocket-bevel.md) flag — a straight
-chamfer rather than a curved fillet, and on by default rather than opt-in.
+the bin-level ["Round pocket edges"](combine-pocket-round.md) flag — also a
+curved fillet, but a convex round-over rather than this concave interior
+one, and on by default rather than opt-in.
 
 ## Constraints
 

@@ -2538,10 +2538,13 @@ class CombineRequest(BaseModel):
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
     magnet_hole_depth_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
-    # Chamfers each pocket's top opening edge — see
-    # grid_mod.POCKET_BEVEL_RADIUS_MM/_pocket_top_bevel_radius. Bin-level,
-    # not a BinProfile field (the ask was specifically "available on the
-    # combine bin page"); only ever applies on the fast path (pocket-style,
+    # Rounds off each pocket's top opening edge, plus its finger holes and
+    # finger-hole connector, with a convex fillet — see
+    # grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius. Field name
+    # kept as `bevel_pockets` for compatibility with saved bins and the API;
+    # the UI's own label reads "Round pocket edges". Bin-level, not a
+    # BinProfile field (the ask was specifically "available on the combine
+    # bin page"); only ever applies on the fast path (pocket-style,
     # fill_height_pct=100, live_grid off) — a no-op otherwise, same scoping
     # as the existing per-tool bottom fillet.
     bevel_pockets: bool = True
@@ -3279,10 +3282,10 @@ def library_combine_slice(req: CombineRequest) -> Response:
             ),
         )
     z0, thickness = window
-    # The window can land within the bevel's own radius of the top for a
-    # shallow pocket (see slice_window), which would make the coupon measure
-    # the flared opening instead of the true wall — so the slice always
-    # samples the unbeveled pocket, regardless of the bin's own flag.
+    # The window can land within the round-over's own radius of the top for
+    # a shallow pocket (see slice_window), which would make the coupon
+    # measure the flared opening instead of the true wall — so the slice
+    # always samples the unrounded pocket, regardless of the bin's own flag.
     unbeveled_req = req.model_copy(update={"bevel_pockets": False})
     solid = _combine_solid(unbeveled_req, lay)
     sliced = grid_mod.slice_layer(solid, z0, thickness)

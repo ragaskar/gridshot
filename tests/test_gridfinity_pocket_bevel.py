@@ -1,7 +1,8 @@
-"""`bevel_pockets` (default on): chamfers each pocket's top opening edge in
-bin_solid's fast path, cutting a little extra material at the sharp edge
-where the pocket wall meets the bin's top surface — see
-grid_mod.POCKET_BEVEL_RADIUS_MM/_pocket_top_bevel_radius."""
+"""`bevel_pockets` (default on; UI label "Round pocket edges"): rounds off
+each pocket's top opening edge — plus its finger holes and their
+connector — in bin_solid's fast path with a convex fillet, cutting a little
+extra material at the sharp edge where the pocket wall meets the bin's top
+surface — see grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius."""
 
 from __future__ import annotations
 
@@ -78,6 +79,37 @@ class TestPocketTopBevel:
             3, 1, 3, pockets=pockets, bevel_pockets=True, tool_wall_mm=2.0,
         )
         assert grid_mod.to_trimesh(solid).is_watertight
+
+    def test_watertight_with_finger_holes_and_a_connector(self):
+        pocket = _square_pocket(20.0)
+        fingers = [(0.0, 11.0, 4.0)]
+        connector = from_shapely(box(-2.0, 9.0, 2.0, 15.0))
+        pockets = [(pocket, 10.0, fingers, connector)]
+        solid = grid_mod.bin_solid(2, 1, 3, pockets=pockets, bevel_pockets=True)
+        assert grid_mod.to_trimesh(solid).is_watertight
+
+    def test_rounds_finger_holes_and_their_connector_too(self):
+        # Finger holes/connector sit partly outside the pocket's own
+        # footprint (realistic — that's the whole point of finger access),
+        # so rounding them removes material the pocket-only round-over
+        # never would. Previously only the pocket outline itself was
+        # chamfered, so these two deltas were equal.
+        pocket = _square_pocket(20.0)
+        fingers = [(0.0, 11.0, 4.0)]
+        connector = from_shapely(box(-2.0, 9.0, 2.0, 15.0))
+
+        def bevel_delta(pockets: list[tuple]) -> float:
+            off = grid_mod.to_trimesh(
+                grid_mod.bin_solid(2, 1, 3, pockets=pockets, bevel_pockets=False)
+            ).volume
+            on = grid_mod.to_trimesh(
+                grid_mod.bin_solid(2, 1, 3, pockets=pockets, bevel_pockets=True)
+            ).volume
+            return off - on
+
+        delta_with_fingers = bevel_delta([(pocket, 10.0, fingers, connector)])
+        delta_pocket_only = bevel_delta([(pocket, 10.0, (), None)])
+        assert delta_with_fingers > delta_pocket_only + 1e-6
 
     def test_degrades_to_no_bevel_rather_than_erroring_at_a_very_thin_wall(self):
         # min_wall_mm well under any bevel radius: the clamp should drop the

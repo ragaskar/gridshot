@@ -3150,14 +3150,14 @@ export function CombineEditor({
               type="checkbox"
               checked={bevelPockets}
               disabled={busy}
-              title="Chamfers each pocket's own top edge so it isn't sharp to the touch. Finger-access holes and the tool-to-tool connector keep their existing edges. Pocket-style bins only (100% fill, live grid off)."
+              title="Rounds off each pocket's own top edge — plus its finger-access holes and their connector — so it isn't sharp to the touch. Pocket-style bins only (100% fill, live grid off)."
               onChange={(e) => {
                 pushSnapshot();
                 setBevelPockets(e.target.checked);
                 void load(placementsFor(tools), overridesFor(tools));
               }}
             />
-            <span className="font-mono text-[10px] uppercase text-muted">Bevel pockets</span>
+            <span className="font-mono text-[10px] uppercase text-muted">Round pocket edges</span>
           </label>
           <div>
             <label className="flex items-center gap-2">

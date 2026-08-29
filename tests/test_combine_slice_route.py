@@ -146,11 +146,11 @@ class TestCombineSlice:
     def test_slice_solid_is_always_built_unbeveled_regardless_of_the_bins_own_flag(
         self, client, monkeypatch
     ):
-        # A shallow pocket's slice window can land within the bevel's own
-        # radius of the top (see slice_window's docstring), which would make
-        # the coupon measure the flared opening instead of the true wall —
-        # so the slice always samples the pocket unbeveled, even when the
-        # bin itself has "Bevel pockets" on.
+        # A shallow pocket's slice window can land within the round-over's
+        # own radius of the top (see slice_window's docstring), which would
+        # make the coupon measure the flared opening instead of the true
+        # wall — so the slice always samples the pocket unrounded, even when
+        # the bin itself has "Round pocket edges" on.
         _stub_layout(monkeypatch, depths=[6.0, 9.0])
         seen = {}
         original = app_module._combine_solid

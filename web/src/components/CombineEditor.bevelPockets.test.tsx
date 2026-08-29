@@ -61,7 +61,7 @@ function buildResponse(overrides: CombineToolOverride[] | null | undefined, plac
 }
 
 function bevelPocketsCheckbox(): HTMLInputElement {
-  return screen.getByText("Bevel pockets").previousElementSibling as HTMLInputElement;
+  return screen.getByText("Round pocket edges").previousElementSibling as HTMLInputElement;
 }
 
 function undoButton(): HTMLButtonElement {
