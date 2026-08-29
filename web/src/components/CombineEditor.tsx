@@ -441,6 +441,7 @@ export function CombineEditor({
   const binConfigFold = useFold(true);
   const toolConfigFold = useFold(true);
   const shapeFold = useFold(true);
+  const alignFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -3556,6 +3557,11 @@ export function CombineEditor({
             </ControlGroup>
           </Subsection>
 
+          <Subsection title="Align" open={alignFold.open} onToggle={alignFold.toggle}>
+            {alignButtons}
+            {distributeButtons}
+          </Subsection>
+
           {selectedTools.length >= 1 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
@@ -3591,8 +3597,6 @@ export function CombineEditor({
               >
                 ⎘ Copy style
               </button>
-              {alignButtons}
-              {distributeButtons}
             </div>
           ) : selectedFingerHoleToolIds.size > 0 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
