@@ -20,7 +20,9 @@ import {
   type SavedBin,
 } from "../api";
 import { BinViewer } from "./BinViewer";
+import { Section } from "./sidebar/Section";
 import { Sidebar } from "./sidebar/Sidebar";
+import { useFold } from "./sidebar/useFold";
 import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
@@ -434,6 +436,7 @@ export function CombineEditor({
   const [view, setView] = useState<"arrange" | "preview">("arrange");
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const binConfigFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -2991,6 +2994,7 @@ export function CombineEditor({
           collapsed={rightSidebarCollapsed}
           onToggleCollapse={() => setRightSidebarCollapsed((c) => !c)}
         >
+          <Section title="Bin config" open={binConfigFold.open} onToggle={binConfigFold.toggle}>
           <div>
             <span className="font-mono text-[10px] uppercase text-muted">Bin profile</span>
             <select
@@ -3229,6 +3233,7 @@ export function CombineEditor({
               </div>
             )}
           </div>
+          </Section>
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Rotation (degrees)</span>
             <div className="mt-1 flex items-center gap-2">
