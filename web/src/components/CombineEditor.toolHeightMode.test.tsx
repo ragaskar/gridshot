@@ -218,8 +218,12 @@ describe("CombineEditor tool height mode (auto/fixed/percentage)", () => {
       expect((await screen.findByLabelText("Pocket depth as a percentage of usable bin height") as HTMLInputElement).value).toBe("50");
     });
 
+    // The Shape subsection stays mounted (disabled) rather than disappearing
+    // when nothing is selected — the percentage field itself does unmount,
+    // since it's gated on the deselected tool's own depth_kind.
     fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByLabelText("Tool height mode")).toBeNull());
+    await waitFor(() => expect((screen.getByLabelText("Tool height mode") as HTMLSelectElement).disabled).toBe(true));
+    await waitFor(() => expect(screen.queryByLabelText("Pocket depth as a percentage of usable bin height")).toBeNull());
     fireEvent.click(listRow("Wrench"));
 
     const reopened = await screen.findByLabelText("Pocket depth as a percentage of usable bin height") as HTMLInputElement;

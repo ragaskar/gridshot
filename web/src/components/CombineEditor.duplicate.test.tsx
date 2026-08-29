@@ -91,15 +91,17 @@ describe("CombineEditor Duplicate", () => {
     cleanup();
   });
 
-  it("shows Duplicate only when exactly one tool is selected", async () => {
+  it("enables Duplicate only when exactly one tool is selected", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
 
-    expect(screen.queryByText("⧉ Duplicate")).toBeNull();
+    // Tool config's Shape subsection stays mounted (disabled) rather than
+    // disappearing when nothing is selected — Duplicate is always present.
+    expect((screen.getByText("⧉ Duplicate") as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByText("Wrench"));
 
-    expect(await screen.findByText("⧉ Duplicate")).toBeTruthy();
+    await waitFor(() => expect((screen.getByText("⧉ Duplicate") as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("forks the selected tool and adds it to the bin, independently selected", async () => {

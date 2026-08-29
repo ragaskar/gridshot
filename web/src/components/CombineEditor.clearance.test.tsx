@@ -109,9 +109,10 @@ describe("CombineEditor clearance override", () => {
       expect(input.value).toBe("2.5");
     });
 
-    // deselect (Esc clears selection), then reselect the same tool
+    // deselect (Esc clears selection), then reselect the same tool — the
+    // Shape subsection stays mounted (disabled) rather than disappearing
     fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByLabelText("Clearance override in millimetres")).toBeNull());
+    await waitFor(() => expect((screen.getByLabelText("Clearance override in millimetres") as HTMLInputElement).disabled).toBe(true));
 
     fireEvent.click(listRow("Wrench"));
 

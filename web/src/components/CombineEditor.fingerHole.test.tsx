@@ -144,12 +144,14 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(screen.getByText("Wrench"));
-    expect(screen.getByText("⧉ Duplicate")).toBeTruthy();
+    expect((screen.getByText("⧉ Duplicate") as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
 
     expect(screen.getByText(/— finger hole/)).toBeTruthy();
-    expect(screen.queryByText("⧉ Duplicate")).toBeNull();
+    // The Shape subsection stays mounted (disabled) rather than
+    // disappearing once the tool selection is replaced by a finger hole.
+    expect((screen.getByText("⧉ Duplicate") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("clicking a tool polygon deselects the finger hole", async () => {

@@ -20,8 +20,10 @@ import {
   type SavedBin,
 } from "../api";
 import { BinViewer } from "./BinViewer";
+import { ControlGroup } from "./sidebar/ControlGroup";
 import { Section } from "./sidebar/Section";
 import { Sidebar } from "./sidebar/Sidebar";
+import { Subsection } from "./sidebar/Subsection";
 import { useFold } from "./sidebar/useFold";
 import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
@@ -438,6 +440,7 @@ export function CombineEditor({
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const binConfigFold = useFold(true);
   const toolConfigFold = useFold(true);
+  const shapeFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -3247,177 +3250,114 @@ export function CombineEditor({
             onToggle={toolConfigFold.toggle}
             disabled={selectedTools.length === 0 && selectedFingerHoleToolIds.size === 0}
           >
-          <label className="block">
-            <span className="font-mono text-[10px] uppercase text-muted">Rotation (degrees)</span>
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
-                type="number"
-                step={0.1}
-                disabled={!selectedTool}
-                value={selectedTool ? Number(displayedRotation.toFixed(1)) : ""}
-                placeholder="Select a tool"
-                onChange={(event) => setRotation(Number(event.target.value))}
-              />
-              <span className="font-mono text-xs text-muted">°</span>
-            </div>
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              disabled={!selectedTool}
-              checked={selectedTool !== null && lockedRotations.has(selectedTool.id)}
-              onChange={(event) => {
-                if (!selectedTool) return;
-                pushSnapshot();
-                const id = selectedTool.id;
-                setLockedRotations((current) => {
-                  const next = new Set(current);
-                  event.target.checked ? next.add(id) : next.delete(id);
-                  return next;
-                });
-              }}
-            />
-            <span className="font-mono text-[10px] uppercase text-muted">Lock rotation (auto-pack)</span>
-          </label>
-          <input
-            aria-label="Tool rotation"
-            className="w-full accent-teal"
-            type="range"
-            min={-180}
-            max={180}
-            step={1}
-            disabled={!selectedTool}
-            value={displayedRotation}
-            onChange={(event) => setRotation(Number(event.target.value))}
-          />
-          <div className="grid grid-cols-4 gap-1">
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-15)}>−15°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-1)}>−1°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(1)}>+1°</button>
-            <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(15)}>+15°</button>
-          </div>
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_x ? "btn-primary" : "btn-ghost"}`}
-              disabled={!selectedTool}
-              aria-pressed={selectedTool?.mirror_x ?? false}
-              onClick={() => toggleMirror("x")}
-            >
-              ↔ Mirror horizontal
-            </button>
-            <button
-              className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_y ? "btn-primary" : "btn-ghost"}`}
-              disabled={!selectedTool}
-              aria-pressed={selectedTool?.mirror_y ?? false}
-              onClick={() => toggleMirror("y")}
-            >
-              ↕ Mirror vertical
-            </button>
-          </div>
-          {selectedTools.length >= 1 ? (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="truncate text-xs text-knockout">
-                  {selectedTool ? (selectedTool.label || selectedTool.id.slice(0, 8)) : `${selectedTools.length} tools selected`}
-                </span>
+          <ControlGroup>
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs text-knockout">
+                {selectedTool
+                  ? (selectedTool.label || selectedTool.id.slice(0, 8))
+                  : selectedTools.length > 1
+                  ? `${selectedTools.length} tools selected`
+                  : "No tool selected"}
+              </span>
+              {selectedTools.length > 0 && (
                 <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
-              </div>
-              {selectedTool && (
-                <div className="mb-2">
-                  <button
-                    type="button"
-                    className="btn btn-ghost w-full !py-1 text-[10px]"
-                    disabled={busy || duplicateBusy}
-                    onClick={() => void duplicateSelectedTool()}
-                  >
-                    {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
-                  </button>
-                  {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
-                </div>
               )}
-              <div className="mb-2">
-                <button
-                  type="button"
-                  className="btn btn-ghost w-full !py-1 text-[10px]"
-                  disabled={busy || removeBusy || toolIds.length - selectedIds.size < 2}
-                  title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
-                  onClick={() => void removeSelectedTools()}
-                >
-                  {removeBusy
-                    ? "Removing…"
-                    : `🗑 Remove${selectedTools.length > 1 ? ` ${selectedTools.length} tools` : ""}`}
-                </button>
-                {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
-              </div>
-              {selectedTool?.toolshape_type === "rounded_rect" && (
-                <div className="mb-2 border-b border-line pb-2">
-                  <span className="font-mono text-[9px] uppercase text-muted">Rounded rectangle</span>
-                  <div className="mt-1 grid grid-cols-2 gap-2">
-                    <label className="block">
-                      <span className="text-muted">Width (mm)</span>
-                      <input
-                        aria-label="Toolshape width in millimetres"
-                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                        type="number" min={1} step={0.5}
-                        disabled={busy || toolshapeUpdateBusy}
-                        defaultValue={selectedTool.toolshape_width_mm ?? 0}
-                        key={`${selectedTool.id}-tw-${selectedTool.toolshape_width_mm}`}
-                        ref={commitOnChange((raw) => {
-                          const value = Number(raw);
-                          if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_width_mm) {
-                            void updateSelectedToolshape({ width_mm: value });
-                          }
-                        })}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-muted">Length (mm)</span>
-                      <input
-                        aria-label="Toolshape length in millimetres"
-                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                        type="number" min={1} step={0.5}
-                        disabled={busy || toolshapeUpdateBusy}
-                        defaultValue={selectedTool.toolshape_length_mm ?? 0}
-                        key={`${selectedTool.id}-tl-${selectedTool.toolshape_length_mm}`}
-                        ref={commitOnChange((raw) => {
-                          const value = Number(raw);
-                          if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_length_mm) {
-                            void updateSelectedToolshape({ length_mm: value });
-                          }
-                        })}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-muted">Radius (mm)</span>
-                      <input
-                        aria-label="Toolshape corner radius in millimetres"
-                        className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                        type="number" min={0} step={0.1}
-                        disabled={busy || toolshapeUpdateBusy}
-                        defaultValue={selectedTool.toolshape_radius_mm ?? 0}
-                        key={`${selectedTool.id}-tr-${selectedTool.toolshape_radius_mm}`}
-                        ref={commitOnChange((raw) => {
-                          const value = Number(raw);
-                          if (Number.isFinite(value) && value >= 0 && value !== selectedTool.toolshape_radius_mm) {
-                            void updateSelectedToolshape({ radius_mm: value });
-                          }
-                        })}
-                      />
-                    </label>
-                    <label className="flex items-end gap-2 pb-1">
-                      <input
-                        type="checkbox"
-                        disabled={busy || toolshapeUpdateBusy}
-                        checked={selectedTool.toolshape_fillet_bottom}
-                        onChange={(e) => void updateSelectedToolshape({ fillet_bottom: e.target.checked })}
-                      />
-                      <span className="text-muted">Fillet bottom</span>
-                    </label>
-                  </div>
-                  {toolshapeUpdateErr && <p className="mt-1 text-orange">{toolshapeUpdateErr}</p>}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                className="btn btn-ghost !py-1 text-[10px]"
+                disabled={busy || duplicateBusy || !selectedTool}
+                onClick={() => void duplicateSelectedTool()}
+              >
+                {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost !py-1 text-[10px]"
+                disabled={busy || removeBusy || selectedIds.size === 0 || toolIds.length - selectedIds.size < 2}
+                title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
+                onClick={() => void removeSelectedTools()}
+              >
+                {removeBusy
+                  ? "Removing…"
+                  : `🗑 Remove${selectedTools.length > 1 ? ` ${selectedTools.length} tools` : ""}`}
+              </button>
+            </div>
+            {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
+            {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
+          </ControlGroup>
+
+          <Subsection title="Shape" open={shapeFold.open} onToggle={shapeFold.toggle}>
+            {selectedTool?.toolshape_type === "rounded_rect" && (
+              <ControlGroup title="Rounded rectangle">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="text-muted">Width (mm)</span>
+                    <input
+                      aria-label="Toolshape width in millimetres"
+                      className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                      type="number" min={1} step={0.5}
+                      disabled={busy || toolshapeUpdateBusy}
+                      defaultValue={selectedTool.toolshape_width_mm ?? 0}
+                      key={`${selectedTool.id}-tw-${selectedTool.toolshape_width_mm}`}
+                      ref={commitOnChange((raw) => {
+                        const value = Number(raw);
+                        if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_width_mm) {
+                          void updateSelectedToolshape({ width_mm: value });
+                        }
+                      })}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-muted">Length (mm)</span>
+                    <input
+                      aria-label="Toolshape length in millimetres"
+                      className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                      type="number" min={1} step={0.5}
+                      disabled={busy || toolshapeUpdateBusy}
+                      defaultValue={selectedTool.toolshape_length_mm ?? 0}
+                      key={`${selectedTool.id}-tl-${selectedTool.toolshape_length_mm}`}
+                      ref={commitOnChange((raw) => {
+                        const value = Number(raw);
+                        if (Number.isFinite(value) && value > 0 && value !== selectedTool.toolshape_length_mm) {
+                          void updateSelectedToolshape({ length_mm: value });
+                        }
+                      })}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-muted">Radius (mm)</span>
+                    <input
+                      aria-label="Toolshape corner radius in millimetres"
+                      className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
+                      type="number" min={0} step={0.1}
+                      disabled={busy || toolshapeUpdateBusy}
+                      defaultValue={selectedTool.toolshape_radius_mm ?? 0}
+                      key={`${selectedTool.id}-tr-${selectedTool.toolshape_radius_mm}`}
+                      ref={commitOnChange((raw) => {
+                        const value = Number(raw);
+                        if (Number.isFinite(value) && value >= 0 && value !== selectedTool.toolshape_radius_mm) {
+                          void updateSelectedToolshape({ radius_mm: value });
+                        }
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-end gap-2 pb-1">
+                    <input
+                      type="checkbox"
+                      disabled={busy || toolshapeUpdateBusy}
+                      checked={selectedTool.toolshape_fillet_bottom}
+                      onChange={(e) => void updateSelectedToolshape({ fillet_bottom: e.target.checked })}
+                    />
+                    <span className="text-muted">Fillet bottom</span>
+                  </label>
                 </div>
-              )}
+                {toolshapeUpdateErr && <p className="mt-1 text-orange">{toolshapeUpdateErr}</p>}
+              </ControlGroup>
+            )}
+
+            <ControlGroup>
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
                 <dt>{fillHeightPct === 100 ? "Pocket depth" : "Tool recess"}</dt>
                 <dd className="text-knockout">{depthMmLabel}</dd>
@@ -3427,7 +3367,7 @@ export function CombineEditor({
                 <select
                   aria-label="Tool height mode"
                   className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                  disabled={busy}
+                  disabled={busy || selectedTools.length === 0}
                   value={depthKindLabel}
                   onChange={(e) => setDepthKind(e.target.value as "auto" | "fixed" | "percentage")}
                 >
@@ -3521,7 +3461,7 @@ export function CombineEditor({
                     aria-label="Clearance override in millimetres"
                     className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
                     type="number" step={0.1} min={0}
-                    disabled={busy}
+                    disabled={busy || selectedTools.length === 0}
                     defaultValue={clearanceValue ?? ""}
                     placeholder={clearanceValue === undefined ? "–" : undefined}
                     key={`${selectionKey}-clearance-${clearanceValue ?? "mixed"}`}
@@ -3545,6 +3485,79 @@ export function CombineEditor({
                   ↩ Use library setting{clearanceInherited !== undefined ? ` (${clearanceInherited} mm)` : ""}
                 </button>
               )}
+              <label className="mt-3 block border-t border-line pt-3">
+                <span className="font-mono text-[10px] uppercase text-muted">Rotation (degrees)</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
+                    type="number"
+                    step={0.1}
+                    disabled={!selectedTool}
+                    value={selectedTool ? Number(displayedRotation.toFixed(1)) : ""}
+                    placeholder="Select a tool"
+                    onChange={(event) => setRotation(Number(event.target.value))}
+                  />
+                  <span className="font-mono text-xs text-muted">°</span>
+                </div>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  disabled={!selectedTool}
+                  checked={selectedTool !== null && lockedRotations.has(selectedTool.id)}
+                  onChange={(event) => {
+                    if (!selectedTool) return;
+                    pushSnapshot();
+                    const id = selectedTool.id;
+                    setLockedRotations((current) => {
+                      const next = new Set(current);
+                      event.target.checked ? next.add(id) : next.delete(id);
+                      return next;
+                    });
+                  }}
+                />
+                <span className="font-mono text-[10px] uppercase text-muted">Lock rotation (auto-pack)</span>
+              </label>
+              <input
+                aria-label="Tool rotation"
+                className="w-full accent-teal"
+                type="range"
+                min={-180}
+                max={180}
+                step={1}
+                disabled={!selectedTool}
+                value={displayedRotation}
+                onChange={(event) => setRotation(Number(event.target.value))}
+              />
+              <div className="grid grid-cols-4 gap-1">
+                <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-15)}>−15°</button>
+                <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(-1)}>−1°</button>
+                <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(1)}>+1°</button>
+                <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={!selectedTool} onClick={() => rotate(15)}>+15°</button>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_x ? "btn-primary" : "btn-ghost"}`}
+                  disabled={!selectedTool}
+                  aria-pressed={selectedTool?.mirror_x ?? false}
+                  onClick={() => toggleMirror("x")}
+                >
+                  ↔ Mirror horizontal
+                </button>
+                <button
+                  className={`btn text-[10px] !px-1 !py-2 ${selectedTool?.mirror_y ? "btn-primary" : "btn-ghost"}`}
+                  disabled={!selectedTool}
+                  aria-pressed={selectedTool?.mirror_y ?? false}
+                  onClick={() => toggleMirror("y")}
+                >
+                  ↕ Mirror vertical
+                </button>
+              </div>
+            </ControlGroup>
+          </Subsection>
+
+          {selectedTools.length >= 1 ? (
+            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
               <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
                 <div className="min-w-0">
                   <div className="text-knockout">Finger access</div>
@@ -3690,9 +3703,7 @@ export function CombineEditor({
                 ⟷ Align finger holes
               </button>
             </div>
-          ) : (
-            <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
-          )}
+          ) : null}
           </Section>
           <div className="max-h-[38vh] overflow-auto space-y-1">
             {tools.map((t, i) => (
