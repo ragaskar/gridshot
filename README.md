@@ -361,9 +361,9 @@ Features added on top of the original public release, newest last:
 - Bin Library: save a multi-tool combine-editor arrangement as a named,
   renameable entry — reopen it for further arranging, or export bin/slice
   directly, without redoing the layout (see [docs/bin-library.md](docs/bin-library.md))
-- Deep-link URLs: every page, and the multi-tool combine editor, has a URL
-  that reopens the same content on reload — including browser back/forward
-  (see [docs/deep-link-urls.md](docs/deep-link-urls.md))
+- Deep-link URLs: every page has a URL that reopens the same content on
+  reload — including browser back/forward (see
+  [docs/deep-link-urls.md](docs/deep-link-urls.md))
 - Align finger holes: snap 2+ selected tools' finger-access holes onto one
   line in the multi-tool combine editor, the same way the existing
   bounding-box align buttons snap edges (see
@@ -516,6 +516,13 @@ Features added on top of the original public release, newest last:
   fixed-width breakdown of exactly how it's built — base, floor, usable
   height, and lip (if on) summing to the total (see
   [docs/combine-editor-bin-height.md](docs/combine-editor-bin-height.md))
+- Bold blue UI palette (ColorBrewer PuBu) replacing the old tan/brown
+  substrate, theme-aware via `prefers-color-scheme` — no manual toggle, it
+  follows the browser/OS setting. Grid/arrange tool colors are unchanged.
+- The multi-tool combine editor and the compose-drawer flow are each their
+  own page now, not a modal over whichever page sent you there — deep-link
+  URLs at `/combine/<ids>`, `/combine/reopen/<id>`, and `/compose/<ids>`
+  (see [docs/deep-link-urls.md](docs/deep-link-urls.md))
 
 ## License
 
