@@ -1,12 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   cloneLibraryTool,
-  composeLibrary,
   createLibraryBackup,
   deleteLibraryTool,
   downloadLibraryArchive,
-  drawerPreviewGlb,
-  exportDrawer,
   getLibraryOutline,
   getLibraryPhotoOutline,
   getResult,
@@ -16,7 +13,6 @@ import {
   libraryEditStart,
   listLibrary,
   updateLibraryTool,
-  type ComposeResult,
   type LibraryEditResult,
   type LibraryTool,
   type OutlineVariant,
@@ -26,32 +22,24 @@ import {
 import { useApp } from "../state";
 import { OutlineCorrectionEditor } from "../components/OutlineCorrectionEditor";
 import { PhysicalCutoutEditor } from "../components/PhysicalCutoutEditor";
-import { CombineEditor } from "../components/CombineEditor";
-import { DrawerViewer } from "../components/DrawerViewer";
 import { PhotoLightbox } from "../components/PhotoLightbox";
 import { ReadinessBadge, READINESS_LABEL, READINESS_TEXT_TONE } from "../components/ReadinessPanel";
 import { useLocation } from "wouter";
 import { commitOnChange } from "../domEvents";
-import { decodeUrlState, pathForBinReopen, pathForCombine, pathForView } from "../urlState";
+import { pathForCombine, pathForCompose } from "../urlState";
 import { applySelectionClick } from "../selection";
 import { useBinProfiles } from "../useBinProfiles";
-
-const PAL = ["#d65a54", "#5ab478", "#548cd6", "#e6be46", "#c85ac8", "#50c8c8", "#e69646", "#a050d6"];
 
 /** Tool library: individually-captured tools composed into one drawer. Select
  *  tools saved from separate captures, pick a drawer size, and nest them —
  *  building a big set from small, accurate, fully-on-mat captures. */
 export function Library() {
-  const [path, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const currentResult = useApp((s) => s.result);
   const setCurrentResult = useApp((s) => s.setResult);
   const binProfiles = useBinProfiles();
   const [tools, setTools] = useState<LibraryTool[]>([]);
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [cols, setCols] = useState(8);
-  const [rows, setRows] = useState(6);
-  const [overallHeight, setOverallHeight] = useState<number | "">("");
-  const [composed, setComposed] = useState<ComposeResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<{
     id: string;
@@ -59,34 +47,11 @@ export function Library() {
     polygon: Poly;
   } | null>(null);
   const [sam, setSam] = useState<{ id: string; sess: LibraryEditResult } | null>(null);
-  const [combining, setCombining] = useState(false);
   const [viewing, setViewing] = useState<{ t: LibraryTool; data: PhotoOutline } | null>(null);
-  const [drawerPreviewUrl, setDrawerPreviewUrl] = useState<string | null>(null);
-  const [drawerPreviewBusy, setDrawerPreviewBusy] = useState(false);
-  const [drawerPreviewError, setDrawerPreviewError] = useState<string | null>(null);
   const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"tile" | "list">("tile");
   const [anchorId, setAnchorId] = useState<string | null>(null);
-  const [composeDialogOpen, setComposeDialogOpen] = useState(false);
-  const drawerPreviewUrlRef = useRef<string | null>(null);
-  const drawerPreviewSequence = useRef(0);
   const selectAllRef = useRef<HTMLInputElement>(null);
-
-  function clearDrawerPreview() {
-    drawerPreviewSequence.current += 1;
-    if (drawerPreviewUrlRef.current) {
-      URL.revokeObjectURL(drawerPreviewUrlRef.current);
-      drawerPreviewUrlRef.current = null;
-    }
-    setDrawerPreviewUrl(null);
-    setDrawerPreviewError(null);
-    setDrawerPreviewBusy(false);
-  }
-
-  function invalidateComposition() {
-    clearDrawerPreview();
-    setComposed(null);
-  }
 
   async function openView(t: LibraryTool) {
     try {
@@ -128,7 +93,6 @@ export function Library() {
         edit_source: "physical",
       });
       setEditing(null);
-      invalidateComposition();
     } catch (e) {
       alert("Save failed: " + (e as Error).message);
     } finally {
@@ -151,7 +115,6 @@ export function Library() {
       );
       setBust((value) => ({ ...value, [sam.id]: Date.now() }));
       setSam(null);
-      invalidateComposition();
     } catch (e) {
       alert("Save failed: " + (e as Error).message);
     }
@@ -186,27 +149,6 @@ export function Library() {
 
   const refresh = () => listLibrary().then(setTools).catch(() => setTools([]));
   useEffect(() => { refresh(); }, []);
-  useEffect(() => () => {
-    if (drawerPreviewUrlRef.current) URL.revokeObjectURL(drawerPreviewUrlRef.current);
-  }, []);
-
-  // Deep-link: /library/combine/id1,id2,... reopens the multi-combine editor
-  // with that tool selection — reactively, so it tracks the URL both ways
-  // (opens when a link lands here, closes again on browser Back).
-  useEffect(() => {
-    if (!tools.length) return;
-    const ids = decodeUrlState(path).combineIds?.filter((id) => tools.some((t) => t.id === id));
-    if (ids && ids.length >= 2) {
-      setSel(new Set(ids));
-      setCombining(true);
-    } else {
-      setCombining(false);
-    }
-  }, [path, tools]);
-
-  function closeCombining() {
-    navigate(pathForView("library"));
-  }
 
   /** Plain click toggles one tool (and becomes the shift-click anchor);
    *  shift-click selects the contiguous range between the anchor and this
@@ -215,7 +157,6 @@ export function Library() {
    *  toward range positions for tools that can. */
   const toggle = (id: string, shiftKey = false) => {
     if (tools.find((tool) => tool.id === id)?.readiness.status === "block") return;
-    invalidateComposition();
     const selectableIds = tools.filter((t) => t.readiness.status !== "block").map((t) => t.id);
     const result = applySelectionClick(selectableIds, sel, anchorId, id, shiftKey);
     setSel(result.selection);
@@ -229,7 +170,6 @@ export function Library() {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected;
   });
   function toggleSelectAll() {
-    invalidateComposition();
     if (allSelected) {
       setSel(new Set());
       setAnchorId(null);
@@ -242,7 +182,6 @@ export function Library() {
   async function remove(id: string) {
     await deleteLibraryTool(id);
     setSel((s) => { const n = new Set(s); n.delete(id); return n; });
-    invalidateComposition();
     refresh();
   }
 
@@ -263,50 +202,6 @@ export function Library() {
     }
     if ("outline" in changes || "thickness_mm" in changes || "silhouette_height_mm" in changes)
       setBust((b) => ({ ...b, [id]: Date.now() })); // outline/thumb regenerated
-    invalidateComposition();
-  }
-
-  async function compose() {
-    if (!sel.size) return;
-    setBusy(true);
-    try {
-      clearDrawerPreview();
-      setComposed(null);
-      setComposed(await composeLibrary(
-        [...sel],
-        cols,
-        rows,
-        overallHeight === "" ? null : overallHeight,
-      ));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generateDrawerPreview() {
-    if (!composed) return;
-    const sequence = ++drawerPreviewSequence.current;
-    setDrawerPreviewBusy(true);
-    setDrawerPreviewError(null);
-    try {
-      const blob = await drawerPreviewGlb(
-        [...sel],
-        cols,
-        rows,
-        overallHeight === "" ? null : overallHeight,
-      );
-      if (sequence !== drawerPreviewSequence.current) return;
-      const nextUrl = URL.createObjectURL(blob);
-      if (drawerPreviewUrlRef.current) URL.revokeObjectURL(drawerPreviewUrlRef.current);
-      drawerPreviewUrlRef.current = nextUrl;
-      setDrawerPreviewUrl(nextUrl);
-    } catch (reason) {
-      if (sequence === drawerPreviewSequence.current) {
-        setDrawerPreviewError((reason as Error).message);
-      }
-    } finally {
-      if (sequence === drawerPreviewSequence.current) setDrawerPreviewBusy(false);
-    }
   }
 
   async function exportLibrary() {
@@ -329,96 +224,6 @@ export function Library() {
     } catch (reason) {
       setLibraryNotice((reason as Error).message);
     }
-  }
-
-  const idColor = (id: string) => PAL[[...sel].indexOf(id) % PAL.length] || "#888";
-  const drawerColors = useMemo(
-    () => Object.fromEntries(
-      (composed?.layout.placed ?? []).map((placement) => [
-        placement.bin_id,
-        idColor(placement.bin_id),
-      ]),
-    ),
-    [composed, sel],
-  );
-
-  /** Composed-drawer layout preview + 3D preview + export — shared by the
-   *  tile view's sidebar and the list view's standalone panel below it. */
-  function renderComposedResult() {
-    if (!composed) return null;
-    return (
-      <>
-        <div className="grp-label mb-2">
-          Layout · uses {composed.layout.used_cols}×{composed.layout.used_rows}u
-        </div>
-        <div className="border border-line bg-field p-2" style={{ borderRadius: 2 }}>
-          <svg viewBox={`-0.2 -0.2 ${cols + 0.4} ${rows + 0.4}`} className="w-full">
-            {Array.from({ length: cols + 1 }, (_, c) => (
-              <line key={"c" + c} x1={c} y1={0} x2={c} y2={rows} stroke="#3a4046" strokeWidth={0.03} />
-            ))}
-            {Array.from({ length: rows + 1 }, (_, r) => (
-              <line key={"r" + r} x1={0} y1={r} x2={cols} y2={r} stroke="#3a4046" strokeWidth={0.03} />
-            ))}
-            {composed.layout.placed.map((p) => (
-              <rect key={p.bin_id} x={p.col + 0.04} y={p.row + 0.04}
-                width={p.grid_x - 0.08} height={p.grid_y - 0.08}
-                fill={idColor(p.bin_id) + "55"} stroke={idColor(p.bin_id)} strokeWidth={0.05} rx={0.08} />
-            ))}
-          </svg>
-        </div>
-        {composed.layout.overflow.length > 0 && (
-          <p className="font-mono text-xs text-muted mt-2">
-            {composed.layout.overflow.length} didn't fit — enlarge the drawer.
-          </p>
-        )}
-        <button
-          className="btn w-full mt-4"
-          disabled={drawerPreviewBusy || composed.layout.placed.length === 0}
-          onClick={generateDrawerPreview}
-        >
-          {drawerPreviewBusy
-            ? "Generating 3D…"
-            : drawerPreviewUrl
-              ? "Regenerate 3D preview"
-              : "Generate 3D preview"}
-        </button>
-        {drawerPreviewError && (
-          <p className="mt-2 font-mono text-xs text-orange" role="alert">
-            {drawerPreviewError}
-          </p>
-        )}
-        {drawerPreviewUrl && (
-          <div className="mt-3">
-            <div
-              className="aspect-square w-full overflow-hidden border border-line bg-field"
-              style={{ borderRadius: 2 }}
-            >
-              <DrawerViewer url={drawerPreviewUrl} binColors={drawerColors} />
-            </div>
-            <p className="mt-2 font-mono text-[10px] text-muted">
-              Exact bins seated in the full {cols}×{rows} Gridfinity socket grid · drag to orbit · scroll to zoom
-            </p>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-              {composed.layout.placed.map((placement) => {
-                const tool = composed.tools.find((item) => item.id === placement.bin_id);
-                return (
-                  <span key={placement.bin_id} className="inline-flex items-center gap-1 font-mono text-[10px] text-muted">
-                    <span className="h-2 w-2" style={{ background: drawerColors[placement.bin_id] }} />
-                    {tool?.label || placement.bin_id}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        <button
-          className="btn btn-primary w-full mt-4"
-          onClick={() => exportDrawer([...sel], cols, rows, overallHeight === "" ? null : overallHeight).catch(() => {})}
-        >
-          ↓ Export drawer (3MF + layout)
-        </button>
-      </>
-    );
   }
 
   return (
@@ -722,40 +527,16 @@ export function Library() {
             </div>
           </div>
 
-          {/* compose controls */}
+          {/* compose / combine controls */}
           <div className="panel h-fit min-w-0 p-4 sm:p-6">
-            <div className="grp-label mb-4">02 · Compose drawer</div>
+            <div className="grp-label mb-4">02 · Compose / combine</div>
             <div className="space-y-4">
-              <label className="block">
-                <span className="font-mono text-xs text-muted">Width (cells)</span>
-                <input className="mono-input w-full" type="number" min={1} value={cols}
-                  onChange={(e) => {
-                    const next = Math.max(1, Math.round(Number(e.target.value)));
-                    if (next !== cols) invalidateComposition();
-                    setCols(next);
-                  }} />
-              </label>
-              <label className="block">
-                <span className="font-mono text-xs text-muted">Depth (cells)</span>
-                <input className="mono-input w-full" type="number" min={1} value={rows}
-                  onChange={(e) => {
-                    const next = Math.max(1, Math.round(Number(e.target.value)));
-                    if (next !== rows) invalidateComposition();
-                    setRows(next);
-                  }} />
-              </label>
-              <label className="block">
-                <span className="font-mono text-xs text-muted">Overall height (mm)</span>
-                <input className="mono-input w-full" type="number" min={0} step={1} value={overallHeight}
-                  placeholder="auto (per bin)"
-                  onChange={(e) => {
-                    clearDrawerPreview();
-                    setOverallHeight(e.target.value === "" ? "" : Number(e.target.value));
-                  }} />
-                <span className="font-mono text-[10px] text-muted">blank = each bin its own height; set for level tops</span>
-              </label>
-              <button className="btn btn-primary w-full" disabled={!sel.size || busy} onClick={compose}>
-                {busy ? "…" : `Compose ${sel.size} tool${sel.size === 1 ? "" : "s"} (separate bins)`}
+              <button
+                className="btn btn-primary w-full"
+                disabled={!sel.size}
+                onClick={() => navigate(pathForCompose([...sel]))}
+              >
+                Compose {sel.size} tool{sel.size === 1 ? "" : "s"}…
               </button>
               {sel.size >= 2 && (
                 <button
@@ -768,8 +549,6 @@ export function Library() {
                 </button>
               )}
             </div>
-
-            {composed && <div className="mt-6">{renderComposedResult()}</div>}
           </div>
         </div>
           ) : (
@@ -778,10 +557,10 @@ export function Library() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     className="btn btn-primary"
-                    disabled={!sel.size || busy}
-                    onClick={() => setComposeDialogOpen(true)}
+                    disabled={!sel.size}
+                    onClick={() => navigate(pathForCompose([...sel]))}
                   >
-                    {busy ? "…" : `Compose ${sel.size} Tool${sel.size === 1 ? "" : "s"}`}
+                    Compose {sel.size} Tool{sel.size === 1 ? "" : "s"}…
                   </button>
                   {sel.size >= 2 && (
                     <button
@@ -794,64 +573,6 @@ export function Library() {
                     </button>
                   )}
                 </div>
-                {composeDialogOpen && (
-                  <div className="mt-3 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-                    <div className="grid grid-cols-3 gap-2">
-                      <label className="block">
-                        <span className="block uppercase text-muted">Width (cells)</span>
-                        <input
-                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                          type="number" min={1} value={cols}
-                          onChange={(e) => {
-                            const next = Math.max(1, Math.round(Number(e.target.value)));
-                            if (next !== cols) invalidateComposition();
-                            setCols(next);
-                          }}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="block uppercase text-muted">Depth (cells)</span>
-                        <input
-                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                          type="number" min={1} value={rows}
-                          onChange={(e) => {
-                            const next = Math.max(1, Math.round(Number(e.target.value)));
-                            if (next !== rows) invalidateComposition();
-                            setRows(next);
-                          }}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="block uppercase text-muted">Height (mm)</span>
-                        <input
-                          className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                          type="number" min={0} step={1} value={overallHeight}
-                          placeholder="auto"
-                          onChange={(e) => {
-                            clearDrawerPreview();
-                            setOverallHeight(e.target.value === "" ? "" : Number(e.target.value));
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <p className="mt-2 text-muted">blank height = each bin its own; set for level tops</p>
-                    <div className="mt-2 grid grid-cols-2 gap-1">
-                      <button className="btn text-xs" onClick={() => setComposeDialogOpen(false)}>
-                        Cancel
-                      </button>
-                      <button
-                        className="btn btn-primary text-xs"
-                        disabled={busy}
-                        onClick={() => {
-                          setComposeDialogOpen(false);
-                          void compose();
-                        }}
-                      >
-                        Compose
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="panel !p-0 overflow-hidden">
@@ -914,12 +635,6 @@ export function Library() {
                   );
                 })}
               </div>
-
-              {composed && (
-                <div className="panel p-4 sm:p-6">
-                  {renderComposedResult()}
-                </div>
-              )}
             </div>
           )}
         </>
@@ -977,23 +692,6 @@ export function Library() {
               onClose={() => setViewing(null)}
               onCutout={() => { const id = viewing.t.id; setViewing(null); openOutline(id); }}
               onRefine={() => { const id = viewing.t.id; setViewing(null); openSam(id); }}
-            />
-          </div>
-        </div>
-      )}
-
-      {combining && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={closeCombining}
-        >
-          <div className="w-full max-w-[1180px]" onClick={(e) => e.stopPropagation()}>
-            <CombineEditor
-              ids={[...sel]}
-              overallHeight={overallHeight === "" ? null : overallHeight}
-              onClose={closeCombining}
-              onSaved={(saved) => navigate(pathForBinReopen(saved.id))}
             />
           </div>
         </div>

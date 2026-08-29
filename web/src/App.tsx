@@ -6,6 +6,8 @@ import { Upload } from "./pages/Upload";
 import { Editor } from "./pages/SharedEditorPage";
 import { Result } from "./pages/Result";
 import { Library } from "./pages/Library";
+import { CombineBin } from "./pages/CombineBin";
+import { ComposeDrawer } from "./pages/ComposeDrawer";
 import { BinLibrary } from "./pages/BinLibrary";
 import { BinProfiles } from "./pages/BinProfiles";
 import { Batch } from "./pages/Batch";
@@ -138,6 +140,8 @@ export function App() {
   let page;
   if (view === "result") page = <Result />;
   else if (view === "library") page = <Library />;
+  else if (view === "combine") page = <CombineBin />;
+  else if (view === "compose") page = <ComposeDrawer />;
   else if (view === "bins") page = <BinLibrary />;
   else if (view === "binProfiles") page = <BinProfiles />;
   else if (view === "batch") page = <Batch />;

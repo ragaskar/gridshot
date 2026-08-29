@@ -42,7 +42,7 @@ def test_dynamic_segment_path_falls_back_to_index_html(dist):
 
 
 def test_nested_combine_path_falls_back_to_index_html(dist):
-    response = app_module.spa_fallback("library/combine/id1,id2")
+    response = app_module.spa_fallback("combine/id1,id2")
 
     assert response.path == dist / "index.html"
 

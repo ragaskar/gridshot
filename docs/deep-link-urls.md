@@ -1,8 +1,9 @@
 # Deep-link URLs
 
-Every page, and the multi-tool combine editor modal, has a URL that reopens the same
-content — reload the tab, or send someone the link, and you land back where you were
-instead of the upload screen.
+Every page — including the multi-tool combine editor and the compose-drawer flow, each
+its own page rather than a modal over whichever page sent you there — has a URL that
+reopens the same content — reload the tab, or send someone the link, and you land back
+where you were instead of the upload screen.
 
 Identifiers live in the path, not the query string — `/library`, not `/?view=library` —
 so they survive a full reload in every browser. (An earlier version of this used query
@@ -17,20 +18,27 @@ back to `index.html` unless told to. Both are configured to do that now — see
   top-level page. The bare root `/` is the upload screen.
 - `/editor/<id>` — the single-tool editor for that session.
 - `/result/<id>` — a generated result.
-- `/library/combine/<id1>,<id2>,...` — the multi-tool combine editor, open with that
-  fresh tool selection.
-- `/bins/<id>/combine` — the multi-tool combine editor, reopened from that Bin Library
+- `/combine/<id1>,<id2>,...` — the multi-tool combine editor, its own page, open with
+  that fresh tool selection.
+- `/combine/reopen/<id>` — the multi-tool combine editor, reopened from that Bin Library
   entry.
+- `/compose/<id1>,<id2>,...` — the compose-drawer page, open with that fresh tool
+  selection.
 
-The URL updates as you navigate (clicking a nav link, opening or closing the combine
-editor), so the browser's back/forward buttons work across pages the same way they do on
-any other site.
+`/combine` and `/compose` are never linked bare — with no selection to show, both fall
+through to the upload screen like any other unrecognized path (see `pathForView`, which
+returns `""` for either so a caller knows not to navigate to an empty path).
+
+The URL updates as you navigate (clicking a nav link, opening or leaving the combine
+editor or compose-drawer page), so the browser's back/forward buttons work across pages
+the same way they do on any other site.
 
 ## Implementation
 
 Routing is hand-rolled, not a full router library: `web/src/urlState.ts` has the
 pure encode/decode functions (`decodeUrlState`, `pathForView`, `pathForCombine`,
-`pathForBinReopen`), and `App.tsx` uses [wouter](https://github.com/molefrog/wouter) —
+`pathForBinReopen`, `pathForCompose`), and `App.tsx` uses
+[wouter](https://github.com/molefrog/wouter) —
 a ~1.5KB hook-based library — only for its `useLocation()`/`navigate()` browser-history
 plumbing (pushState/popstate, and same-tab broadcast so multiple components stay in sync
 when one of them navigates). The Zustand store (`view`/`session`/`result`) stays the
@@ -56,7 +64,10 @@ Reopening the combine editor from a URL restores which tools are selected (or wh
 bin), not an in-progress unsaved arrangement — a reload re-runs auto-pack on that
 selection, the same as refreshing mid-edit today. The Arrange-2D/Preview-3D toggle inside
 the editor, and its save/export dialogs, are transient UI state and aren't part of the
-URL either.
+URL either. Likewise `/compose/<ids>` only carries the tool selection — the drawer's
+width/depth/height fields and any composed result reset to their defaults on reload, the
+same as the fresh-selection combine path never carried the Library page's old
+overall-height field either (the combine editor has its own height controls internally).
 
 The "working" screen shown while a trace/generate is in flight has nothing to resume after
 a reload, so it's deliberately never written to the URL.

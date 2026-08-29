@@ -90,6 +90,40 @@ describe("Library view toggle and selection", () => {
     await waitFor(() => expect(screen.getByText("Select all")).toBeTruthy());
   });
 
+  it("tile view: compose/combine buttons reflect the selection and are absent for a solo pick", async () => {
+    render(<Library />);
+    await screen.findByDisplayValue("Wrench");
+    // grab the select-all checkbox before its label text changes away from "Select all"
+    const selectAll = screen.getByLabelText(/select all/i) as HTMLInputElement;
+
+    // nothing selected yet: Compose is disabled, Combine isn't shown at all
+    expect((screen.getByText("Compose 0 tools…").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("⧉ Combine into ONE bin…")).toBeNull();
+
+    fireEvent.click(screen.getAllByTitle("Select for compose or combine")[0]);
+    await waitFor(() => expect(screen.getByText("Compose 1 tool…")).toBeTruthy());
+    expect((screen.getByText("Compose 1 tool…").closest("button") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("⧉ Combine into ONE bin…")).toBeNull();
+
+    fireEvent.click(selectAll);
+    await waitFor(() => expect(screen.getByText("Compose 3 tools…")).toBeTruthy());
+    expect(screen.getByText("⧉ Combine into ONE bin…")).toBeTruthy();
+  });
+
+  it("list view: compose/combine buttons reflect the selection", async () => {
+    render(<Library />);
+    await screen.findByDisplayValue("Wrench");
+    fireEvent.click(screen.getByText("List"));
+
+    expect((screen.getByText("Compose 0 Tools…").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/^Combine \d+ Tools?$/)).toBeNull();
+
+    const selectAll = screen.getByLabelText(/select all/i) as HTMLInputElement;
+    fireEvent.click(selectAll);
+    await waitFor(() => expect(screen.getByText("Compose 3 Tools…")).toBeTruthy());
+    expect(screen.getByText("Combine 3 Tools")).toBeTruthy();
+  });
+
   it("shift-click in list view selects the contiguous range", async () => {
     render(<Library />);
     await screen.findByDisplayValue("Wrench");

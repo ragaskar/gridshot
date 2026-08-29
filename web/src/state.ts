@@ -46,7 +46,9 @@ export type View =
   | "binProfiles"
   | "batch"
   | "calibration"
-  | "reference";
+  | "reference"
+  | "combine"
+  | "compose";
 
 interface AppState {
   view: View;

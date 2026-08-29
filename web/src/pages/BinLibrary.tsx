@@ -8,40 +8,24 @@ import {
   renameBin,
   type SavedBin,
 } from "../api";
-import { CombineEditor, type CombineEditorInitial } from "../components/CombineEditor";
 import { binExportName } from "../exportNaming";
-import { decodeUrlState, pathForBinReopen, pathForView } from "../urlState";
+import { pathForBinReopen } from "../urlState";
 
 /** Saved multi-tool combine-editor arrangements — a recipe (tools, placements,
  *  overrides, bin-wide settings), not a frozen geometry snapshot. Export and
- *  "Reopen" both regenerate from the tools' current library state. */
+ *  "Reopen" both regenerate from the tools' current library state. Reopening
+ *  (and the combine editor itself) lives on its own page — see CombineBin. */
 export function BinLibrary() {
-  const [path, navigate] = useLocation();
+  const [, navigate] = useLocation();
   const [bins, setBins] = useState<SavedBin[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [reopening, setReopening] = useState<SavedBin | null>(null);
 
   const refresh = () => listBins().then(setBins).catch(() => setBins([]));
   useEffect(() => { refresh(); }, []);
 
-  // Deep-link: /bins/:id/combine reopens that saved bin's editor — reactively,
-  // so it tracks the URL both ways (opens when a link lands here, closes
-  // again on browser Back).
-  useEffect(() => {
-    if (!bins.length) return;
-    const id = decodeUrlState(path).reopenBinId;
-    const found = id ? bins.find((b) => b.id === id) : undefined;
-    setReopening(found ?? null);
-  }, [path, bins]);
-
   function openReopen(b: SavedBin) {
     navigate(pathForBinReopen(b.id));
-  }
-
-  function closeReopen() {
-    navigate(pathForView("bins"));
-    refresh();
   }
 
   async function rename(id: string, label: string) {
@@ -89,37 +73,6 @@ export function BinLibrary() {
     } finally {
       setBusyId(null);
     }
-  }
-
-  function reopenInitial(b: SavedBin): CombineEditorInitial {
-    return {
-      id: b.id,
-      label: b.label,
-      appliedProfileId: b.applied_profile_id,
-      placements: b.placements,
-      overrides: b.overrides,
-      fillHeightPct: b.fill_height_pct,
-      liveGrid: b.live_grid,
-      lip: b.lip,
-      magnetHoles: b.magnet_holes,
-      magnetHoleDiameterMm: b.magnet_hole_diameter_mm,
-      magnetHoleDepthMm: b.magnet_hole_depth_mm,
-      forceGx: b.force_gx,
-      forceGy: b.force_gy,
-      removedCells: b.removed_cells,
-      lipHeightMm: b.lip_height_mm,
-      lipChamferTopMm: b.lip_chamfer_top_mm,
-      lipStraightMm: b.lip_straight_mm,
-      lipChamferBottomMm: b.lip_chamfer_bottom_mm,
-      minWallMm: b.min_wall_mm,
-      minFloorMm: b.min_floor_mm,
-      floorThicknessMm: b.floor_thickness_mm,
-      toolWallMm: b.tool_wall_mm,
-      toolWallFlareMm: b.tool_wall_flare_mm,
-      toolWallReinforcementHMm: b.tool_wall_reinforcement_h_mm,
-      edgeMarginMm: b.edge_margin_mm,
-      magnetHoleInsetFromEdgeMm: b.magnet_hole_inset_from_edge_mm,
-    };
   }
 
   return (
@@ -220,32 +173,6 @@ export function BinLibrary() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {reopening && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={closeReopen}
-        >
-          <div className="w-full max-w-[1180px]" onClick={(e) => e.stopPropagation()}>
-            <CombineEditor
-              ids={reopening.tool_ids}
-              overallHeight={reopening.overall_height}
-              initial={reopenInitial(reopening)}
-              onClose={closeReopen}
-              onSaved={(saved) => {
-                // Optimistic: the reopen effect below keys off `bins`
-                // already containing the target id, so seed it directly
-                // instead of waiting on a refetch — avoids a flash where
-                // the modal briefly closes because the new bin isn't in
-                // `bins` yet when the path changes.
-                setBins((current) => [saved, ...current.filter((b) => b.id !== saved.id)]);
-                navigate(pathForBinReopen(saved.id));
-              }}
-            />
           </div>
         </div>
       )}

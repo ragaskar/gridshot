@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { decodeUrlState, pathForBinProfileEdit, pathForBinReopen, pathForCombine, pathForView } from "./urlState";
+import {
+  decodeUrlState, pathForBinProfileEdit, pathForBinReopen, pathForCombine, pathForCompose, pathForView,
+} from "./urlState";
+
+const NOTHING = {
+  view: null, session: null, project: null, combineIds: null, reopenBinId: null, composeIds: null,
+  editBinProfileId: null,
+};
 
 describe("decodeUrlState", () => {
   it("reads a plain view path", () => {
-    expect(decodeUrlState("/library")).toEqual({
-      view: "library", session: null, project: null, combineIds: null, reopenBinId: null, editBinProfileId: null,
-    });
+    expect(decodeUrlState("/library")).toEqual({ ...NOTHING, view: "library" });
   });
 
   it("rejects an unknown or unlinkable head segment (including tracing)", () => {
@@ -14,55 +19,53 @@ describe("decodeUrlState", () => {
   });
 
   it("treats the bare root as nothing decoded, leaving the default view to the caller", () => {
-    expect(decodeUrlState("/")).toEqual({
-      view: null, session: null, project: null, combineIds: null, reopenBinId: null, editBinProfileId: null,
-    });
+    expect(decodeUrlState("/")).toEqual(NOTHING);
   });
 
   it("reads editor and result ids from their own path segment", () => {
-    expect(decodeUrlState("/editor/abc")).toEqual({
-      view: null, session: "abc", project: null, combineIds: null, reopenBinId: null, editBinProfileId: null,
-    });
-    expect(decodeUrlState("/result/xyz")).toEqual({
-      view: null, session: null, project: "xyz", combineIds: null, reopenBinId: null, editBinProfileId: null,
-    });
+    expect(decodeUrlState("/editor/abc")).toEqual({ ...NOTHING, session: "abc" });
+    expect(decodeUrlState("/result/xyz")).toEqual({ ...NOTHING, project: "xyz" });
   });
 
   it("decodes URI-escaped ids", () => {
     expect(decodeUrlState("/editor/a%20b").session).toBe("a b");
   });
 
-  it("reads a fresh combine selection nested under /library", () => {
-    expect(decodeUrlState("/library/combine/id1,id2,id3")).toEqual({
-      view: "library", session: null, project: null, combineIds: ["id1", "id2", "id3"], reopenBinId: null,
-      editBinProfileId: null,
+  it("reads a fresh combine selection from its own page path", () => {
+    expect(decodeUrlState("/combine/id1,id2,id3")).toEqual({
+      ...NOTHING, view: "combine", combineIds: ["id1", "id2", "id3"],
     });
   });
 
-  it("reads a saved-bin reopen nested under /bins", () => {
-    expect(decodeUrlState("/bins/bin1/combine")).toEqual({
-      view: "bins", session: null, project: null, combineIds: null, reopenBinId: "bin1", editBinProfileId: null,
+  it("reads a saved-bin reopen from its own page path", () => {
+    expect(decodeUrlState("/combine/reopen/bin1")).toEqual({
+      ...NOTHING, view: "combine", reopenBinId: "bin1",
     });
+  });
+
+  it("reads a fresh compose selection from its own page path", () => {
+    expect(decodeUrlState("/compose/id1,id2")).toEqual({
+      ...NOTHING, view: "compose", composeIds: ["id1", "id2"],
+    });
+  });
+
+  it("decodes nothing for a bare /combine or /compose (no selection to show)", () => {
+    expect(decodeUrlState("/combine")).toEqual(NOTHING);
+    expect(decodeUrlState("/compose")).toEqual(NOTHING);
   });
 
   it("reads the bare Bin Profiles list path", () => {
-    expect(decodeUrlState("/bin-profiles")).toEqual({
-      view: "binProfiles", session: null, project: null, combineIds: null, reopenBinId: null,
-      editBinProfileId: null,
-    });
+    expect(decodeUrlState("/bin-profiles")).toEqual({ ...NOTHING, view: "binProfiles" });
   });
 
   it("reads a bin profile edit id nested under /bin-profiles", () => {
     expect(decodeUrlState("/bin-profiles/p1")).toEqual({
-      view: "binProfiles", session: null, project: null, combineIds: null, reopenBinId: null,
-      editBinProfileId: "p1",
+      ...NOTHING, view: "binProfiles", editBinProfileId: "p1",
     });
   });
 
   it("returns nothing decoded on an empty string", () => {
-    expect(decodeUrlState("")).toEqual({
-      view: null, session: null, project: null, combineIds: null, reopenBinId: null, editBinProfileId: null,
-    });
+    expect(decodeUrlState("")).toEqual(NOTHING);
   });
 });
 
@@ -93,6 +96,11 @@ describe("pathForView", () => {
     expect(pathForView("tracing")).toBe("");
   });
 
+  it("returns empty for combine/compose — always addressed with a selection instead", () => {
+    expect(pathForView("combine")).toBe("");
+    expect(pathForView("compose")).toBe("");
+  });
+
   it("round-trips through decodeUrlState", () => {
     expect(decodeUrlState(pathForView("calibration")).view).toBe("calibration");
     expect(decodeUrlState(pathForView("editor", { session: "s1" })).session).toBe("s1");
@@ -100,30 +108,28 @@ describe("pathForView", () => {
   });
 });
 
-describe("pathForCombine / pathForBinReopen / pathForBinProfileEdit", () => {
+describe("pathForCombine / pathForCompose / pathForBinReopen / pathForBinProfileEdit", () => {
   it("builds and round-trips a fresh combine path", () => {
     const path = pathForCombine(["id1", "id2"]);
-    expect(path).toBe("/library/combine/id1,id2");
-    expect(decodeUrlState(path)).toEqual({
-      view: "library", session: null, project: null, combineIds: ["id1", "id2"], reopenBinId: null,
-      editBinProfileId: null,
-    });
+    expect(path).toBe("/combine/id1,id2");
+    expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "combine", combineIds: ["id1", "id2"] });
   });
 
   it("builds and round-trips a saved-bin reopen path", () => {
     const path = pathForBinReopen("bin1");
-    expect(path).toBe("/bins/bin1/combine");
-    expect(decodeUrlState(path)).toEqual({
-      view: "bins", session: null, project: null, combineIds: null, reopenBinId: "bin1", editBinProfileId: null,
-    });
+    expect(path).toBe("/combine/reopen/bin1");
+    expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "combine", reopenBinId: "bin1" });
+  });
+
+  it("builds and round-trips a fresh compose path", () => {
+    const path = pathForCompose(["id1", "id2"]);
+    expect(path).toBe("/compose/id1,id2");
+    expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "compose", composeIds: ["id1", "id2"] });
   });
 
   it("builds and round-trips a bin profile edit path", () => {
     const path = pathForBinProfileEdit("p1");
     expect(path).toBe("/bin-profiles/p1");
-    expect(decodeUrlState(path)).toEqual({
-      view: "binProfiles", session: null, project: null, combineIds: null, reopenBinId: null,
-      editBinProfileId: "p1",
-    });
+    expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "binProfiles", editBinProfileId: "p1" });
   });
 });
