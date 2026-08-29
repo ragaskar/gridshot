@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getSession } from "../api";
 import { useApp, type View } from "../state";
 
@@ -26,6 +26,21 @@ export function AppNavigation() {
   const navigateCurrentTool = useApp((state) => state.navigateCurrentTool);
   const setEditor = useApp((state) => state.setEditor);
   const [restoringTool, setRestoringTool] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Publishes the nav's own rendered height (it wraps to two lines on narrow
+  // viewports, so it isn't a constant) as a CSS var — full-height page
+  // layouts below it (e.g. the combine editor's sidebars) size against this
+  // instead of guessing a fixed offset.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const publish = () => document.documentElement.style.setProperty("--app-nav-h", `${el.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   if (view === "tracing") return null;
 
@@ -48,7 +63,7 @@ export function AppNavigation() {
   }
 
   return (
-    <nav className="app-nav" aria-label="Primary">
+    <nav ref={navRef} className="app-nav" aria-label="Primary">
       <div className="app-nav-inner">
         <button
           type="button"
