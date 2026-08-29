@@ -1,12 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
+import { usePersistedBoolean } from "./usePersistedBoolean";
 
-/** Fold state for a Section/Subsection. `forceOpen` only ever opens — never
- *  closes — so a selection-driven auto-expand (e.g. Fingerhole opening when
- *  a hole is picked) never fights a fold the user already set by hand, and
- *  deselecting never re-folds something they opened. */
-export function useFold(defaultOpen: boolean) {
-  const [open, setOpen] = useState(defaultOpen);
-  const toggle = useCallback(() => setOpen((o) => !o), []);
-  const forceOpen = useCallback(() => setOpen(true), []);
-  return { open, toggle, forceOpen };
+/** Fold state for a Section/Subsection. `forceOpen`/`forceClose` are no-ops
+ *  when already in that state, so a selection-driven auto-expand/collapse
+ *  never fights a fold the user already set by hand for no reason, and
+ *  never writes to storage (or re-renders) needlessly. Pass `storageKey` to
+ *  persist across a reload/reopen within the same tab (sessionStorage); omit
+ *  it for fold state that shouldn't survive a reload. */
+export function useFold(defaultOpen: boolean, storageKey?: string) {
+  const { value: open, setValue: setOpen, toggle } = usePersistedBoolean(defaultOpen, storageKey);
+  const forceOpen = useCallback(() => setOpen(true), [setOpen]);
+  const forceClose = useCallback(() => setOpen(false), [setOpen]);
+  return { open, toggle, forceOpen, forceClose };
 }

@@ -19,7 +19,7 @@ export function Section({
   return (
     <details open={open} className="border-b border-line">
       <summary
-        className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 font-mono text-xs uppercase text-teal [&::-webkit-details-marker]:hidden"
+        className="group flex cursor-pointer select-none items-center gap-2 px-3 py-2 font-mono text-xs uppercase text-teal transition-colors hover:bg-paper-2 [&::-webkit-details-marker]:hidden"
         style={{ listStyle: "none", letterSpacing: "0.14em" }}
         onClick={(e) => {
           e.preventDefault();
@@ -28,7 +28,7 @@ export function Section({
       >
         <span
           aria-hidden="true"
-          className="inline-block shrink-0 text-[10px] transition-transform"
+          className="inline-block shrink-0 text-[10px] transition-transform group-hover:font-bold"
           style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
         >
           ▸

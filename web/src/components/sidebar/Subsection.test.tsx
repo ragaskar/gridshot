@@ -26,14 +26,14 @@ describe("Subsection", () => {
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 
-  it("shows foldedSummary only while closed, and it doesn't toggle the header on click", () => {
+  it("shows headerExtra in both open and closed states, and it doesn't toggle the header on click", () => {
     const onToggle = vi.fn();
     const { rerender } = render(
       <Subsection
         title="Fingerhole"
         open={false}
         onToggle={onToggle}
-        foldedSummary={<button>On</button>}
+        headerExtra={<button>On</button>}
       >
         <p>Body</p>
       </Subsection>,
@@ -47,11 +47,43 @@ describe("Subsection", () => {
         title="Fingerhole"
         open={true}
         onToggle={onToggle}
-        foldedSummary={<button>On</button>}
+        headerExtra={<button>On</button>}
       >
         <p>Body</p>
       </Subsection>,
     );
-    expect(screen.queryByText("On")).toBeNull();
+    expect(screen.getByText("On")).toBeTruthy();
+  });
+
+  it("bolds the title when relevant, and doesn't when not", () => {
+    const { rerender } = render(
+      <Subsection title="Shape" open={true} onToggle={() => {}} relevant={true}>
+        <p>Body</p>
+      </Subsection>,
+    );
+    expect(screen.getByText("Shape").className).toContain("font-bold");
+
+    rerender(
+      <Subsection title="Shape" open={true} onToggle={() => {}} relevant={false}>
+        <p>Body</p>
+      </Subsection>,
+    );
+    expect(screen.getByText("Shape").className).not.toContain("font-bold");
+  });
+
+  it("shows a down chevron closed and an up chevron open", () => {
+    const { rerender } = render(
+      <Subsection title="Shape" open={false} onToggle={() => {}}>
+        <p>Body</p>
+      </Subsection>,
+    );
+    expect(screen.getByText("▾")).toBeTruthy();
+
+    rerender(
+      <Subsection title="Shape" open={true} onToggle={() => {}}>
+        <p>Body</p>
+      </Subsection>,
+    );
+    expect(screen.getByText("▴")).toBeTruthy();
   });
 });
