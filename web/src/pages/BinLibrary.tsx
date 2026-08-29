@@ -114,7 +114,16 @@ export function BinLibrary() {
                 className="border border-line bg-paper-2 overflow-hidden"
                 style={{ borderRadius: 2 }}
               >
-                <BinThumbnail bin={b} />
+                <button
+                  type="button"
+                  className="block w-full cursor-pointer transition-opacity hover:opacity-80 disabled:cursor-default disabled:opacity-100"
+                  disabled={busyId === b.id}
+                  title="Reopen in the combine editor"
+                  aria-label={`Reopen "${b.label || "this bin"}" in the combine editor`}
+                  onClick={() => openReopen(b)}
+                >
+                  <BinThumbnail bin={b} />
+                </button>
                 <div className="p-3 space-y-3 text-ink">
                   <label className="block">
                     <span className="font-mono text-[10px] uppercase text-muted">Name</span>
