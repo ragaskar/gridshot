@@ -8,6 +8,8 @@ import {
   renameBin,
   type SavedBin,
 } from "../api";
+import { clearBinPreviewCache } from "../binPreviewCache";
+import { BinThumbnail } from "../components/BinThumbnail";
 import { binExportName } from "../exportNaming";
 import { pathForBinReopen } from "../urlState";
 
@@ -42,6 +44,7 @@ export function BinLibrary() {
     try {
       await deleteBin(id);
       setBins((current) => current.filter((b) => b.id !== id));
+      clearBinPreviewCache(id);
     } finally {
       setBusyId(null);
     }
@@ -111,6 +114,7 @@ export function BinLibrary() {
                 className="border border-line bg-paper-2 overflow-hidden"
                 style={{ borderRadius: 2 }}
               >
+                <BinThumbnail bin={b} />
                 <div className="p-3 space-y-3 text-ink">
                   <label className="block">
                     <span className="font-mono text-[10px] uppercase text-muted">Name</span>

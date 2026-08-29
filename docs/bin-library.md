@@ -56,10 +56,29 @@ that initial mint itself fails and stays failed for the rest of the session — 
 bin already cleans up its own, but nothing else catches this case automatically. Run
 `gridshot bin-tools gc` to delete every bin tool no saved bin references any more.
 
+## Preview thumbnail
+
+Each card shows a small static "snap" of the multi-tool combine editor's 2D arrange view — the
+bin's footprint, its grid lines, and each tool's placed outline in the same per-tool colors the
+editor uses, no interactivity. It renders lazily once the Bin Library page opens (one request per
+bin, not a bulk endpoint) and is cached in the browser against a hash of everything about the bin
+that affects its geometry — every placement, override, and bin-wide structural/style field, but
+not cosmetic ones like its name. Reopening the Bin Library with nothing changed reuses the cached
+thumbnail with no network round-trip; a re-arrange, a resize, or any other geometry-affecting edit
+changes the hash and the next open re-renders it. If the preview request itself fails — in
+practice, only a legacy bin from before bin tools existed (see [What gets
+saved](#what-gets-saved) above), still pointing at a since-deleted Tool Library entry, since a
+bin tool's own fork can't be deleted out from under a bin that references it — the card shows a
+"no preview" placeholder instead of a broken image.
+
+A custom-shape bin (gridfinity units cut out of a forced footprint) renders its full bounding
+rectangle here — the notch isn't drawn, since the preview only knows the bin's outer size, not
+its shape. Reopen for the actual outline.
+
 ## The Bin Library page
 
-Each saved bin is a card: its name (editable in place, same as the Tool Library), the save date,
-bin style, and the tools it contains. Four actions:
+Each saved bin is a card: its preview thumbnail, its name (editable in place, same as the Tool
+Library), the save date, bin style, and the tools it contains. Four actions:
 
 - **↻ Reopen** — opens the combine editor seeded with this bin's exact saved arrangement (not a
   fresh auto-pack) so you can keep arranging it. Every change autosaves back to this same entry;
@@ -83,5 +102,3 @@ Slice exports get a `-slice` suffix on the same base name.
 
 - This pass only covers *combined* bins (arrangements from the multi-tool combine editor) — not
   single-tool bins or drawer compositions.
-- No thumbnail image (a combined bin doesn't have one obvious shape to render, unlike a single
-  tool); the tool list stands in for it.

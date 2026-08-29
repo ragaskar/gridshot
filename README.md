@@ -523,6 +523,10 @@ Features added on top of the original public release, newest last:
   own page now, not a modal over whichever page sent you there — deep-link
   URLs at `/combine/<ids>`, `/combine/reopen/<id>`, and `/compose/<ids>`
   (see [docs/deep-link-urls.md](docs/deep-link-urls.md))
+- Bin Library entries now show a preview thumbnail — a static snap of the
+  2D arrange view, cached in the browser against a hash of the bin's
+  geometry so reopening the page with nothing changed costs no network
+  round-trip (see [docs/bin-library.md](docs/bin-library.md#preview-thumbnail))
 
 ## License
 

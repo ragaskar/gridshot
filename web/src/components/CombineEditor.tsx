@@ -26,6 +26,7 @@ import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/f
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
 import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength } from "../geometry/perimeter";
 import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
+import { placed, placedPoint, type Pt } from "../geometry/placement";
 import { useBinProfiles } from "../useBinProfiles";
 
 // No entry here should read as the same red as OVERFLOW_COLOR below — that
@@ -55,8 +56,6 @@ const MIN_TOOLSHAPE_DIM_MM = 1;
 // pixel-precise aim on the exact boundary curve.
 const TOOLSHAPE_RESIZE_HIT_PX = 4;
 
-type Pt = [number, number];
-
 /** A centroid-normalised rounded-rectangle outline for the placement-mode
  *  ghost preview only — the authoritative outline is generated server-side
  *  (gridfinity.py's toolshape_rounded_rect_outline) once a click commits the
@@ -79,27 +78,6 @@ function roundedRectPreviewPoints(width: number, length: number, radius: number)
     }
   }
   return pts;
-}
-
-/** Apply a placement to a centroid-normalised stamp — mirror about the local
- *  axes, then rotate CCW about the origin (matching shapely on the server),
- *  then translate. Mirror is a separate transform from rotation (it can't be
- *  expressed as any `rot` value — a flip reverses handedness, a rotation
- *  never does), so it's applied first, in the same local frame `rot` uses. */
-function placed(
-  stamp: Pt[], tx: number, ty: number, rot: number,
-  mirrorX = false, mirrorY = false,
-): Pt[] {
-  const a = (rot * Math.PI) / 180;
-  const c = Math.cos(a), s = Math.sin(a);
-  return stamp.map(([px, py]) => {
-    const x = mirrorX ? -px : px, y = mirrorY ? -py : py;
-    return [x * c - y * s + tx, x * s + y * c + ty];
-  });
-}
-
-function placedPoint(point: Pt, tx: number, ty: number, rot: number, mirrorX = false, mirrorY = false): Pt {
-  return placed([point], tx, ty, rot, mirrorX, mirrorY)[0];
 }
 
 /** Which resize cursor best matches a toolshape edge's outward normal —
