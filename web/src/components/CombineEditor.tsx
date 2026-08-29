@@ -2385,6 +2385,50 @@ export function CombineEditor({
             >
               ↷ Redo
             </button>
+            <button
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              disabled={busy || !tools.length || Boolean(err)}
+              onClick={exportBin}
+            >
+              ↓ Export bin (3MF)
+            </button>
+            <button
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              disabled={busy || !tools.length || Boolean(err)}
+              onClick={() => { setSliceErr(null); setSliceDialogOpen(true); }}
+              title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
+            >
+              ↓ Export slice (3MF)
+            </button>
+            {savedBinId ? (
+              <button
+                className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+                disabled={busy || !tools.length || Boolean(err)}
+                onClick={() => {
+                  setSaveName(savedLabel ?? defaultBinName());
+                  setSaveErr(null);
+                  setSaveDialogOpen(true);
+                }}
+              >
+                Save As…
+              </button>
+            ) : saveErr ? (
+              <button
+                className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+                disabled={busy || !tools.length}
+                onClick={() => void mintInitialSave(tools)}
+              >
+                ⟳ Retry
+              </button>
+            ) : (
+              <span className="font-mono text-[10px] text-muted">Creating this bin's Bin Library entry…</span>
+            )}
+            <button
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              onClick={handleClose}
+            >
+              Close
+            </button>
           </span>
           {layout && (
             <span className="text-muted">
@@ -2393,6 +2437,91 @@ export function CombineEditor({
             </span>
           )}
         </div>
+        {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
+        {hasOverflow && (
+          <p className="font-mono text-[10px] text-orange">
+            A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
+          </p>
+        )}
+        {!savedBinId && saveErr && (
+          <p className="font-mono text-[10px] text-orange">Couldn't create this bin's Bin Library entry. {saveErr}</p>
+        )}
+        {savedBinId && saveErr && !saveDialogOpen && (
+          <p className="font-mono text-[10px] text-orange">{saveErr}</p>
+        )}
+        {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
+        {sliceDialogOpen && (
+          <div className="mt-2 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+            <label className="block">
+              <span className="block uppercase text-muted">Slice thickness (mm)</span>
+              <input
+                aria-label="Slice thickness in millimetres"
+                className="mono-input mt-1 w-full max-w-xs !px-2 !py-1 !text-sm"
+                type="number" step={0.1} min={SLICE_MIN_THICKNESS_MM} max={maxSliceThicknessMm}
+                value={sliceThickness}
+                onChange={(event) => { setSliceThickness(event.target.value); setSliceErr(null); }}
+              />
+            </label>
+            {sliceThicknessInvalid && (
+              <p className="mt-1 text-orange">
+                Slice thickness must be between {SLICE_MIN_THICKNESS_MM}mm and {maxSliceThicknessMm.toFixed(1)}mm
+                (the shallowest tool's own recess depth).
+              </p>
+            )}
+            {sliceErr && <p className="mt-1 text-orange">{sliceErr}</p>}
+            <div className="mt-2 grid max-w-xs grid-cols-2 gap-1">
+              <button
+                className="btn text-xs"
+                onClick={() => setSliceDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary text-xs"
+                disabled={busy || sliceThicknessInvalid}
+                onClick={() => {
+                  void exportSlice(sliceThicknessNum).then((ok) => {
+                    if (ok) setSliceDialogOpen(false);
+                  });
+                }}
+              >
+                Export
+              </button>
+            </div>
+          </div>
+        )}
+        {saveDialogOpen && (
+          <div className="mt-2 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
+            <label className="block">
+              <span className="block uppercase text-muted">Name</span>
+              <input
+                aria-label="Bin Library entry name"
+                className="mono-input mt-1 w-full max-w-xs !px-2 !py-1 !text-sm"
+                type="text"
+                value={saveName}
+                onChange={(event) => setSaveName(event.target.value)}
+                autoFocus
+              />
+            </label>
+            {saveErr && <p className="mt-2 text-orange">{saveErr}</p>}
+            <div className="mt-2 grid max-w-xs grid-cols-2 gap-1">
+              <button
+                className="btn text-xs"
+                disabled={saveBusy}
+                onClick={() => setSaveDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary text-xs"
+                disabled={saveBusy}
+                onClick={() => void saveToBinLibrary()}
+              >
+                Save As
+              </button>
+            </div>
+          </div>
+        )}
         <p className="font-mono text-[10px] text-muted mb-3">
           Drag a tool to move it · select one and use Rotate · Auto-pack re-solves · live grid adds only complete sockets that fit outside every tool wall.
         </p>
@@ -3570,131 +3699,6 @@ export function CombineEditor({
               </button>
             ))}
           </div>
-          {err && <p className="font-mono text-[10px] text-orange">{err}</p>}
-          {hasOverflow && (
-            <p className="font-mono text-[10px] text-orange">
-              A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
-            </p>
-          )}
-          <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
-            ↓ Export bin (3MF)
-          </button>
-          <button
-            className="btn w-full text-xs"
-            disabled={busy || !tools.length || Boolean(err)}
-            onClick={() => { setSliceErr(null); setSliceDialogOpen(true); }}
-            title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
-          >
-            ↓ Export slice (3MF)
-          </button>
-          {sliceDialogOpen && (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <label className="block">
-                <span className="block uppercase text-muted">Slice thickness (mm)</span>
-                <input
-                  aria-label="Slice thickness in millimetres"
-                  className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                  type="number" step={0.1} min={SLICE_MIN_THICKNESS_MM} max={maxSliceThicknessMm}
-                  value={sliceThickness}
-                  onChange={(event) => { setSliceThickness(event.target.value); setSliceErr(null); }}
-                />
-              </label>
-              {sliceThicknessInvalid && (
-                <p className="mt-1 text-orange">
-                  Slice thickness must be between {SLICE_MIN_THICKNESS_MM}mm and {maxSliceThicknessMm.toFixed(1)}mm
-                  (the shallowest tool's own recess depth).
-                </p>
-              )}
-              {sliceErr && <p className="mt-1 text-orange">{sliceErr}</p>}
-              <div className="mt-2 grid grid-cols-2 gap-1">
-                <button
-                  className="btn text-xs"
-                  onClick={() => setSliceDialogOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary text-xs"
-                  disabled={busy || sliceThicknessInvalid}
-                  onClick={() => {
-                    void exportSlice(sliceThicknessNum).then((ok) => {
-                      if (ok) setSliceDialogOpen(false);
-                    });
-                  }}
-                >
-                  Export
-                </button>
-              </div>
-            </div>
-          )}
-          {savedBinId ? (
-            <>
-              <button
-                className="btn w-full text-xs"
-                disabled={busy || !tools.length || Boolean(err)}
-                onClick={() => {
-                  setSaveName(savedLabel ?? defaultBinName());
-                  setSaveErr(null);
-                  setSaveDialogOpen(true);
-                }}
-              >
-                Save As…
-              </button>
-              {saveErr && !saveDialogOpen && <p className="mt-1 text-orange">{saveErr}</p>}
-            </>
-          ) : (
-            <div className="font-mono text-[10px]">
-              <p className="text-muted">
-                {saveErr ? "Couldn't create this bin's Bin Library entry." : "Creating this bin's Bin Library entry…"}
-              </p>
-              {saveErr && (
-                <>
-                  <p className="mt-1 text-orange">{saveErr}</p>
-                  <button
-                    className="btn w-full text-xs mt-1"
-                    disabled={busy || !tools.length}
-                    onClick={() => void mintInitialSave(tools)}
-                  >
-                    ⟳ Retry
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-          {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
-          {saveDialogOpen && (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <label className="block">
-                <span className="block uppercase text-muted">Name</span>
-                <input
-                  aria-label="Bin Library entry name"
-                  className="mono-input mt-1 w-full !px-2 !py-1 !text-sm"
-                  type="text"
-                  value={saveName}
-                  onChange={(event) => setSaveName(event.target.value)}
-                  autoFocus
-                />
-              </label>
-              {saveErr && <p className="mt-2 text-orange">{saveErr}</p>}
-              <div className="mt-2 grid grid-cols-2 gap-1">
-                <button
-                  className="btn text-xs"
-                  disabled={saveBusy}
-                  onClick={() => setSaveDialogOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary text-xs"
-                  disabled={saveBusy}
-                  onClick={() => void saveToBinLibrary()}
-                >
-                  Save As
-                </button>
-              </div>
-            </div>
-          )}
-          <button className="btn w-full" onClick={handleClose}>Close</button>
         </Sidebar>
       </div>
       {toolPickerOpen && (
