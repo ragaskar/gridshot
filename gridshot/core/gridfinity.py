@@ -369,7 +369,14 @@ def _pocket_bottom_fillet(
     `radius` right at the floor (tangent to it, same as a round-over router
     bit). Built as a stack of hulled plates like `_chamfer_transition`, just
     following this curved offset profile instead of a straight one so the
-    facets approximate a real fillet rather than a single flat chamfer."""
+    facets approximate a real fillet rather than a single flat chamfer —
+    except when `inner` is concave, where hulling two different-outset
+    plates of the *same* concave shape bridges its own bays with a flat
+    phantom face (`_chamfer_transition`'s failure mode, but triggered here
+    by one shape's two offsets instead of two shapes) — falls back to a
+    stack of thin, non-hulled single-offset slabs in that case, same
+    stair-stepped tradeoff `_chamfer_transition` accepts for a concave
+    outline."""
     def ring(outset: float) -> CrossSection:
         return (
             inner.offset(outset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
@@ -379,16 +386,25 @@ def _pocket_bottom_fillet(
     def plate(outset: float, z: float) -> Manifold:
         return Manifold.extrude(ring(outset), EPS).translate((0, 0, z))
 
+    convex = _is_convex(inner)
     slabs = []
     for i in range(FILLET_LOFT_STEPS):
         h0 = radius * i / FILLET_LOFT_STEPS
         h1 = radius * (i + 1) / FILLET_LOFT_STEPS
         o0 = radius - math.sqrt(max(0.0, radius * radius - (radius - h0) ** 2))
         o1 = radius - math.sqrt(max(0.0, radius * radius - (radius - h1) ** 2))
-        slabs.append(Manifold.batch_hull([
-            plate(o0, floor_z + h0 - ov),
-            plate(o1, floor_z + h1),
-        ]))
+        if convex:
+            slabs.append(Manifold.batch_hull([
+                plate(o0, floor_z + h0 - ov),
+                plate(o1, floor_z + h1),
+            ]))
+        else:
+            # Widest (o0) offset of the pair, held constant across the whole
+            # step rather than hulled down to o1 — over-covers slightly
+            # instead of risking a hull bridge across a concavity.
+            slabs.append(Manifold.extrude(
+                ring(o0), (h1 - h0) + 2 * ov
+            ).translate((0, 0, floor_z + h0 - ov)))
     return Manifold.batch_boolean(slabs, OpType.Add)
 
 
@@ -424,7 +440,15 @@ def _pocket_top_fillet(
     hole circle, the finger-hole connector) rather than passing their union:
     `Manifold.batch_hull` on a shared ring would bridge disjoint openings
     with a flat phantom wall between them, same failure mode this file's
-    `_chamfer_transition` documents for a concave *outer* outline."""
+    `_chamfer_transition` documents for a concave *outer* outline.
+
+    That same bridging risk applies *within* a single opening too, whenever
+    `cross_section` is itself concave (a tool silhouette's waist, a fork's
+    tines, ...): hulling that one shape's own two different-outset plates
+    can bridge its bays with a flat phantom face, cutting material far
+    outside the opening's real footprint. Falls back to a stack of thin,
+    non-hulled single-offset slabs in that case, same stair-stepped
+    tradeoff `_chamfer_transition` accepts for a concave outline."""
     def ring(outset: float) -> CrossSection:
         return (
             cross_section.offset(outset, JoinType.Round, circular_segments=CIRCULAR_SEGMENTS)
@@ -434,16 +458,25 @@ def _pocket_top_fillet(
     def plate(outset: float, z: float) -> Manifold:
         return Manifold.extrude(ring(outset), EPS).translate((0, 0, z))
 
+    convex = _is_convex(cross_section)
     slabs = []
     for i in range(FILLET_LOFT_STEPS):
         d0 = radius * i / FILLET_LOFT_STEPS
         d1 = radius * (i + 1) / FILLET_LOFT_STEPS
         o0 = radius - math.sqrt(max(0.0, radius * radius - (radius - d0) ** 2))
         o1 = radius - math.sqrt(max(0.0, radius * radius - (radius - d1) ** 2))
-        slabs.append(Manifold.batch_hull([
-            plate(o0, top_z - d0 + ov),
-            plate(o1, top_z - d1),
-        ]))
+        if convex:
+            slabs.append(Manifold.batch_hull([
+                plate(o0, top_z - d0 + ov),
+                plate(o1, top_z - d1),
+            ]))
+        else:
+            # Widest (o0) offset of the pair, held constant across the whole
+            # step rather than hulled down to o1 — over-covers slightly
+            # instead of risking a hull bridge across a concavity.
+            slabs.append(Manifold.extrude(
+                ring(o0), (d1 - d0) + 2 * ov
+            ).translate((0, 0, top_z - d1 - ov)))
     return Manifold.batch_boolean(slabs, OpType.Add)
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from manifold3d import CrossSection, OpType
 from shapely.geometry import Point, Polygon, box
 
 from gridshot.core import gridfinity as grid_mod
@@ -70,6 +71,39 @@ class TestPocketTopBevel:
             2, 1, 3, pocket=l_shape, pocket_depth=10.0, bevel_pockets=True,
         )
         assert grid_mod.to_trimesh(solid).is_watertight
+
+    def test_concave_pocket_outline_does_not_erode_its_own_convex_hull_bay(self):
+        # Regression: _pocket_top_fillet used to hull two different-outset
+        # plates of the *same* cross-section unconditionally. For a concave
+        # outline that bridges the outline's own bays with a flat phantom
+        # face and erodes material well outside the pocket — anywhere
+        # inside the outline's convex hull but outside the outline itself,
+        # like the notch this L-shape carves out of its bottom-right
+        # corner. A point in that notch (outside the polygon, inside its
+        # hull) must stay solid near the rim, not get carved away.
+        l_shape_shapely = Polygon(
+            [(-10, -10), (5, -10), (5, 0), (10, 0), (10, 10), (-10, 10)]
+        )
+        notch_point = Point(7.0, -3.0)
+        assert not l_shape_shapely.contains(notch_point)
+        assert l_shape_shapely.convex_hull.contains(notch_point)
+
+        l_shape = from_shapely(l_shape_shapely)
+        depth = 10.0
+        height_u = 3
+        total_h = height_u * grid_mod.UNIT_H
+        solid = grid_mod.bin_solid(
+            2, 1, height_u, pocket=l_shape, pocket_depth=depth, bevel_pockets=True,
+        )
+        eps = 0.05
+        probe = CrossSection([[
+            (7.0 - eps, -3.0 - eps), (7.0 + eps, -3.0 - eps),
+            (7.0 + eps, -3.0 + eps), (7.0 - eps, -3.0 + eps),
+        ]])
+        cropped = CrossSection.batch_boolean(
+            [solid.slice(total_h - 0.02), probe], OpType.Intersect,
+        )
+        assert cropped.area() == pytest.approx((2 * eps) ** 2, rel=1e-3)
 
     def test_watertight_with_two_adjacent_pockets_at_minimum_tool_wall(self):
         p1 = from_shapely(box(-19, -8, -1, 8))
