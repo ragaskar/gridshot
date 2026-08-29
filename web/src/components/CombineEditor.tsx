@@ -444,6 +444,7 @@ export function CombineEditor({
   const alignFold = useFold(true);
   const fingerholeFold = useFold(true);
   const editorConfigFold = useFold(true);
+  const toolsListFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -2695,6 +2696,34 @@ export function CombineEditor({
               </p>
             </label>
           </Section>
+          <Section title="Tools" open={toolsListFold.open} onToggle={toolsListFold.toggle}>
+            <div className="max-h-[38vh] overflow-auto space-y-1">
+              {tools.map((t, i) => (
+                <button
+                  key={t.id}
+                  className="w-full border px-2 py-1 text-left font-mono text-[10px]"
+                  style={{ borderRadius: 2, borderColor: selectedIds.has(t.id) ? color(i) : "var(--c-line)" }}
+                  onClick={(e) => {
+                    setSelectedFingerHoleToolIds(new Set());
+                    setSelectedFingerPointIndex(0);
+                    setSelectedIds(nextSelection(t.id, e.shiftKey));
+                    arrangeRef.current?.focus();
+                  }}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />
+                    <span className="truncate font-bold" style={{ color: color(i) }}>{t.label || t.id.slice(0, 6)}</span>
+                    {lockedRotations.has(t.id) && <span title="Rotation locked for auto-pack">🔒</span>}
+                  </span>
+                  <span className="mt-1 flex flex-wrap gap-x-2 pl-4 text-muted">
+                    <span>Clearance {t.clearance_mm} mm</span>
+                    <span>Recess {t.depth_mm} mm</span>
+                    <span className={t.finger_hole ? "text-teal" : "text-line"}>Finger {t.finger_hole ? "on" : "off"}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Section>
         </Sidebar>
 
         <div className="min-w-0 flex-1 lg:min-h-0 lg:overflow-hidden">
@@ -3734,32 +3763,6 @@ export function CombineEditor({
             </button>
           </Subsection>
           </Section>
-          <div className="max-h-[38vh] overflow-auto space-y-1">
-            {tools.map((t, i) => (
-              <button
-                key={t.id}
-                className="w-full border px-2 py-1 text-left font-mono text-[10px]"
-                style={{ borderRadius: 2, borderColor: selectedIds.has(t.id) ? color(i) : "var(--c-line)" }}
-                onClick={(e) => {
-                  setSelectedFingerHoleToolIds(new Set());
-                  setSelectedFingerPointIndex(0);
-                  setSelectedIds(nextSelection(t.id, e.shiftKey));
-                  arrangeRef.current?.focus();
-                }}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="shrink-0" style={{ width: 8, height: 8, background: color(i), display: "inline-block", borderRadius: 2 }} />
-                  <span className="truncate font-bold" style={{ color: color(i) }}>{t.label || t.id.slice(0, 6)}</span>
-                  {lockedRotations.has(t.id) && <span title="Rotation locked for auto-pack">🔒</span>}
-                </span>
-                <span className="mt-1 flex flex-wrap gap-x-2 pl-4 text-muted">
-                  <span>Clearance {t.clearance_mm} mm</span>
-                  <span>Recess {t.depth_mm} mm</span>
-                  <span className={t.finger_hole ? "text-teal" : "text-line"}>Finger {t.finger_hole ? "on" : "off"}</span>
-                </span>
-              </button>
-            ))}
-          </div>
         </Sidebar>
       </div>
       {toolPickerOpen && (
