@@ -19,7 +19,7 @@ import numpy as np
 from shapely.affinity import rotate as shapely_rotate
 from shapely.affinity import scale as shapely_scale
 from shapely.affinity import translate
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, MultiPolygon, Point
 from shapely.geometry.polygon import orient
 from shapely.ops import nearest_points
 
@@ -94,6 +94,14 @@ class BinSettings:
     # default — see `derive_bin_spec`) sharing the first point's diameter.
     finger_hole_span: bool = False
     finger_hole_arc2_mm: float | None = None
+    # Distinct from the legacy `finger_hole_offset_mm` above (a bbox-axis
+    # nudge in the retired side-anchor model). This instead moves the hole
+    # along the *local outward normal* of the outline at its arc-length
+    # point: negative pulls it toward the tool's own interior ("in"),
+    # positive pushes it away from the outline into the surrounding wall
+    # ("out"). Applied identically to both focal points of a span hole,
+    # each along its own point's normal. Zero (default) is a no-op.
+    finger_hole_radial_offset_mm: float = 0.0
     round_tool: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -212,26 +220,40 @@ def _ring_length(ring: list[tuple[float, float]]) -> float:
     return total
 
 
-def _point_at_arc_length(ring: list[tuple[float, float]], arc_mm: float) -> tuple[float, float]:
-    """Walk `ring` from its first vertex for `arc_mm` and interpolate. Callers
-    wrap `arc_mm` into `[0, _ring_length(ring))` first; a value outside that
-    range (or a degenerate ring) resolves to the first vertex."""
+def _point_and_outward_normal_at_arc_length(
+    ring: list[tuple[float, float]], arc_mm: float
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Point at `arc_mm` along `ring` (see `_point_at_arc_length`) plus the
+    unit outward normal of the segment it falls on — the segment tangent
+    rotated -90 degrees. Correct as "outward" only because `ring` is always
+    CCW-oriented by the time any caller reaches this (interior on the left
+    of the direction of travel; `derive_bin_spec` orients `pocket_shape`
+    before deriving its ring, see the comment there on why that orientation
+    matters). Degenerate segments return a zero normal rather than raising."""
     if not ring:
-        return (0.0, 0.0)
-    if len(ring) < 2 or arc_mm <= 0:
-        return ring[0]
-    remaining = arc_mm
+        return (0.0, 0.0), (0.0, 0.0)
+    if len(ring) < 2:
+        return ring[0], (0.0, 0.0)
+    remaining = arc_mm if arc_mm > 0 else 0.0
     for i in range(len(ring)):
         x0, y0 = ring[i]
         x1, y1 = ring[(i + 1) % len(ring)]
-        seg_len = math.hypot(x1 - x0, y1 - y0)
+        dx, dy = x1 - x0, y1 - y0
+        seg_len = math.hypot(dx, dy)
         if seg_len <= 1e-12:
             continue
         if remaining <= seg_len:
             t = remaining / seg_len
-            return (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)
+            return (x0 + dx * t, y0 + dy * t), (dy / seg_len, -dx / seg_len)
         remaining -= seg_len
-    return ring[0]
+    return ring[0], (0.0, 0.0)
+
+
+def _point_at_arc_length(ring: list[tuple[float, float]], arc_mm: float) -> tuple[float, float]:
+    """Walk `ring` from its first vertex for `arc_mm` and interpolate. Callers
+    wrap `arc_mm` into `[0, _ring_length(ring))` first; a value outside that
+    range (or a degenerate ring) resolves to the first vertex."""
+    return _point_and_outward_normal_at_arc_length(ring, arc_mm)[0]
 
 
 def _arc_length_at_point(ring: list[tuple[float, float]], target: tuple[float, float]) -> float:
@@ -388,6 +410,8 @@ def derive_bin_spec(
         raise ValueError("finger hole diameter must be > 0")
     if settings.finger_hole_arc2_mm is not None and not math.isfinite(settings.finger_hole_arc2_mm):
         raise ValueError("finger hole second arc length must be finite")
+    if not math.isfinite(settings.finger_hole_radial_offset_mm):
+        raise ValueError("finger hole radial offset must be finite")
     if not (0.0 <= settings.fill_height_pct <= 100.0):
         raise ValueError(
             f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
@@ -493,12 +517,18 @@ def derive_bin_spec(
         )
         ring = _ring_points(pocket_shape)
         total_len = _ring_length(ring)
+        radial_offset = settings.finger_hole_radial_offset_mm
         if settings.finger_hole_arc_mm is not None:
             arc = settings.finger_hole_arc_mm % total_len if total_len > 1e-9 else 0.0
-            point = Point(_point_at_arc_length(ring, arc))
+            point, normal = _point_and_outward_normal_at_arc_length(ring, arc)
+            point = Point(point)
         else:
             point = _legacy_finger_hole_point(pocket_shape, wall, settings)
             arc = _arc_length_at_point(ring, (point.x, point.y)) if total_len > 1e-9 else 0.0
+            _, normal = _point_and_outward_normal_at_arc_length(ring, arc)
+        if radial_offset:
+            nx, ny = normal
+            point = Point(point.x + nx * radial_offset, point.y + ny * radial_offset)
 
         sizing = pocket_shape.union(point.buffer(diameter / 2))
         finger_hole_arc_mm = arc
@@ -514,13 +544,26 @@ def derive_bin_spec(
                 # side" jump), so this fallback only matters for a caller
                 # that enables span without ever placing the second point.
                 arc2 = (arc + total_len / 2) % total_len if total_len > 1e-9 else 0.0
-            point2 = Point(_point_at_arc_length(ring, arc2))
+            point2, normal2 = _point_and_outward_normal_at_arc_length(ring, arc2)
+            point2 = Point(point2)
+            if radial_offset:
+                nx2, ny2 = normal2
+                point2 = Point(point2.x + nx2 * radial_offset, point2.y + ny2 * radial_offset)
             finger_hole_arc2_mm = arc2
             fingers.append((float(point2.x), float(point2.y), diameter))
             span_shape = LineString([point, point2]).buffer(
                 diameter / 2, cap_style="round"
             )
             sizing = sizing.union(span_shape)
+
+        # A large enough radial offset can push the hole(s) fully clear of
+        # `pocket_shape`, making `sizing` a MultiPolygon — `contour_mod.
+        # from_shapely` below needs a single exterior ring, and `sizing` only
+        # ever feeds grid/footprint sizing (never the actual cut boundary),
+        # so its convex hull — guaranteed to enclose every disjoint piece —
+        # is a safe, minimal-diff substitute rather than a special case.
+        if isinstance(sizing, MultiPolygon):
+            sizing = sizing.convex_hull
 
     # Centre the complete cut envelope, including the optional scallop.
     sminx, sminy, smaxx, smaxy = sizing.bounds

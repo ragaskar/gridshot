@@ -19,9 +19,9 @@ tool:
 
 - If the base has no finger hole, every other selected tool's finger hole is turned
   **off**.
-- Otherwise, every other selected tool gets the base's [diameter](combine-finger-hole-position.md#size)
-  and [span](combine-finger-hole-span.md) state (on or off). A tool with no hole yet
-  gets one.
+- Otherwise, every other selected tool gets the base's [diameter](combine-finger-hole-position.md#size),
+  [radial offset](combine-finger-hole-radial-offset.md), and [span](combine-finger-hole-span.md)
+  state (on or off). A tool with no hole yet gets one.
 
 ## What it never touches
 

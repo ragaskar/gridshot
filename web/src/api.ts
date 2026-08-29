@@ -1043,6 +1043,7 @@ export interface CombineToolOverride {
   finger_hole_diameter_mm: number | null;
   finger_hole_span: boolean | null;
   finger_hole_arc2_mm: number | null;
+  finger_hole_radial_offset_mm: number | null;
   locked_rotation_deg: number | null;
   pocket_depth_mm: number | null;
   pocket_depth_pct: number | null;
@@ -1083,6 +1084,9 @@ export interface CombineTool extends Placement {
   finger_hole_span_override: boolean | null;
   finger_hole_arc2_mm: number;
   finger_hole_arc2_mm_override: number | null;
+  finger_hole_radial_offset_mm: number;
+  finger_hole_radial_offset_mm_inherited: number;
+  finger_hole_radial_offset_mm_override: number | null;
   finger_holes: [number, number, number][];
   stamp: [number, number][];
   toolshape_type: "rounded_rect" | null;

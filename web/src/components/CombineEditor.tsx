@@ -24,7 +24,9 @@ import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
-import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength } from "../geometry/perimeter";
+import {
+  nearestArcLength, outwardNormalAtArcLength, pointAtArcLength, ringLength, wrapArcLength,
+} from "../geometry/perimeter";
 import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
 import { placed, placedPoint, type Pt } from "../geometry/placement";
 import { useBinProfiles } from "../useBinProfiles";
@@ -147,6 +149,7 @@ function toolInteractiveFieldsDiverged(before: CombineTool, now: CombineTool): b
     || before.finger_hole_arc2_mm !== now.finger_hole_arc2_mm
     || before.finger_hole_arc2_mm_override !== now.finger_hole_arc2_mm_override
     || before.finger_hole_diameter_mm_override !== now.finger_hole_diameter_mm_override
+    || before.finger_hole_radial_offset_mm_override !== now.finger_hole_radial_offset_mm_override
     // Every edit that touches finger_holes replaces the array (see
     // commitFingerHoleArc et al.) rather than mutating it in place, so
     // reference equality alone tells us whether it changed.
@@ -164,6 +167,7 @@ function withLocalInteractiveFields(serverTool: CombineTool, local: CombineTool)
     finger_hole_arc2_mm: local.finger_hole_arc2_mm,
     finger_hole_arc2_mm_override: local.finger_hole_arc2_mm_override,
     finger_hole_diameter_mm_override: local.finger_hole_diameter_mm_override,
+    finger_hole_radial_offset_mm_override: local.finger_hole_radial_offset_mm_override,
     finger_holes: local.finger_holes,
   };
 }
@@ -628,6 +632,7 @@ export function CombineEditor({
       id, rot, finger_hole_override, clearance_mm_override,
       finger_hole_arc_mm_override, finger_hole_diameter_mm_override,
       finger_hole_span_override, finger_hole_arc2_mm_override,
+      finger_hole_radial_offset_mm_override,
       depth_mm_override, depth_pct_override,
     }) => ({
       id,
@@ -637,6 +642,7 @@ export function CombineEditor({
       finger_hole_diameter_mm: finger_hole_diameter_mm_override,
       finger_hole_span: finger_hole_span_override,
       finger_hole_arc2_mm: finger_hole_arc2_mm_override,
+      finger_hole_radial_offset_mm: finger_hole_radial_offset_mm_override,
       locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
       pocket_depth_pct: depth_pct_override,
@@ -921,6 +927,7 @@ export function CombineEditor({
       tool.finger_hole_diameter_mm_override,
       tool.finger_hole_span_override,
       tool.finger_hole_arc2_mm_override,
+      tool.finger_hole_radial_offset_mm_override,
       tool.depth_mm_override,
     ])),
     [tools],
@@ -1303,6 +1310,32 @@ export function CombineEditor({
         finger_hole_diameter_mm_override: diameterMm,
         finger_holes: t.finger_holes.map(([x, y]) => [x, y, diameterMm]),
       };
+    }));
+  }
+  /** Move a finger hole along the local outward normal of the outline at its
+   *  own arc-length point — negative pulls it toward the tool's interior,
+   *  positive pushes it out into the wall (see gridshot.core.derive.
+   *  BinSettings.finger_hole_radial_offset_mm). Same two-tier local/eventual-
+   *  server pattern as diameter/arc above: re-derives each point fresh from
+   *  its own arc-length + normal rather than nudging the current position,
+   *  so repeated edits (or span's two independently-angled lobes) can't
+   *  accumulate drift from the server's own resolved point. */
+  function setFingerHoleRadialOffset(toolId: string, offsetMm: number) {
+    if (!Number.isFinite(offsetMm)) return;
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      const ring = t.stamp;
+      const diameter = t.finger_holes[0]?.[2] ?? 20;
+      const offsetPoint = (arcMm: number): [number, number, number] => {
+        const wrapped = wrapArcLength(ring, arcMm);
+        const [px, py] = pointAtArcLength(ring, wrapped);
+        const [nx, ny] = outwardNormalAtArcLength(ring, wrapped);
+        return [px + nx * offsetMm, py + ny * offsetMm, diameter];
+      };
+      const finger_holes = t.finger_hole_span
+        ? [offsetPoint(t.finger_hole_arc_mm), offsetPoint(t.finger_hole_arc2_mm)]
+        : [offsetPoint(t.finger_hole_arc_mm)];
+      return { ...t, finger_hole_radial_offset_mm_override: offsetMm, finger_holes };
     }));
   }
   /** World point → the arc-length of the nearest point on `tool`'s own ring,
@@ -1801,6 +1834,7 @@ export function CombineEditor({
     const wantsHole = base.finger_hole;
     const wantsSpan = base.finger_hole_span;
     const diameter = base.finger_holes[0]?.[2] ?? 20;
+    const radialOffset = base.finger_hole_radial_offset_mm;
     const updated = tools.map((t) => {
       if (!targetIds.has(t.id)) return t;
       const gainingFresh = wantsHole && !t.finger_hole;
@@ -1810,6 +1844,7 @@ export function CombineEditor({
         finger_hole: wantsHole,
         finger_hole_override: wantsHole,
         ...(wantsHole ? { finger_hole_diameter_mm_override: diameter } : {}),
+        ...(wantsHole ? { finger_hole_radial_offset_mm_override: radialOffset } : {}),
         // A tool losing its hole no longer needs a placed point; a tool
         // gaining one fresh must NOT inherit any stale prior position —
         // both let the server's own auto/legacy placement resolve it next
@@ -3409,6 +3444,31 @@ export function CombineEditor({
                           const value = Number(event.target.value);
                           if (Number.isFinite(value) && value > 0) {
                             setFingerHoleDiameter(selectedFingerHoleTool.id, value);
+                          }
+                        }}
+                      />
+                      <span className="text-muted">mm</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                    <span
+                      className="text-muted"
+                      title="Negative pulls the hole toward the tool's own centreline (in); positive pushes it out into the wall. 0 sits on the outline, same as before this existed."
+                    >
+                      Radial offset
+                    </span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <input
+                        aria-label="Finger hole radial offset in millimetres"
+                        className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                        type="number" step={0.1}
+                        disabled={busy}
+                        defaultValue={selectedFingerHoleTool.finger_hole_radial_offset_mm}
+                        key={selectedFingerHoleTool.id}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (Number.isFinite(value)) {
+                            setFingerHoleRadialOffset(selectedFingerHoleTool.id, value);
                           }
                         }}
                       />

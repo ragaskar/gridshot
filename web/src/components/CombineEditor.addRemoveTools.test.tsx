@@ -34,7 +34,7 @@ function baseTool(id: string, label: string, tx: number) {
     finger_hole_arc_mm: 0, finger_hole_arc_mm_override: null,
     finger_hole_diameter_mm_override: null, finger_hole_diameter_mm_inherited: 20,
     finger_hole_span: false, finger_hole_span_override: null,
-    finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null,
+    finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null, finger_hole_radial_offset_mm: 0, finger_hole_radial_offset_mm_inherited: 0, finger_hole_radial_offset_mm_override: null,
     finger_holes: [] as [number, number, number][],
     derivation_key: `${id}-key`,
     toolshape_type: null, toolshape_width_mm: null, toolshape_length_mm: null,

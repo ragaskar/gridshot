@@ -2501,6 +2501,13 @@ class CombineToolOverride(BaseModel):
     # null-means-unplaced convention as `finger_hole_arc_mm`.
     finger_hole_span: Optional[bool] = None
     finger_hole_arc2_mm: Optional[float] = None
+    # Moves the hole along the local outward normal of the outline at its
+    # arc-length point: negative = toward the tool's own interior, positive
+    # = away from it into the wall (see gridshot.core.derive.BinSettings.
+    # finger_hole_radial_offset_mm). Null/omitted means 0 (no offset),
+    # unlike the other finger-hole fields above there's no "unplaced"
+    # state to fall back from.
+    finger_hole_radial_offset_mm: Optional[float] = None
     # Auto-pack only: restrict this tool's rotation search to this one angle.
     locked_rotation_deg: Optional[float] = None
     # Bin-time pocket-depth override — independent of the library's own
@@ -2648,6 +2655,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
     depths, fingers, inherited_fingers = [], [], []
     connectors, spans, arc2s = [], [], []
     clearances, inherited_clearances = [], []
+    radial_offsets, inherited_radial_offsets = [], []
     inherited_depths = []
     inherited_finger_diameters = []
     # "fixed" (an explicit mm depth applies, this request or persisted on the
@@ -2710,6 +2718,11 @@ def _combine_layout(req: "CombineRequest") -> dict:
         finger_hole_arc2_mm = (
             override.finger_hole_arc2_mm if override is not None else None
         )
+        radial_offset = (
+            override.finger_hole_radial_offset_mm
+            if override is not None and override.finger_hole_radial_offset_mm is not None
+            else t.finger_hole_radial_offset_mm
+        )
         depth_override = (
             override.pocket_depth_mm
             if override is not None and override.pocket_depth_mm is not None
@@ -2741,6 +2754,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
             "finger_hole_diameter_mm": finger_hole_diameter_mm,
             "finger_hole_span": finger_hole_span,
             "finger_hole_arc2_mm": finger_hole_arc2_mm,
+            "finger_hole_radial_offset_mm": radial_offset,
             "pocket_depth_mm": depth_override if depth_override is not None else t.pocket_depth_mm,
         })
         spec = library_mod.derive_tool_spec(
@@ -2784,6 +2798,8 @@ def _combine_layout(req: "CombineRequest") -> dict:
         )
         clearances.append(clearance)
         inherited_clearances.append(t.clearance_mm)
+        radial_offsets.append(radial_offset)
+        inherited_radial_offsets.append(t.finger_hole_radial_offset_mm)
     if len(pack_stamps) < 2:
         raise HTTPException(status_code=422, detail="select at least 2 tools with outlines")
 
@@ -3025,6 +3041,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         "inherited_fingers": inherited_fingers,
         "inherited_finger_diameters": inherited_finger_diameters,
         "clearances": clearances, "inherited_clearances": inherited_clearances,
+        "radial_offsets": radial_offsets, "inherited_radial_offsets": inherited_radial_offsets,
         "gx": gx, "gy": gy,
         "wall": wall,
         "lip": effective_lip,
@@ -3079,6 +3096,10 @@ def library_combine_preview(req: CombineRequest) -> dict:
             (item.finger_hole_arc2_mm for item in req.overrides or [] if item.id == t.id),
             None,
         )
+        requested_radial_offset_override = next(
+            (item.finger_hole_radial_offset_mm for item in req.overrides or [] if item.id == t.id),
+            None,
+        )
         requested_depth_override = next(
             (item.pocket_depth_mm for item in req.overrides or [] if item.id == t.id),
             None,
@@ -3113,6 +3134,9 @@ def library_combine_preview(req: CombineRequest) -> dict:
             "finger_hole_span_override": requested_span_override,
             "finger_hole_arc2_mm": round(lay["arc2s"][i], 2),
             "finger_hole_arc2_mm_override": requested_arc2_override,
+            "finger_hole_radial_offset_mm": round(lay["radial_offsets"][i], 2),
+            "finger_hole_radial_offset_mm_inherited": round(lay["inherited_radial_offsets"][i], 2),
+            "finger_hole_radial_offset_mm_override": requested_radial_offset_override,
             "finger_holes": [
                 [round(float(x), 2), round(float(y), 2), round(float(diameter), 2)]
                 for x, y, diameter in lay["local_fingers"][i]

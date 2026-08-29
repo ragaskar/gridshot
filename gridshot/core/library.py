@@ -133,6 +133,10 @@ class LibraryTool(BaseModel):
     # Two-lobe "span" hole — see derive.BinSettings.finger_hole_span.
     finger_hole_span: bool = False
     finger_hole_arc2_mm: float | None = None
+    # Distinct from the legacy `finger_hole_offset_mm` above — see
+    # derive.BinSettings.finger_hole_radial_offset_mm. Same bin-time-only
+    # plumbing as the other finger-hole fields in this block.
+    finger_hole_radial_offset_mm: float = 0.0
     lip: bool = True
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -317,6 +321,7 @@ def derive_tool_spec(
             finger_hole_diameter_mm=tool.finger_hole_diameter_mm,
             finger_hole_span=tool.finger_hole_span,
             finger_hole_arc2_mm=tool.finger_hole_arc2_mm,
+            finger_hole_radial_offset_mm=tool.finger_hole_radial_offset_mm,
             round_tool=tool.round_tool,
             magnet_holes=tool.magnet_holes,
             magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,

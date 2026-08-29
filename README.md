@@ -532,6 +532,12 @@ Features added on top of the original public release, newest last:
   isn't sharp to the touch, clamped down (or off entirely) for a bin with
   tight wall margins rather than risking a broken print (see
   [docs/combine-pocket-bevel.md](docs/combine-pocket-bevel.md))
+- Finger holes have a per-tool, per-bin **radial offset** (0.1mm
+  resolution, defaults to 0): negative pulls the hole toward the tool's own
+  centreline, positive pushes it out into the wall, moving along the local
+  outward normal of the outline at its own point rather than a fixed axis
+  (see
+  [docs/combine-finger-hole-radial-offset.md](docs/combine-finger-hole-radial-offset.md))
 
 ## License
 

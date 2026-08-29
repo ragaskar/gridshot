@@ -42,3 +42,10 @@ land before you commit.
 [Align finger holes](combine-editor-align-finger-holes.md) understands span
 holes — see that doc for the exact rules when a selection mixes single-point
 and span holes.
+
+## Interaction with radial offset
+
+A single [radial offset](combine-finger-hole-radial-offset.md) value applies
+to both lobes at once, each measured along its own local outward normal —
+the two points usually sit on different parts of the outline, so "out" can
+point a different direction for each.

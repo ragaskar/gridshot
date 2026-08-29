@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { nearestArcLength, pointAtArcLength, ringLength, wrapArcLength, type Pt } from "./perimeter";
+import {
+  nearestArcLength, outwardNormalAtArcLength, pointAtArcLength, ringLength, wrapArcLength, type Pt,
+} from "./perimeter";
 
 // 10x4 rectangle, perimeter 28, starting bottom-left going CCW.
 const RECT: Pt[] = [[-5, -2], [5, -2], [5, 2], [-5, 2]];
@@ -74,5 +76,33 @@ describe("wrapArcLength", () => {
 
   it("is 0 for a degenerate ring", () => {
     expect(wrapArcLength([[0, 0]], 5)).toBe(0);
+  });
+});
+
+describe("outwardNormalAtArcLength", () => {
+  it("points straight down off the bottom edge", () => {
+    expect(outwardNormalAtArcLength(RECT, 0)).toEqual([0, -1]);
+  });
+
+  it("points straight right off the right edge", () => {
+    const [nx, ny] = outwardNormalAtArcLength(RECT, 12);
+    expect(nx).toBeCloseTo(1);
+    expect(ny).toBeCloseTo(0);
+  });
+
+  it("points straight up off the top edge", () => {
+    const [nx, ny] = outwardNormalAtArcLength(RECT, 19);
+    expect(nx).toBeCloseTo(0);
+    expect(ny).toBeCloseTo(1);
+  });
+
+  it("points straight left off the left edge", () => {
+    const [nx, ny] = outwardNormalAtArcLength(RECT, 26);
+    expect(nx).toBeCloseTo(-1);
+    expect(ny).toBeCloseTo(0);
+  });
+
+  it("is [0, 0] for fewer than two points", () => {
+    expect(outwardNormalAtArcLength([[1, 1]], 0)).toEqual([0, 0]);
   });
 });

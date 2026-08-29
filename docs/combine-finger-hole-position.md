@@ -63,6 +63,13 @@ that bin.
   tool's library settings, and it's independent of every other tool's finger
   hole in the same bin.
 
+## Radial offset
+
+By default the hole's center sits exactly on the outline. It can be pushed
+perpendicular to that, in toward the tool's own centreline or out into the
+wall — see [finger-hole radial
+offset](combine-finger-hole-radial-offset.md).
+
 ## Span
 
 A hole can also be turned into a two-lobe pill spanning both sides of the

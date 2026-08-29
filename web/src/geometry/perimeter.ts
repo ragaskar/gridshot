@@ -1,10 +1,11 @@
 /** Arc-length geometry along a closed local (stamp-frame) ring — the client
  *  mirror of gridshot/core/derive.py's `_ring_length`/`_point_at_arc_length`/
- *  `_arc_length_at_point`, kept in exact lockstep with those so a drag or
- *  nudge computed here lands on the same point the server would derive for
- *  the same `finger_hole_arc_mm`. Used for instant local feedback while
- *  dragging/nudging a finger hole, without waiting on a server round-trip —
- *  the same pattern tool position dragging already uses. */
+ *  `_arc_length_at_point`/`_point_and_outward_normal_at_arc_length`, kept in
+ *  exact lockstep with those so a drag or nudge computed here lands on the
+ *  same point the server would derive for the same `finger_hole_arc_mm`.
+ *  Used for instant local feedback while dragging/nudging a finger hole,
+ *  without waiting on a server round-trip — the same pattern tool position
+ *  dragging already uses. */
 
 export type Pt = [number, number];
 
@@ -73,4 +74,24 @@ export function wrapArcLength(ring: Pt[], arcMm: number): number {
   const len = ringLength(ring);
   if (len <= 1e-9) return 0;
   return ((arcMm % len) + len) % len;
+}
+
+/** The unit outward normal of the ring segment containing `arcMm` — the
+ *  segment tangent rotated -90 degrees. Correct as "outward" only because
+ *  `ring` (a tool's own `stamp`) is CCW-oriented, matching derive.py's
+ *  `_point_and_outward_normal_at_arc_length`; see that function's docstring
+ *  for why this orientation holds. Degenerate segments return [0, 0]. */
+export function outwardNormalAtArcLength(ring: Pt[], arcMm: number): Pt {
+  if (ring.length < 2) return [0, 0];
+  let remaining = arcMm > 0 ? arcMm : 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[(i + 1) % ring.length];
+    const dx = x1 - x0, dy = y1 - y0;
+    const segLen = Math.hypot(dx, dy);
+    if (segLen <= 1e-12) continue;
+    if (remaining <= segLen) return [dy / segLen, -dx / segLen];
+    remaining -= segLen;
+  }
+  return [0, 0];
 }

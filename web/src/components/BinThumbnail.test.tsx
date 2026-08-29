@@ -42,7 +42,7 @@ function preview(): CombinePreview {
       finger_hole_inherited: false, finger_hole_override: null, finger_hole_arc_mm: 0,
       finger_hole_arc_mm_override: null, finger_hole_diameter_mm_override: null,
       finger_hole_diameter_mm_inherited: 10, finger_hole_span: false,
-      finger_hole_span_override: null, finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null,
+      finger_hole_span_override: null, finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null, finger_hole_radial_offset_mm: 0, finger_hole_radial_offset_mm_inherited: 0, finger_hole_radial_offset_mm_override: null,
       finger_holes: [], stamp: [[-1, -1], [1, -1], [1, 1], [-1, 1]], toolshape_type: null,
       toolshape_width_mm: null, toolshape_length_mm: null, toolshape_radius_mm: null,
       toolshape_fillet_bottom: false,
