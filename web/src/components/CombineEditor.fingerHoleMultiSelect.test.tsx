@@ -145,8 +145,10 @@ describe("CombineEditor finger-hole multi-select", () => {
     fireEvent.click(listRow("Wrench"));
     fireEvent.click(listRow("Pliers"), { shiftKey: true });
 
-    expect(screen.queryByText("⟷ Align finger holes")).toBeNull();
-    expect(screen.getByText("⎘ Copy style")).toBeTruthy(); // Copy style stays tool-gated
+    // The Fingerhole subsection stays mounted (disabled) rather than
+    // disappearing — a tool multi-select alone must not enable Align.
+    expect((screen.getByText("⟷ Align finger holes") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("⎘ Copy style") as HTMLButtonElement).disabled).toBe(false); // Copy style stays tool-gated
   });
 
   it("Left/Right nudges every selected hole at once; Up/Down is a no-op in multi-select", async () => {

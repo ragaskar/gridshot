@@ -442,6 +442,7 @@ export function CombineEditor({
   const toolConfigFold = useFold(true);
   const shapeFold = useFold(true);
   const alignFold = useFold(true);
+  const fingerholeFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -581,6 +582,12 @@ export function CombineEditor({
   useEffect(() => {
     if (selectedTools.length > 0 || selectedFingerHoleToolIds.size > 0) toolConfigFold.forceOpen();
   }, [selectedTools.length, selectedFingerHoleToolIds.size, toolConfigFold.forceOpen]);
+
+  // Fingerhole expands specifically when a finger hole gets selected (not
+  // merely a tool) — matches "expands if the user has selected a fingerhole".
+  useEffect(() => {
+    if (selectedFingerHoleToolIds.size > 0) fingerholeFold.forceOpen();
+  }, [selectedFingerHoleToolIds.size, fingerholeFold.forceOpen]);
 
   // Esc clears the selection, and Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z undo/redo,
   // from anywhere in the modal — except while typing in a field, where none
@@ -3562,19 +3569,51 @@ export function CombineEditor({
             {distributeButtons}
           </Subsection>
 
-          {selectedTools.length >= 1 ? (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+          <Subsection
+            title="Fingerhole"
+            open={fingerholeFold.open}
+            onToggle={fingerholeFold.toggle}
+            tooltip={
+              selectedFingerHoleTool?.finger_hole_span ? (
+                <>
+                  Drag the active point, or use Left/Right to slide it along the
+                  outline (same nudge step and Shift ×10 as tools). Click near the
+                  other lobe (or the hinted ring around it) to switch which point
+                  moves. Up/Down is disabled while span is on.
+                </>
+              ) : (
+                <>
+                  Drag the hole, or use the arrow keys — Left/Right slide it along the
+                  outline (same nudge step and Shift ×10 as tools), Up/Down jump it
+                  across to the opposite side.
+                </>
+              )
+            }
+            foldedSummary={
+              <button
+                aria-pressed={fingerAllOn}
+                className={`btn shrink-0 !px-2 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                disabled={busy || selectedTools.length === 0}
+                onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
+              >
+                {fingerMixed ? "–" : fingerAllOn ? "On" : "Off"}
+              </button>
+            }
+          >
+            <ControlGroup>
+              <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-knockout">Finger access</div>
                   <div className="truncate text-muted">
-                    {fingerOverrideAllInherited ? "Inherited from library" : fingerOverrideAllOverridden ? "Override for this bin" : "Mixed"}
+                    {selectedTools.length === 0
+                      ? "No tool selected"
+                      : fingerOverrideAllInherited ? "Inherited from library" : fingerOverrideAllOverridden ? "Override for this bin" : "Mixed"}
                   </div>
                 </div>
                 <button
                   aria-pressed={fingerAllOn}
                   className={`btn shrink-0 !px-3 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
-                  disabled={busy}
+                  disabled={busy || selectedTools.length === 0}
                   onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
                 >
                   {fingerMixed ? "–" : fingerAllOn ? "On" : "Off"}
@@ -3597,117 +3636,104 @@ export function CombineEditor({
               >
                 ⎘ Copy style
               </button>
-            </div>
-          ) : selectedFingerHoleToolIds.size > 0 ? (
-            <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-              {selectedFingerHoleTool ? (
-                <>
-                  <div className="mb-2 flex items-center justify-between gap-2">
+            </ControlGroup>
+
+            {selectedFingerHoleToolIds.size > 0 && (
+              <ControlGroup>
+                {selectedFingerHoleTool ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs text-knockout">
+                        {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
+                        {selectedFingerHoleTool.finger_hole_span && (
+                          <span className="ml-1 text-muted">· P{selectedFingerPointIndex + 1}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
+                      <dt>X</dt>
+                      <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.x.toFixed(2) : "–"} mm</dd>
+                      <dt>Y</dt>
+                      <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
+                    </dl>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                      <span className="text-muted">Diameter</span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <input
+                          aria-label="Finger hole diameter in millimetres"
+                          className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                          type="number" step={1} min={0.1}
+                          disabled={busy}
+                          defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
+                          key={selectedFingerHoleTool.id}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (Number.isFinite(value) && value > 0) {
+                              setFingerHoleDiameter(selectedFingerHoleTool.id, value);
+                            }
+                          }}
+                        />
+                        <span className="text-muted">mm</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                      <span
+                        className="text-muted"
+                        title="Negative pulls the hole toward the tool's own centreline (in); positive pushes it out into the wall. 0 sits on the outline, same as before this existed."
+                      >
+                        Radial offset
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <input
+                          aria-label="Finger hole radial offset in millimetres"
+                          className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                          type="number" step={0.1}
+                          disabled={busy}
+                          defaultValue={selectedFingerHoleTool.finger_hole_radial_offset_mm}
+                          key={selectedFingerHoleTool.id}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            if (Number.isFinite(value)) {
+                              setFingerHoleRadialOffset(selectedFingerHoleTool.id, value);
+                            }
+                          }}
+                        />
+                        <span className="text-muted">mm</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                      <span className="text-muted">Span both sides</span>
+                      <button
+                        aria-pressed={selectedFingerHoleTool.finger_hole_span}
+                        className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                        disabled={busy}
+                        onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
+                      >
+                        {selectedFingerHoleTool.finger_hole_span ? "On" : "Off"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-xs text-knockout">
-                      {selectedFingerHoleTool.label || selectedFingerHoleTool.id.slice(0, 8)} — finger hole
-                      {selectedFingerHoleTool.finger_hole_span && (
-                        <span className="ml-1 text-muted">· P{selectedFingerPointIndex + 1}</span>
-                      )}
+                      {selectedFingerHoleToolIds.size} finger holes selected
                     </span>
                     <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
                   </div>
-                  <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-muted">
-                    <dt>X</dt>
-                    <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.x.toFixed(2) : "–"} mm</dd>
-                    <dt>Y</dt>
-                    <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
-                  </dl>
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                    <span className="text-muted">Diameter</span>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <input
-                        aria-label="Finger hole diameter in millimetres"
-                        className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
-                        type="number" step={1} min={0.1}
-                        disabled={busy}
-                        defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
-                        key={selectedFingerHoleTool.id}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isFinite(value) && value > 0) {
-                            setFingerHoleDiameter(selectedFingerHoleTool.id, value);
-                          }
-                        }}
-                      />
-                      <span className="text-muted">mm</span>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                    <span
-                      className="text-muted"
-                      title="Negative pulls the hole toward the tool's own centreline (in); positive pushes it out into the wall. 0 sits on the outline, same as before this existed."
-                    >
-                      Radial offset
-                    </span>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <input
-                        aria-label="Finger hole radial offset in millimetres"
-                        className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
-                        type="number" step={0.1}
-                        disabled={busy}
-                        defaultValue={selectedFingerHoleTool.finger_hole_radial_offset_mm}
-                        key={selectedFingerHoleTool.id}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          if (Number.isFinite(value)) {
-                            setFingerHoleRadialOffset(selectedFingerHoleTool.id, value);
-                          }
-                        }}
-                      />
-                      <span className="text-muted">mm</span>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                    <span className="text-muted">Span both sides</span>
-                    <button
-                      aria-pressed={selectedFingerHoleTool.finger_hole_span}
-                      className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
-                      disabled={busy}
-                      onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
-                    >
-                      {selectedFingerHoleTool.finger_hole_span ? "On" : "Off"}
-                    </button>
-                  </div>
-                  <p className="mt-3 border-t border-line pt-3 text-muted">
-                    {selectedFingerHoleTool.finger_hole_span ? (
-                      <>
-                        Drag the active point, or use Left/Right to slide it along the
-                        outline (same nudge step and Shift ×10 as tools). Click near the
-                        other lobe (or the hinted ring around it) to switch which point
-                        moves. Up/Down is disabled while span is on.
-                      </>
-                    ) : (
-                      <>
-                        Drag the hole, or use the arrow keys — Left/Right slide it along the
-                        outline (same nudge step and Shift ×10 as tools), Up/Down jump it
-                        across to the opposite side.
-                      </>
-                    )}
-                  </p>
-                </>
-              ) : (
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-knockout">
-                    {selectedFingerHoleToolIds.size} finger holes selected
-                  </span>
-                  <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
-                </div>
-              )}
-              <button
-                className="mt-3 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
-                disabled={busy || selectedFingerHoleTools.length < 2 || !fingerAlignPlan}
-                title="Align every selected finger hole onto one line — needs at least 2 holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
-                onClick={alignFingerHoles}
-              >
-                ⟷ Align finger holes
-              </button>
-            </div>
-          ) : null}
+                )}
+              </ControlGroup>
+            )}
+
+            <button
+              className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
+              disabled={busy || selectedFingerHoleTools.length < 2 || !fingerAlignPlan}
+              title="Align every selected finger hole onto one line — needs at least 2 holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
+              onClick={alignFingerHoles}
+            >
+              ⟷ Align finger holes
+            </button>
+          </Subsection>
           </Section>
           <div className="max-h-[38vh] overflow-auto space-y-1">
             {tools.map((t, i) => (
@@ -3716,6 +3742,8 @@ export function CombineEditor({
                 className="w-full border px-2 py-1 text-left font-mono text-[10px]"
                 style={{ borderRadius: 2, borderColor: selectedIds.has(t.id) ? color(i) : "var(--c-line)" }}
                 onClick={(e) => {
+                  setSelectedFingerHoleToolIds(new Set());
+                  setSelectedFingerPointIndex(0);
                   setSelectedIds(nextSelection(t.id, e.shiftKey));
                   arrangeRef.current?.focus();
                 }}
