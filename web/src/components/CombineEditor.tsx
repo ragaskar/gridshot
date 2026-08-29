@@ -437,6 +437,7 @@ export function CombineEditor({
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const binConfigFold = useFold(true);
+  const toolConfigFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -570,6 +571,12 @@ export function CombineEditor({
     setDepthPctOverrideDraft(null);
     setNudgeAnnotationDir(null);
   }, [selectionKey]);
+
+  // Tool config opens whenever a tool or finger hole becomes selected, but
+  // never auto-closes on deselect — forceOpen only ever opens (see useFold).
+  useEffect(() => {
+    if (selectedTools.length > 0 || selectedFingerHoleToolIds.size > 0) toolConfigFold.forceOpen();
+  }, [selectedTools.length, selectedFingerHoleToolIds.size, toolConfigFold.forceOpen]);
 
   // Esc clears the selection, and Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z undo/redo,
   // from anywhere in the modal — except while typing in a field, where none
@@ -3234,6 +3241,12 @@ export function CombineEditor({
             )}
           </div>
           </Section>
+          <Section
+            title="Tool config"
+            open={toolConfigFold.open}
+            onToggle={toolConfigFold.toggle}
+            disabled={selectedTools.length === 0 && selectedFingerHoleToolIds.size === 0}
+          >
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Rotation (degrees)</span>
             <div className="mt-1 flex items-center gap-2">
@@ -3680,6 +3693,7 @@ export function CombineEditor({
           ) : (
             <div className="border border-line p-3 font-mono text-[10px] text-muted">Select a tool (shift-click to select more) to inspect its effective settings.</div>
           )}
+          </Section>
           <div className="max-h-[38vh] overflow-auto space-y-1">
             {tools.map((t, i) => (
               <button
