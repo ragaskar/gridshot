@@ -1,15 +1,13 @@
 import type { ReactNode } from "react";
 
-// calc() needs spaces around its operator; Tailwind arbitrary values encode
-// them as underscores.
-const FULL_HEIGHT_LG = "lg:h-[calc(100dvh_-_var(--app-nav-h,_64px))]";
-
 /** Independently-scrollable, collapsible sidebar. Collapses to a narrow rail
  *  (toggle only) on its own side — left collapses toward the left edge,
  *  right toward the right — so the center canvas column can reclaim the
- *  width. Sizes itself against --app-nav-h (published by AppNavigation) so
- *  it fills the viewport below the sticky nav without either scrolling the
- *  whole page or hardcoding the nav's height.
+ *  width. Expects to sit inside a `flex` row whose own height is already
+ *  bounded (e.g. `lg:h-[calc(100dvh_-_var(--app-nav-h,_64px))]` on the page
+ *  shell) — this component just fills that row (`lg:h-full`) and scrolls
+ *  internally, rather than computing a viewport height itself, so it stays
+ *  correct regardless of how tall whatever's above the row is.
  *
  *  Below `lg`, both sidebars render full-width and unscrolled (matching the
  *  page's existing stacked mobile fallback) rather than introducing new
@@ -27,8 +25,8 @@ export function Sidebar({
       <div
         className={
           side === "left"
-            ? `hidden shrink-0 flex-col items-center border-r border-line py-2 lg:flex lg:min-h-0 ${FULL_HEIGHT_LG}`
-            : `hidden shrink-0 flex-col items-center border-l border-line py-2 lg:flex lg:min-h-0 ${FULL_HEIGHT_LG}`
+            ? "hidden shrink-0 flex-col items-center border-r border-line py-2 lg:flex lg:h-full lg:min-h-0"
+            : "hidden shrink-0 flex-col items-center border-l border-line py-2 lg:flex lg:h-full lg:min-h-0"
         }
         style={{ width: 32 }}
       >
@@ -49,8 +47,8 @@ export function Sidebar({
     <div
       className={
         side === "left"
-          ? `w-full shrink-0 border-line lg:w-80 lg:min-h-0 lg:overflow-y-auto lg:border-r ${FULL_HEIGHT_LG}`
-          : `w-full shrink-0 border-line lg:w-80 lg:min-h-0 lg:overflow-y-auto lg:border-l ${FULL_HEIGHT_LG}`
+          ? "w-full shrink-0 border-line lg:h-full lg:w-80 lg:min-h-0 lg:overflow-y-auto lg:border-r"
+          : "w-full shrink-0 border-line lg:h-full lg:w-80 lg:min-h-0 lg:overflow-y-auto lg:border-l"
       }
     >
       <div className="hidden justify-end px-2 py-1 lg:flex">

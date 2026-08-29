@@ -20,6 +20,7 @@ import {
   type SavedBin,
 } from "../api";
 import { BinViewer } from "./BinViewer";
+import { Sidebar } from "./sidebar/Sidebar";
 import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
@@ -431,6 +432,8 @@ export function CombineEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<"arrange" | "preview">("arrange");
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -2345,56 +2348,62 @@ export function CombineEditor({
   );
 
   return (
-    <div className="panel !p-4 sm:!p-6 w-full max-w-[1180px] max-h-[calc(100dvh-2rem)] overflow-auto">
-      <div className="grp-label mb-1">Arrange multi-tool bin</div>
-      <input
-        aria-label="Bin name"
-        className="mb-2 block w-full min-w-0 bg-transparent border-b border-line font-mono text-lg text-knockout py-1 outline-none placeholder:text-muted disabled:opacity-50"
-        defaultValue={savedLabel ?? ""}
-        placeholder={defaultBinName()}
-        disabled={!savedBinId}
-        key={`${savedBinId ?? "pending"}-${savedLabel ?? ""}`}
-        ref={commitOnChange((raw) => {
-          const next = raw.trim() || defaultBinName();
-          if (next !== (savedLabel ?? "")) setSavedLabel(next);
-        })}
-      />
-      <div className="grp-label mb-2 flex flex-wrap justify-between gap-2">
-        <span className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
-            aria-label="Undo"
-            title="Undo (Cmd/Ctrl+Z)"
-            disabled={!undoStack.length}
-            onClick={undo}
-          >
-            ↶ Undo
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
-            aria-label="Redo"
-            title="Redo (Cmd/Ctrl+Shift+Z)"
-            disabled={!redoStack.length}
-            onClick={redo}
-          >
-            ↷ Redo
-          </button>
-        </span>
-        {layout && (
-          <span className="text-muted">
-            {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · fill {fillHeightPct}%
-            {liveGrid ? ` · ${meta!.available_cells.length} live sockets` : ""}
+    <div className="mx-auto w-full max-w-[1600px] px-4 py-4 sm:px-6 lg:flex lg:h-[calc(100dvh_-_var(--app-nav-h,_64px))] lg:min-h-0 lg:flex-col lg:overflow-hidden">
+      <div className="lg:shrink-0">
+        <div className="grp-label mb-1">Arrange multi-tool bin</div>
+        <input
+          aria-label="Bin name"
+          className="mb-2 block w-full min-w-0 bg-transparent border-b border-line font-mono text-lg text-knockout py-1 outline-none placeholder:text-muted disabled:opacity-50"
+          defaultValue={savedLabel ?? ""}
+          placeholder={defaultBinName()}
+          disabled={!savedBinId}
+          key={`${savedBinId ?? "pending"}-${savedLabel ?? ""}`}
+          ref={commitOnChange((raw) => {
+            const next = raw.trim() || defaultBinName();
+            if (next !== (savedLabel ?? "")) setSavedLabel(next);
+          })}
+        />
+        <div className="grp-label mb-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              aria-label="Undo"
+              title="Undo (Cmd/Ctrl+Z)"
+              disabled={!undoStack.length}
+              onClick={undo}
+            >
+              ↶ Undo
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              aria-label="Redo"
+              title="Redo (Cmd/Ctrl+Shift+Z)"
+              disabled={!redoStack.length}
+              onClick={redo}
+            >
+              ↷ Redo
+            </button>
           </span>
-        )}
+          {layout && (
+            <span className="text-muted">
+              {layout.gx}×{layout.gy}u{layout.locked ? " (locked)" : ""} · {meta!.overall_height_mm}mm tall · fill {fillHeightPct}%
+              {liveGrid ? ` · ${meta!.available_cells.length} live sockets` : ""}
+            </span>
+          )}
+        </div>
+        <p className="font-mono text-[10px] text-muted mb-3">
+          Drag a tool to move it · select one and use Rotate · Auto-pack re-solves · live grid adds only complete sockets that fit outside every tool wall.
+        </p>
       </div>
-      <p className="font-mono text-[10px] text-muted mb-3">
-        Drag a tool to move it · select one and use Rotate · Auto-pack re-solves · live grid adds only complete sockets that fit outside every tool wall.
-      </p>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-        <div className="min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col gap-4 lg:min-h-0 lg:flex-row lg:overflow-hidden">
+        <Sidebar
+          side="left"
+          collapsed={leftSidebarCollapsed}
+          onToggleCollapse={() => setLeftSidebarCollapsed((c) => !c)}
+        >
           <div className="mb-2 grid grid-cols-2 gap-1">
             <button
               className={`btn text-xs ${view === "arrange" ? "border-teal text-teal" : "btn-ghost"}`}
@@ -2513,6 +2522,33 @@ export function CombineEditor({
               )}
             </div>
           )}
+          <button
+            className="btn w-full text-xs"
+            disabled={busy}
+            onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}
+          >
+            ↻ Auto-pack
+          </button>
+          <label className="block">
+            <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                aria-label="Keyboard nudge step in millimetres"
+                className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
+                type="number"
+                step={0.05}
+                min={0.01}
+                value={nudge}
+                onChange={(event) => setNudge(event.target.value)}
+              />
+            </div>
+            <p className="mt-1 font-mono text-[9px] text-muted">
+              Select a tool, arrow keys to nudge · Shift+arrow for 10×.
+            </p>
+          </label>
+        </Sidebar>
+
+        <div className="min-w-0 flex-1 lg:min-h-0 lg:overflow-hidden">
           <div
             ref={arrangeRef}
             className="border border-line bg-field min-w-0 overflow-hidden"
@@ -2821,7 +2857,11 @@ export function CombineEditor({
           </div>
         </div>
 
-        <div className="space-y-3 min-w-0">
+        <Sidebar
+          side="right"
+          collapsed={rightSidebarCollapsed}
+          onToggleCollapse={() => setRightSidebarCollapsed((c) => !c)}
+        >
           <div>
             <span className="font-mono text-[10px] uppercase text-muted">Bin profile</span>
             <select
@@ -3128,23 +3168,6 @@ export function CombineEditor({
               ↕ Mirror vertical
             </button>
           </div>
-          <label className="block">
-            <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                aria-label="Keyboard nudge step in millimetres"
-                className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
-                type="number"
-                step={0.05}
-                min={0.01}
-                value={nudge}
-                onChange={(event) => setNudge(event.target.value)}
-              />
-            </div>
-            <p className="mt-1 font-mono text-[9px] text-muted">
-              Select a tool, arrow keys to nudge · Shift+arrow for 10×.
-            </p>
-          </label>
           {selectedTools.length >= 1 ? (
             <div className="border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -3553,7 +3576,6 @@ export function CombineEditor({
               A tool crosses the locked bin edge (or a removed grid cell) — Preview 3D is blocked until it's back inside, but you can still export or save (the tool's location may come out wrong until you fix it).
             </p>
           )}
-          <button className="btn w-full text-xs" disabled={busy} onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}>↻ Auto-pack</button>
           <button className="btn btn-primary w-full" disabled={busy || !tools.length || Boolean(err)} onClick={exportBin}>
             ↓ Export bin (3MF)
           </button>
@@ -3673,7 +3695,7 @@ export function CombineEditor({
             </div>
           )}
           <button className="btn w-full" onClick={handleClose}>Close</button>
-        </div>
+        </Sidebar>
       </div>
       {toolPickerOpen && (
         <div

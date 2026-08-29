@@ -81,31 +81,39 @@ export function CombineBin() {
 
   const ids = decoded.reopenBinId ? reopenBin?.tool_ids ?? null : decoded.combineIds;
 
-  return (
-    <div className="mx-auto max-w-container px-4 py-8 sm:px-6 sm:py-12">
-      {decoded.reopenBinId && !reopenBin ? (
+  if (decoded.reopenBinId && !reopenBin) {
+    return (
+      <div className="mx-auto max-w-container px-4 py-8 sm:px-6 sm:py-12">
         <div className="panel">
           <p className="font-body">{reopenError ?? "Loading…"}</p>
         </div>
-      ) : ids && ids.length > 0 ? (
-        <CombineEditor
-          ids={ids}
-          overallHeight={reopenBin?.overall_height ?? null}
-          initial={reopenBin ? reopenInitial(reopenBin) : undefined}
-          onClose={close}
-          onSaved={(saved) => {
-            setReopenBin(saved);
-            navigate(pathForBinReopen(saved.id));
-          }}
-        />
-      ) : (
-        <div className="panel">
-          <p className="font-body">
-            No tools selected. Pick some from the <strong>Tool Library</strong> and use{" "}
-            <strong>Combine into ONE bin</strong>.
-          </p>
-        </div>
-      )}
+      </div>
+    );
+  }
+
+  if (ids && ids.length > 0) {
+    return (
+      <CombineEditor
+        ids={ids}
+        overallHeight={reopenBin?.overall_height ?? null}
+        initial={reopenBin ? reopenInitial(reopenBin) : undefined}
+        onClose={close}
+        onSaved={(saved) => {
+          setReopenBin(saved);
+          navigate(pathForBinReopen(saved.id));
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-container px-4 py-8 sm:px-6 sm:py-12">
+      <div className="panel">
+        <p className="font-body">
+          No tools selected. Pick some from the <strong>Tool Library</strong> and use{" "}
+          <strong>Combine into ONE bin</strong>.
+        </p>
+      </div>
     </div>
   );
 }
