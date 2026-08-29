@@ -93,7 +93,7 @@
     box-shadow: 4px 4px 0 theme("colors.field");
   }
   .btn-ghost {
-    @apply bg-transparent text-ink;
+    @apply bg-transparent text-ink border-line;
   }
   .btn-ghost:hover {
     box-shadow: 4px 4px 0 theme("colors.teal");
