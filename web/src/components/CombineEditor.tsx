@@ -435,7 +435,7 @@ export function CombineEditor({
   const [nudgeAnnotationDir, setNudgeAnnotationDir] = useState<CardinalDirection | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [view, setView] = useState<"arrange" | "preview">("arrange");
+  const [showPreview3d, setShowPreview3d] = useState(false);
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
   const binConfigFold = useFold(true);
@@ -2554,22 +2554,17 @@ export function CombineEditor({
           collapsed={leftSidebarCollapsed}
           onToggleCollapse={() => setLeftSidebarCollapsed((c) => !c)}
         >
-          <div className="mb-2 grid grid-cols-2 gap-1">
+          <ControlGroup>
             <button
-              className={`btn text-xs ${view === "arrange" ? "border-teal text-teal" : "btn-ghost"}`}
-              onClick={() => setView("arrange")}
-            >
-              Arrange 2D
-            </button>
-            <button
-              className={`btn text-xs ${view === "preview" ? "border-teal text-teal" : "btn-ghost"}`}
-              onClick={() => setView("preview")}
+              type="button"
+              aria-pressed={showPreview3d}
+              className={`btn w-full text-xs ${showPreview3d ? "border-teal text-teal" : "btn-ghost"}`}
+              onClick={() => setShowPreview3d((v) => !v)}
             >
               Preview 3D
             </button>
-          </div>
-          {view === "arrange" && (
-            <div className="mb-2">
+          {!showPreview3d && (
+            <div className="mt-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[10px] uppercase text-muted">Toolshapes</span>
                 <button
@@ -2672,13 +2667,14 @@ export function CombineEditor({
               )}
             </div>
           )}
-          <button
-            className="btn w-full text-xs"
-            disabled={busy}
-            onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}
-          >
-            ↻ Auto-pack
-          </button>
+            <button
+              className="btn mt-2 w-full text-xs"
+              disabled={busy}
+              onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}
+            >
+              ↻ Auto-pack
+            </button>
+          </ControlGroup>
           <label className="block">
             <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
             <div className="mt-1 flex items-center gap-2">
@@ -2706,7 +2702,7 @@ export function CombineEditor({
             tabIndex={0}
             onKeyDown={handleArrangeKeyDown}
           >
-            {view === "arrange" ? <svg
+            {!showPreview3d ? <svg
             ref={svgRef}
             viewBox={vb}
             className="w-full touch-none"
