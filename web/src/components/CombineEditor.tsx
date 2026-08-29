@@ -443,6 +443,7 @@ export function CombineEditor({
   const shapeFold = useFold(true);
   const alignFold = useFold(true);
   const fingerholeFold = useFold(true);
+  const editorConfigFold = useFold(true);
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -2675,23 +2676,25 @@ export function CombineEditor({
               ↻ Auto-pack
             </button>
           </ControlGroup>
-          <label className="block">
-            <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                aria-label="Keyboard nudge step in millimetres"
-                className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
-                type="number"
-                step={0.05}
-                min={0.01}
-                value={nudge}
-                onChange={(event) => setNudge(event.target.value)}
-              />
-            </div>
-            <p className="mt-1 font-mono text-[9px] text-muted">
-              Select a tool, arrow keys to nudge · Shift+arrow for 10×.
-            </p>
-          </label>
+          <Section title="Editor config" open={editorConfigFold.open} onToggle={editorConfigFold.toggle}>
+            <label className="block">
+              <span className="font-mono text-[10px] uppercase text-muted">Nudge step (mm)</span>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  aria-label="Keyboard nudge step in millimetres"
+                  className="mono-input min-w-0 flex-1 !px-2 !py-1 !text-sm"
+                  type="number"
+                  step={0.05}
+                  min={0.01}
+                  value={nudge}
+                  onChange={(event) => setNudge(event.target.value)}
+                />
+              </div>
+              <p className="mt-1 font-mono text-[9px] text-muted">
+                Select a tool, arrow keys to nudge · Shift+arrow for 10×.
+              </p>
+            </label>
+          </Section>
         </Sidebar>
 
         <div className="min-w-0 flex-1 lg:min-h-0 lg:overflow-hidden">
