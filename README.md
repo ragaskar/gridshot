@@ -527,6 +527,11 @@ Features added on top of the original public release, newest last:
   2D arrange view, cached in the browser against a hash of the bin's
   geometry so reopening the page with nothing changed costs no network
   round-trip (see [docs/bin-library.md](docs/bin-library.md#preview-thumbnail))
+- "Bevel pockets" in the multi-tool combine editor, checked by default:
+  chamfers each pocket's top opening edge at a fixed 0.6mm radius so it
+  isn't sharp to the touch, clamped down (or off entirely) for a bin with
+  tight wall margins rather than risking a broken print (see
+  [docs/combine-pocket-bevel.md](docs/combine-pocket-bevel.md))
 
 ## License
 

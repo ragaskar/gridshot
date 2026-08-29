@@ -74,6 +74,15 @@ TOOLSHAPE_FILLET_RADIUS_MM = 1.5
 # LIP_CHAMFER_LOFT_STEPS's structural chamfer is plenty.
 FILLET_LOFT_STEPS = 8
 
+# A pocket's top opening edge (`bevel_pockets`, fast path only — see
+# bin_solid) gets a straight 45° chamfer of this radius, hardcoded rather
+# than user-configurable for now, same as TOOLSHAPE_FILLET_RADIUS_MM above.
+# Clamped per-bin against the tightest configured wall margin in play (see
+# _pocket_top_bevel_radius), so this is a ceiling, not a guarantee — it only
+# reaches the full 0.6mm when the surrounding walls are comfortably wider
+# than that.
+POCKET_BEVEL_RADIUS_MM = 0.6
+
 # Legacy (fill_height_pct, live_grid) mapping — exact and lossless. See
 # docs/bin-profiles-v2-proposal.md. Used both to translate old `style` values
 # at bin_solid() call sites that haven't migrated yet, and by each model's
@@ -382,6 +391,24 @@ def _pocket_bottom_fillet(
     return Manifold.batch_boolean(slabs, OpType.Add)
 
 
+def _pocket_top_bevel_radius(
+    depth: float, min_wall_mm: float, min_wall_lip_mm: float, tool_wall_mm: float, lip: bool,
+) -> float:
+    """How large a `POCKET_BEVEL_RADIUS_MM` chamfer can safely go on one
+    pocket's top opening edge without threatening to breach a neighbouring
+    wall — the chamfer flares the opening outward by its radius on every
+    side, so it's clamped against whichever configured wall margin is
+    tightest: the outer wall (`min_wall_mm`, tighter still as
+    `min_wall_lip_mm` when a lip is present), and half of `tool_wall_mm`
+    (halved because two adjacent pockets each flare toward each other across
+    that same gap). Also clamped to the pocket's own `depth`, same as
+    `_pocket_bottom_fillet`, so a shallow pocket never gets a chamfer taller
+    than itself. Degrades to 0 (no chamfer, not an error) for a bin
+    configured with wall margins already thinner than any bevel."""
+    wall_margin = min(min_wall_mm, min_wall_lip_mm if lip else min_wall_mm, tool_wall_mm / 2)
+    return max(0.0, min(POCKET_BEVEL_RADIUS_MM, wall_margin - EPS, depth - EPS))
+
+
 def _lip_ring(
     outline: CrossSection,
     z_top: float,
@@ -669,6 +696,7 @@ def bin_solid(
     tool_wall_flare_mm: float = TOOL_WALL_FLARE,
     tool_wall_reinforcement_h_mm: float = TOOL_WALL_REINFORCEMENT_H,
     magnet_hole_inset_from_edge_mm: float = MAGNET_HOLE_INSET_FROM_EDGE_MM,
+    bevel_pockets: bool = False,
 ) -> Manifold:
     """A Gridfinity tool holder, parameterized instead of style-branched — see
     docs/bin-profiles-v2-proposal.md.
@@ -702,6 +730,13 @@ def bin_solid(
     clean channel between the two lobes instead of two disconnected holes.
     `pockets` entries may carry the same thing as an optional 4th tuple
     element: `(pocket, depth, fingers, connector)`.
+
+    `bevel_pockets` chamfers each pocket's top opening edge (see
+    POCKET_BEVEL_RADIUS_MM/_pocket_top_bevel_radius) — fast path only, same
+    as the per-entry bottom fillet (`pockets` entries' optional 5th tuple
+    element): the general (corral/grid) construction builds each tool as a
+    raised wall around an open shelf rather than cutting a cavity into solid
+    material, so there's no cut-pocket opening edge to chamfer there.
     """
     if not (0.0 <= fill_height_pct <= 100.0):
         raise ValueError(f"fill_height_pct must be between 0 and 100, got {fill_height_pct}")
@@ -903,6 +938,15 @@ def bin_solid(
             radius = min(pk_fillet_radius, max(0.0, depth - EPS))
             if radius > EPS:
                 cut = cut + _pocket_bottom_fillet(inner, floor_z, radius)
+        if bevel_pockets:
+            top_z = floor_z + depth  # == total_h, the bin's own top face here
+            bevel_radius = _pocket_top_bevel_radius(
+                depth, min_wall_mm, min_wall_lip_mm, tool_wall_mm, lip,
+            )
+            if bevel_radius > EPS:
+                cut = cut + _chamfer_transition(
+                    inner, -bevel_radius, top_z + EPS, 0.0, top_z - bevel_radius,
+                )
         solid = solid - cut
         for fx, fy, dia in pk_fingers:
             cyl = Manifold.cylinder(

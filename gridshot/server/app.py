@@ -2531,6 +2531,13 @@ class CombineRequest(BaseModel):
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
     magnet_hole_depth_mm: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
+    # Chamfers each pocket's top opening edge — see
+    # grid_mod.POCKET_BEVEL_RADIUS_MM/_pocket_top_bevel_radius. Bin-level,
+    # not a BinProfile field (the ask was specifically "available on the
+    # combine bin page"); only ever applies on the fast path (pocket-style,
+    # fill_height_pct=100, live_grid off) — a no-op otherwise, same scoping
+    # as the existing per-tool bottom fillet.
+    bevel_pockets: bool = True
     # Only consulted by the /combine/slice route; None falls back to the
     # standard 1mm trace-tolerance thickness.
     # The upper bound here is just a sanity ceiling — slice_window() already
@@ -3184,6 +3191,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             magnet_holes=req.magnet_holes,
             magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
+            bevel_pockets=req.bevel_pockets,
             included_cells=lay.get("included_cells"),
             lip_height_mm=lay["lip_height_mm"],
             lip_chamfer_top_mm=lay["lip_chamfer_top_mm"],
@@ -3247,7 +3255,12 @@ def library_combine_slice(req: CombineRequest) -> Response:
             ),
         )
     z0, thickness = window
-    solid = _combine_solid(req, lay)
+    # The window can land within the bevel's own radius of the top for a
+    # shallow pocket (see slice_window), which would make the coupon measure
+    # the flared opening instead of the true wall — so the slice always
+    # samples the unbeveled pocket, regardless of the bin's own flag.
+    unbeveled_req = req.model_copy(update={"bevel_pockets": False})
+    solid = _combine_solid(unbeveled_req, lay)
     sliced = grid_mod.slice_layer(solid, z0, thickness)
     data = export_mod.threemf_bytes(
         grid_mod.to_trimesh(sliced), name="multitool-bin-slice"
@@ -3292,6 +3305,7 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         magnet_holes=saved.magnet_holes,
         magnet_hole_diameter_mm=saved.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=saved.magnet_hole_depth_mm,
+        bevel_pockets=saved.bevel_pockets,
         force_gx=saved.force_gx,
         force_gy=saved.force_gy,
         removed_cells=saved.removed_cells,
@@ -3332,6 +3346,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "magnet_holes": saved.magnet_holes,
         "magnet_hole_diameter_mm": saved.magnet_hole_diameter_mm,
         "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
+        "bevel_pockets": saved.bevel_pockets,
         "force_gx": saved.force_gx,
         "force_gy": saved.force_gy,
         "removed_cells": saved.removed_cells,
@@ -3414,6 +3429,7 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
         magnet_holes=req.magnet_holes,
         magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=req.magnet_hole_depth_mm,
+        bevel_pockets=req.bevel_pockets,
         force_gx=req.force_gx,
         force_gy=req.force_gy,
         removed_cells=req.removed_cells,

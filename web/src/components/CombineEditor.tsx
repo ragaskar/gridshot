@@ -222,6 +222,7 @@ export interface CombineEditorInitial {
   magnetHoles: boolean;
   magnetHoleDiameterMm: number;
   magnetHoleDepthMm: number;
+  bevelPockets: boolean;
   forceGx: number | null;
   forceGy: number | null;
   removedCells: [number, number][] | null;
@@ -313,6 +314,7 @@ interface Snapshot {
   magnetHoles: boolean;
   magnetHoleDiameter: string;
   magnetHoleDepth: string;
+  bevelPockets: boolean;
   forceSize: boolean;
   forceGx: string;
   forceGy: string;
@@ -458,6 +460,7 @@ export function CombineEditor({
   const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
+  const [bevelPockets, setBevelPockets] = useState(initial?.bevelPockets ?? true);
   const [nudge, setNudge] = useState("0.1");
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
@@ -677,6 +680,11 @@ export function CombineEditor({
     // geometry just changed (a resized toolshape) — see updateSelectedToolshape.
     preservePlacementsOverride: boolean = false,
     overallHeightOverride: number | null = overallHeight,
+    // Appended last (rather than alongside magnetHoles* above) so every
+    // existing positional call site — several already reach idsOverride/
+    // liveGridOverride by position — keeps working unchanged and just picks
+    // up the live `bevelPockets` state as its default.
+    bevelPocketsOverride: boolean = bevelPockets,
   ) {
     const baseline = tools; // local state as of the moment this request was built
     setBusy(true);
@@ -693,6 +701,7 @@ export function CombineEditor({
         magnetHoles: magnetHolesOverride,
         magnetHoleDiameterMm: Number(magnetHoleDiameterOverride),
         magnetHoleDepthMm: Number(magnetHoleDepthOverride),
+        bevelPockets: bevelPocketsOverride,
         forceGx: force ? force[0] : null,
         forceGy: force ? force[1] : null,
         removedCells: removed,
@@ -809,6 +818,7 @@ export function CombineEditor({
       magnetHoles,
       magnetHoleDiameter,
       magnetHoleDepth,
+      bevelPockets,
       forceSize,
       forceGx,
       forceGy,
@@ -861,6 +871,7 @@ export function CombineEditor({
     setMagnetHoles(s.magnetHoles);
     setMagnetHoleDiameter(s.magnetHoleDiameter);
     setMagnetHoleDepth(s.magnetHoleDepth);
+    setBevelPockets(s.bevelPockets);
     setForceSize(s.forceSize);
     setForceGx(s.forceGx);
     setForceGy(s.forceGy);
@@ -1114,6 +1125,7 @@ export function CombineEditor({
       combinePreviewGlb(toolIds, {
         placements, overallHeight, lip, overrides, fillHeightPct, liveGrid,
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
+        bevelPockets,
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
         ...structural,
       })
@@ -1134,7 +1146,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -1159,7 +1171,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
     };
-  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, forceSize, forceGx, forceGy, customShape, removedCells]); // eslint-disable-line
+  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, customShape, removedCells]); // eslint-disable-line
 
   /** Close never silently drops a still-debouncing autosave — flush it right
    *  now (the request survives this component unmounting; only the local
@@ -1829,6 +1841,7 @@ export function CombineEditor({
         magnetHoles,
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
+        bevelPockets,
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
         removedCells: effectiveRemovedCells(fillHeightPct),
@@ -1858,6 +1871,7 @@ export function CombineEditor({
         magnetHoles,
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
+        bevelPockets,
         sliceThicknessMm: thicknessMm,
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
@@ -2107,6 +2121,7 @@ export function CombineEditor({
       magnetHoles,
       magnetHoleDiameterMm: Number(magnetHoleDiameter),
       magnetHoleDepthMm: Number(magnetHoleDepth),
+      bevelPockets,
       forceGx: force ? Number(forceGx) : null,
       forceGy: force ? Number(forceGy) : null,
       removedCells: effectiveRemovedCells(fillHeightPct),
@@ -2853,6 +2868,20 @@ export function CombineEditor({
               }}
             />
             <span className="font-mono text-[10px] uppercase text-muted">Stacking lip</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={bevelPockets}
+              disabled={busy}
+              title="Chamfers each pocket's own top edge so it isn't sharp to the touch. Finger-access holes and the tool-to-tool connector keep their existing edges. Pocket-style bins only (100% fill, live grid off)."
+              onChange={(e) => {
+                pushSnapshot();
+                setBevelPockets(e.target.checked);
+                void load(placementsFor(tools), overridesFor(tools));
+              }}
+            />
+            <span className="font-mono text-[10px] uppercase text-muted">Bevel pockets</span>
           </label>
           <div>
             <label className="flex items-center gap-2">

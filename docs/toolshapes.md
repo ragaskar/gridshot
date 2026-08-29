@@ -85,6 +85,10 @@ effect at `fill_height_pct=100` (the default "pocket" bin style) — the
 corral/grid styles don't cut a plain pocket cavity to begin with, so there's
 no bottom corner to round there.
 
+For a pocket's *top* opening edge instead of its bottom interior corner, see
+the bin-level ["Bevel pockets"](combine-pocket-bevel.md) flag — a straight
+chamfer rather than a curved fillet, and on by default rather than opt-in.
+
 ## Constraints
 
 Toolshapes never appear in the Tool Library, aren't reachable from any

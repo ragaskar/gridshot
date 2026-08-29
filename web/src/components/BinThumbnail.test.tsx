@@ -20,7 +20,7 @@ function savedBin(): SavedBin {
     id: "bin-1", label: "My bin", created_ts: 0, tool_ids: ["t-a"], tool_labels: ["Wrench"],
     placements: [placement("t-a")], overrides: [], overall_height: null, lip: true,
     fill_height_pct: 100, live_grid: false, magnet_holes: false, magnet_hole_diameter_mm: 6.5,
-    magnet_hole_depth_mm: 2, force_gx: null, force_gy: null, removed_cells: null,
+    magnet_hole_depth_mm: 2, bevel_pockets: true, force_gx: null, force_gy: null, removed_cells: null,
     lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null,
     lip_chamfer_bottom_mm: null, min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null,
     tool_wall_mm: null, tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null,

@@ -1150,6 +1150,9 @@ export interface CombineOptions {
   magnetHoles?: boolean;
   magnetHoleDiameterMm?: number | null;
   magnetHoleDepthMm?: number | null;
+  /** Chamfers each pocket's top opening edge — pocket-style (100% fill,
+   *  live grid off) bins only, a no-op otherwise. Server default is `true`. */
+  bevelPockets?: boolean;
   forceGx?: number | null;
   forceGy?: number | null;
   removedCells?: [number, number][] | null;
@@ -1187,6 +1190,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     magnet_holes: options.magnetHoles ?? false,
     magnet_hole_diameter_mm: options.magnetHoleDiameterMm ?? undefined,
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
+    bevel_pockets: options.bevelPockets ?? true,
     force_gx: options.forceGx ?? undefined,
     force_gy: options.forceGy ?? undefined,
     removed_cells: options.removedCells ?? undefined,
@@ -1288,6 +1292,7 @@ export interface SavedBin {
   magnet_holes: boolean;
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
+  bevel_pockets: boolean;
   force_gx: number | null;
   force_gy: number | null;
   removed_cells: [number, number][] | null;

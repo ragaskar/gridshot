@@ -143,6 +143,29 @@ class TestCombineSlice:
         z_values = [float(z) for z in re.findall(r'z="([-0-9.]+)"', model_xml)]
         assert max(z_values) - min(z_values) == pytest.approx(2.0, abs=1e-2)
 
+    def test_slice_solid_is_always_built_unbeveled_regardless_of_the_bins_own_flag(
+        self, client, monkeypatch
+    ):
+        # A shallow pocket's slice window can land within the bevel's own
+        # radius of the top (see slice_window's docstring), which would make
+        # the coupon measure the flared opening instead of the true wall —
+        # so the slice always samples the pocket unbeveled, even when the
+        # bin itself has "Bevel pockets" on.
+        _stub_layout(monkeypatch, depths=[6.0, 9.0])
+        seen = {}
+        original = app_module._combine_solid
+
+        def spy(req, lay=None):
+            seen["bevel_pockets"] = req.bevel_pockets
+            return original(req, lay)
+
+        monkeypatch.setattr(app_module, "_combine_solid", spy)
+
+        response = _post(client, bevel_pockets=True)
+
+        assert response.status_code == 200
+        assert seen["bevel_pockets"] is False
+
     def test_omitted_thickness_still_defaults_to_one_mm(self, client, monkeypatch):
         import re
 
