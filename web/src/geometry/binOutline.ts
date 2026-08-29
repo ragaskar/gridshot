@@ -39,6 +39,37 @@ export function isShapeConnected(gx: number, gy: number, removed: ReadonlySet<Ce
   return seen.size === all.length;
 }
 
+/** Whether currently-ON cell (ix, iy) is legal to toggle OFF: the resulting
+ *  shape must (a) stay a single 4-connected piece, and (b) introduce no
+ *  diagonal-only OFF pair — two OFF cells touching only at a shared corner,
+ *  with neither of the two cells bridging that corner also OFF (e.g. in a
+ *  3×3 grid, (0,0) and (1,1) may not both be OFF unless (0,1) or (1,0) is
+ *  OFF too). A diagonal pinch like that makes the ON region touch itself at
+ *  a single point — exactly the degenerate case `traceLoops` documents it
+ *  can't disambiguate (see `binOutlinePath`'s doc) — so this is what keeps
+ *  every reachable shape one `traceLoops` can trace correctly, not merely
+ *  connected.
+ *
+ *  Only meaningful for a cell not already in `removed` — toggling a cell
+ *  back ON is always legal (it can only repair connectivity/pinches, never
+ *  introduce one), so callers don't need to check that direction. */
+export function canRemoveCell(
+  gx: number, gy: number, removed: ReadonlySet<CellKey>, ix: number, iy: number,
+): boolean {
+  const next = new Set(removed);
+  next.add(cellKey(ix, iy));
+  if (!isShapeConnected(gx, gy, next)) return false;
+  for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+    const nx = ix + dx, ny = iy + dy;
+    if (nx < 0 || ny < 0 || nx >= gx || ny >= gy) continue;
+    if (!next.has(cellKey(nx, ny))) continue;
+    const bridge1 = cellKey(ix + dx, iy);
+    const bridge2 = cellKey(ix, iy + dy);
+    if (!next.has(bridge1) && !next.has(bridge2)) return false;
+  }
+  return true;
+}
+
 type Pt = [number, number];
 
 /** Boundary loops of the included cells, in integer grid-corner space (cell

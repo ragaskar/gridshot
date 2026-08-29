@@ -80,7 +80,8 @@ describe("CombineEditor 3D-preview overflow message", () => {
     await screen.findByText("Wrench");
 
     fireEvent.click(screen.getByText("Preview 3D"));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Force bin size" }));
+    fireEvent.click(screen.getByText("Grid config"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Force size" }));
 
     const widthInput = await screen.findByLabelText("Forced bin width in gridfinity units");
     fireEvent.change(widthInput, { target: { value: "1" } });

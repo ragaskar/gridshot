@@ -5,19 +5,42 @@ rectangle, even a ring — instead of always getting a plain rectangle.
 
 ## Enabling it
 
-Check **"Force bin size"** in the multi-tool combine editor's right-hand panel (see
-[docs/combine-force-bin-size.md](combine-force-bin-size.md)). With a width and depth set,
-a **"Custom bin shape"** checkbox appears below them. Checking it shows a grid of small
-toggle squares the same size as your forced grid — check a square to remove that
-gridfinity unit from the bin. The Arrange 2D picture updates immediately, including the
-bin's outer corners rounding wherever a removal creates a new one (an internal notch
-corner rounds inward, just like the bin's four outer corners already do).
+Check **"Force size"** in the multi-tool combine editor's right-hand panel, under
+**Grid config** (closed by default; see
+[docs/combine-force-bin-size.md](combine-force-bin-size.md)). With a width and depth
+set, click **"Edit grid"** to enter edit mode: every tool in **Arrange 2D** fades out of
+the way (so it's obvious the grid, not a tool, is what you're about to click) and the
+button highlights to show you're in edit mode. Hover a grid square to preview it, and
+click to toggle that gridfinity unit on or off — the bin's outline (and its outer/inner
+corner rounding) updates immediately as you go.
 
-Only available for **pocket**-style bins — switching to Corral or Live grid hides the
-checkbox and stops applying the shape, since the corral wall/deck and live-grid sockets
-aren't shape-aware yet. The checkbox state and removed cells aren't cleared, though:
-switch back to Pocket and they reappear exactly as you left them, instead of having to
-redraw the shape.
+Click **"Edit grid"** again, or press **Enter**, to leave edit mode and lock in whatever
+you toggled. **Esc** instead cancels the whole session, reverting to exactly how the
+grid looked when you entered edit mode (not to a fully-on grid — just to "before this
+session"). Individual toggles inside a session aren't separately undoable; only
+finishing (or cancelling) the session is, so **Undo** reverts a whole editing pass in
+one step. A right-aligned **"Clear grid edits"** link next to "Force size" turns every
+square back on in one action (disabled when nothing's been removed) and is itself its
+own undo step, usable in or out of edit mode.
+
+Only available for **pocket**-style bins — switching to Corral or Live grid (or a Bin
+Profile whose "Allow custom grid shape" is off) disables "Edit grid" and stops applying
+the shape, since the corral wall/deck and live-grid sockets aren't shape-aware yet
+(leaving edit mode open when that happens cancels the session automatically). The
+removed cells aren't cleared, though: switch back to Pocket and they reappear exactly as
+you left them, instead of having to redraw the shape. "Force size" itself stays checked
+and disabled for as long as any square is off — clear the grid edits first if you need
+to turn it off.
+
+## Which squares can be toggled off
+
+A square can't be removed if doing so would either split the bin into disconnected
+pieces, or leave two removed squares touching only at a corner with neither of the two
+squares bridging that corner also removed (e.g., in a 3×3 grid with (0,0) removed,
+(1,1) can't be removed too unless (0,1) or (1,0) is also removed) — that diagonal
+"pinch" would make the remaining shape touch itself at a single point, which the bin
+outline can't represent correctly. Hovering an un-removable square shows a "not allowed"
+cursor and doesn't highlight; toggling a square back *on* is always allowed.
 
 ## Dragging over a removed cell
 
@@ -30,12 +53,15 @@ out wrong in the export until the overlap is fixed).
 
 ## Constraints
 
-- Requires "Force bin size" (a custom shape only makes sense against an exact,
+- Requires "Force size" (a custom shape only makes sense against an exact,
   known footprint).
 - The remaining shape must be a single connected piece — 4-connected, i.e. sharing a
   full edge, not just a corner. A hole in the middle (a ring) is still one piece and is
   fine; splitting the bin into two separate islands (e.g. removing an entire middle row)
-  is rejected with an error, both in the editor and if you export anyway.
+  is refused in the editor (see "Which squares can be toggled off" above) and, for a
+  shape that predates that check, rejected with an error on export.
+- Shrinking "Force size" below a removed cell's position prunes that removal —
+  growing back afterward doesn't re-materialize it.
 - Saved to the Bin Library and re-exported/reopened exactly like any other combine
   recipe (see [docs/bin-library.md](bin-library.md)).
 

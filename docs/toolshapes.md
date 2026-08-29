@@ -32,7 +32,7 @@ as it does for a photo-traced tool.
 
 **Width** is the shape's X extent, **length** is its Y extent — resizing
 either only ever changes that one axis. In an auto-fit bin (the default,
-"Force bin size" unchecked), the layout still normally re-centres every
+"Force size" unchecked), the layout still normally re-centres every
 tool inside its own auto-grown footprint on every request — that's how
 dragging a tool near an edge keeps the bin snug around the whole group.
 A toolshape resize is exempted from that: since only the edited tool's own
@@ -41,7 +41,7 @@ resizing holds all tools exactly where they were, growing the bin's
 footprint around them instead of recentring the group. If a resize grows
 the shape enough to outgrow the current footprint, the bin grows to fit
 but the arrangement can end up sitting off-centre within it — drag a tool
-afterwards (or toggle "Force bin size") to re-centre if wanted.
+afterwards (or toggle "Force size") to re-centre if wanted.
 
 ## Edge-drag resize
 

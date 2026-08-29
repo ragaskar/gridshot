@@ -8,11 +8,15 @@ layout, or a footprint you've already committed to elsewhere.
 
 ## Enabling it
 
-Check **"Force bin size"** in the right-hand panel. It seeds the width/depth
-fields with the bin's current auto-computed size (in **gridfinity units**,
-the same `gx × gy` shown in the header — not millimetres, since bins snap to
-the 42mm pitch anyway). Change either field and auto-pack re-solves within
-that exact footprint.
+Check **"Force size"** in the right-hand panel's **Grid config** section
+(closed by default). It seeds the width/depth fields with the bin's current
+auto-computed size (in **gridfinity units**, the same `gx × gy` shown in the
+header — not millimetres, since bins snap to the 42mm pitch anyway). Change
+either field and auto-pack re-solves within that exact footprint.
+
+The checkbox itself disables once any grid square has been removed (see
+[docs/combine-custom-bin-shape.md](combine-custom-bin-shape.md)) — clear the
+grid edits first if you need to turn "Force size" back off.
 
 Auto-pack does its best to fit everything within the forced size. If it
 can't — some tool doesn't fit at any rotation/position within the bound —
@@ -22,7 +26,7 @@ it off.
 
 ## The 2D view is locked, not re-fit
 
-With "Force bin size" checked, the bin footprint shown in **Arrange 2D** is
+With "Force size" checked, the bin footprint shown in **Arrange 2D** is
 fixed to the width/depth you set — it does not grow or shrink as tools move,
 whether they got there via auto-pack or your own dragging. This applies
 equally to manual placement: drag a tool around and the bin rectangle stays
@@ -41,7 +45,7 @@ arrangement (a tool's location may come out wrong in the export until you
 fix the overlap), which matters if you need to save your progress and
 resolve the boundary problem after reloading.
 
-Unchecking "Force bin size" hands the footprint back to auto-fit: the bin
+Unchecking "Force size" hands the footprint back to auto-fit: the bin
 immediately re-renders to the smallest size that contains the current
 arrangement, same as before the box was checked.
 

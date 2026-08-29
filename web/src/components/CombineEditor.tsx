@@ -29,7 +29,7 @@ import { usePersistedBoolean } from "./sidebar/usePersistedBoolean";
 import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
-import { binOutlinePath, cellKey, isShapeConnected, type CellKey } from "../geometry/binOutline";
+import { binOutlinePath, canRemoveCell, cellKey, type CellKey } from "../geometry/binOutline";
 import {
   nearestArcLength, outwardNormalAtArcLength, pointAtArcLength, ringLength, wrapArcLength,
 } from "../geometry/perimeter";
@@ -106,6 +106,12 @@ function resizeCursorFor(normalLocal: Pt, tool: CombineTool): string {
 function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: number } {
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+}
+
+function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
 }
 
 /** The shared value across every item, or undefined if any of them differ —
@@ -328,56 +334,8 @@ interface Snapshot {
   forceSize: boolean;
   forceGx: string;
   forceGy: string;
-  customShape: boolean;
   removedCells: Set<CellKey>;
   lockedRotations: Set<string>;
-}
-
-/** A gx×gy grid of small toggle squares, one per gridfinity unit, for
- *  "custom bin shape" — checking a cell removes it from the bin. Columns run
- *  left-to-right in increasing ix; rows run top-to-bottom in *decreasing*
- *  iy, matching the Arrange 2D view's own orientation (world y increases
- *  toward the top there, standard top-down convention — see the <g
- *  transform> in the arrange SVG). */
-function CustomShapeGrid({
-  gx, gy, removedCells, disabled, onToggle,
-}: {
-  gx: number;
-  gy: number;
-  removedCells: Set<CellKey>;
-  disabled: boolean;
-  onToggle: (ix: number, iy: number) => void;
-}) {
-  return (
-    <div
-      className="mt-2 inline-grid gap-[2px] border border-line bg-field p-1"
-      style={{ gridTemplateColumns: `repeat(${gx}, 16px)`, borderRadius: 2 }}
-    >
-      {Array.from({ length: gy }, (_, row) => {
-        const iy = gy - 1 - row;
-        return Array.from({ length: gx }, (_, ix) => {
-          const removed = removedCells.has(cellKey(ix, iy));
-          return (
-            <button
-              key={cellKey(ix, iy)}
-              type="button"
-              aria-pressed={removed}
-              aria-label={`Grid cell column ${ix + 1}, row ${row + 1}${removed ? " (removed)" : ""}`}
-              title={removed ? "Removed — click to restore" : "Click to remove this cell"}
-              disabled={disabled}
-              className="h-4 w-4 border"
-              style={{
-                borderRadius: 1,
-                borderColor: "var(--c-line)",
-                background: removed ? "transparent" : "var(--c-teal, #2f8f95)",
-              }}
-              onClick={() => onToggle(ix, iy)}
-            />
-          );
-        });
-      })}
-    </div>
-  );
 }
 
 /** Interactive multi-tool-bin editor: auto-packed layout you can drag + rotate,
@@ -447,6 +405,7 @@ export function CombineEditor({
   // no prior session state (a quieter initial view) — Tool config's own
   // forceOpen effect below still opens it the moment something's selected.
   const binConfigFold = useFold(false, "gridshot.combine.fold.binConfig");
+  const gridConfigFold = useFold(false, "gridshot.combine.fold.gridConfig");
   const toolConfigFold = useFold(false, "gridshot.combine.fold.toolConfig");
   const shapeFold = useFold(true, "gridshot.combine.fold.shape");
   const alignFold = useFold(true, "gridshot.combine.fold.align");
@@ -498,10 +457,23 @@ export function CombineEditor({
   const [forceSize, setForceSize] = useState(Boolean(initial?.forceGx && initial?.forceGy));
   const [forceGx, setForceGx] = useState(initial?.forceGx ? String(initial.forceGx) : "");
   const [forceGy, setForceGy] = useState(initial?.forceGy ? String(initial.forceGy) : "");
-  const [customShape, setCustomShape] = useState(Boolean(initial?.removedCells?.length));
   const [removedCells, setRemovedCells] = useState<Set<CellKey>>(
     () => new Set((initial?.removedCells ?? []).map(([ix, iy]) => cellKey(ix, iy))),
   );
+  // "Edit grid" mode: while active, clicking a grid square in Arrange 2D
+  // toggles it on/off directly (see toggleGridCell) instead of that click
+  // hitting a tool. Individual toggles made during a session are NOT their
+  // own undo/redo step — only entering with `gridEditBaselineRef` snapshotted
+  // and then confirming (or "Clear grid edits") pushes one, so a whole
+  // editing session undoes in one step. Esc cancels back to the baseline
+  // instead of committing.
+  const [gridEditMode, setGridEditMode] = useState(false);
+  const [hoveredGridCell, setHoveredGridCell] = useState<CellKey | null>(null);
+  const gridEditBaselineRef = useRef<Snapshot | null>(null);
+  // Guards against a double-fire when Enter both activates the focused "Edit
+  // grid" button (native button-activation-on-Enter) and is caught by the
+  // global keydown handler below in the same tick.
+  const gridEditConfirmLock = useRef(false);
   const [duplicateBusy, setDuplicateBusy] = useState(false);
   const [duplicateErr, setDuplicateErr] = useState<string | null>(null);
   // Toolshape placement mode: non-null while the "Rounded Rectangle" palette
@@ -621,6 +593,20 @@ export function CombineEditor({
     function onKeyDown(e: KeyboardEvent) {
       const active = document.activeElement;
       if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+      // Edit-grid mode owns Escape/Enter exclusively while active (cancel /
+      // confirm — see cancelGridEditMode/confirmExitGridEditMode) and
+      // swallows every other key, since e.g. Cmd+Z mid-session has no clean
+      // meaning: the in-progress toggles aren't on the undo stack yet.
+      if (gridEditMode) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelGridEditMode();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          confirmExitGridEditMode();
+        }
+        return;
+      }
       if (e.key === "Escape") {
         if (placingToolshape) {
           setPlacingToolshape(null);
@@ -653,7 +639,7 @@ export function CombineEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, placingToolshape, placingTool, toolPickerOpen]);
+  }, [undo, redo, placingToolshape, placingTool, toolPickerOpen, gridEditMode, cancelGridEditMode, confirmExitGridEditMode]);
 
   /** Plain click replaces the selection with just this tool (unless it's
    *  already part of the current multi-selection, in which case the whole
@@ -702,15 +688,21 @@ export function CombineEditor({
     return [...cells].map((k) => k.split(",").map(Number) as [number, number]);
   }
 
-  // Custom bin shape only applies on the fast path (fill_height_pct=100,
+  // The grid shape only applies on the fast path (fill_height_pct=100,
   // live_grid off), and only when the active profile allows it — the
-  // checkbox state and removed cells stay intact across a style/profile
-  // switch (so they reappear if you switch back), but are ignored otherwise.
+  // removed cells stay intact across a style/profile switch (so they
+  // reappear if you switch back), but are ignored otherwise.
+  //
+  // `cellsOverride` lets a caller pass a not-yet-committed-to-state cells set
+  // (e.g. right after `setRemovedCells` but before the re-render that would
+  // make it visible via the closed-over `removedCells`) — every existing
+  // call site keeps working unchanged since it defaults to current state.
   function effectiveRemovedCells(
     fillPct: number, liveGridVal: boolean = liveGrid, allow: boolean = allowCustomShape,
+    cellsOverride: Set<CellKey> = removedCells,
   ): [number, number][] | null {
-    return fillPct === 100 && !liveGridVal && allow && customShape && removedCells.size > 0
-      ? removedCellsArray(removedCells)
+    return fillPct === 100 && !liveGridVal && allow && cellsOverride.size > 0
+      ? removedCellsArray(cellsOverride)
       : null;
   }
 
@@ -877,18 +869,26 @@ export function CombineEditor({
       forceSize,
       forceGx,
       forceGy,
-      customShape,
       removedCells: new Set(removedCells),
       lockedRotations: new Set(lockedRotations),
     };
   }
 
+  /** Pushes an already-built snapshot — used directly (rather than through
+   *  `pushSnapshot`) when the "before" state to record isn't the current
+   *  render's state, e.g. confirming a grid-edit session records the
+   *  snapshot taken when edit mode was *entered*, not the current (already
+   *  edited) one. */
+  function pushSnapshotValue(snap: Snapshot) {
+    setUndoStack((s) => [...s.slice(-(UNDO_HISTORY_LIMIT - 1)), snap]);
+    setRedoStack([]);
+    setNudgeAnnotationDir(null);
+  }
+
   /** Pushes the state as it is *right now*, before the caller applies its
    *  change — call at the top of every discrete, one-shot committing action. */
   function pushSnapshot() {
-    setUndoStack((s) => [...s.slice(-(UNDO_HISTORY_LIMIT - 1)), snapshot()]);
-    setRedoStack([]);
-    setNudgeAnnotationDir(null);
+    pushSnapshotValue(snapshot());
   }
 
   /** Same as `pushSnapshot`, but for a *burst* of rapid-fire actions (nudge
@@ -930,13 +930,12 @@ export function CombineEditor({
     setForceSize(s.forceSize);
     setForceGx(s.forceGx);
     setForceGy(s.forceGy);
-    setCustomShape(s.customShape);
     setRemovedCells(new Set(s.removedCells));
     setLockedRotations(new Set(s.lockedRotations));
     const force: [number, number] | null = s.forceSize && s.forceGx && s.forceGy
       ? [Number(s.forceGx), Number(s.forceGy)]
       : null;
-    const removed = s.fillHeightPct === 100 && !s.liveGrid && s.allowCustomShape && s.customShape && s.removedCells.size > 0
+    const removed = s.fillHeightPct === 100 && !s.liveGrid && s.allowCustomShape && s.removedCells.size > 0
       ? removedCellsArray(s.removedCells)
       : null;
     void load(
@@ -1054,7 +1053,7 @@ export function CombineEditor({
     // Custom bin shape: a tool crossing into a removed cell is exactly as
     // invalid as crossing the locked bin's outer edge — same warning colour,
     // same export/preview gate.
-    if (locked && fillHeightPct === 100 && !liveGrid && customShape && removedCells.size > 0) {
+    if (locked && fillHeightPct === 100 && !liveGrid && removedCells.size > 0) {
       const half = bin_size / 2;
       const removedRects = [...removedCells].map((k) => {
         const [ix, iy] = k.split(",").map(Number);
@@ -1089,7 +1088,7 @@ export function CombineEditor({
     const viewW = boxMaxX - boxMinX, viewH = boxMaxY - boxMinY;
 
     return { polys, fingerCircles, fingerConnectors, gx, gy, ow, od, cx, cy, locked, overflowIds, viewCx, viewCy, viewW, viewH };
-  }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, customShape, removedCells]);
+  }, [tools, meta, forceSize, forceGx, forceGy, fillHeightPct, liveGrid, removedCells]);
 
   const hasOverflow = Boolean(layout?.locked && layout.overflowIds.size > 0);
   // Derived straight from `hasOverflow` rather than latched into `previewErr`
@@ -1098,6 +1097,121 @@ export function CombineEditor({
   const previewMessage = hasOverflow
     ? "A tool extends past the locked bin size (or over a removed grid cell) — move it back inside, or adjust the forced shape, before rendering."
     : previewErr;
+
+  // ON cells that are currently illegal to toggle OFF (see `canRemoveCell`)
+  // — recomputed only when the grid's shape actually changes, not on every
+  // hover, since it's an O(gx·gy) connectivity check per cell.
+  const illegalOffCells = useMemo(() => {
+    const illegal = new Set<CellKey>();
+    if (!layout) return illegal;
+    for (let ix = 0; ix < layout.gx; ix++) {
+      for (let iy = 0; iy < layout.gy; iy++) {
+        const key = cellKey(ix, iy);
+        if (removedCells.has(key)) continue;
+        if (!canRemoveCell(layout.gx, layout.gy, removedCells, ix, iy)) illegal.add(key);
+      }
+    }
+    return illegal;
+  }, [layout, removedCells]);
+
+  const gridEditPreconditionsMet = forceSize && Boolean(layout) && fillHeightPct === 100 && !liveGrid && allowCustomShape;
+
+  // A profile switch (or fill height / live grid change) can drop the
+  // preconditions "Edit grid" required while a session is still open, which
+  // would otherwise strand the UI in edit mode with no way to satisfy them
+  // again — cancel back to the pre-edit baseline the moment that happens.
+  useEffect(() => {
+    if (gridEditMode && !gridEditPreconditionsMet) cancelGridEditMode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridEditMode, gridEditPreconditionsMet]);
+
+  function enterGridEditMode() {
+    if (!gridEditPreconditionsMet) return;
+    gridEditBaselineRef.current = snapshot();
+    setHoveredGridCell(null);
+    setGridEditMode(true);
+  }
+
+  /** Esc: revert to exactly the removed-cell set from before this edit-grid
+   *  session started and leave — never a new undo/redo step, since nothing
+   *  about the *committed* state actually changed. */
+  function cancelGridEditMode() {
+    const baseline = gridEditBaselineRef.current;
+    gridEditBaselineRef.current = null;
+    setGridEditMode(false);
+    setHoveredGridCell(null);
+    if (!baseline) return;
+    setRemovedCells(new Set(baseline.removedCells));
+    void load(
+      placementsFor(tools), overridesFor(tools), fillHeightPct, undefined,
+      effectiveRemovedCells(fillHeightPct, liveGrid, allowCustomShape, baseline.removedCells),
+    );
+  }
+
+  /** Clicking "Edit grid" again, or Enter: locks in whatever toggling
+   *  happened since `enterGridEditMode` as a single undo/redo step (only if
+   *  anything actually changed) and leaves. Self-guarding against the
+   *  Enter-key double-fire where the browser's own "Enter activates the
+   *  focused button" and the global keydown handler below both fire from
+   *  the same keystroke. */
+  function confirmExitGridEditMode() {
+    if (!gridEditMode || gridEditConfirmLock.current) return;
+    gridEditConfirmLock.current = true;
+    queueMicrotask(() => { gridEditConfirmLock.current = false; });
+    const baseline = gridEditBaselineRef.current;
+    gridEditBaselineRef.current = null;
+    setGridEditMode(false);
+    setHoveredGridCell(null);
+    if (baseline && !setsEqual(baseline.removedCells, removedCells)) {
+      pushSnapshotValue(baseline);
+    }
+  }
+
+  /** Toggling a square while in edit mode is live (updates the preview
+   *  immediately) but is NOT its own undo/redo step — see `gridEditMode`'s
+   *  doc comment. Toggling back ON is always legal; toggling OFF is refused
+   *  outright (not even applied) when `illegalOffCells` flags it, so an
+   *  illegal click is simply a no-op rather than something to undo. */
+  function toggleGridCell(ix: number, iy: number) {
+    if (!gridEditMode || !layout) return;
+    const key = cellKey(ix, iy);
+    const isOff = removedCells.has(key);
+    if (!isOff && illegalOffCells.has(key)) return;
+    const next = new Set(removedCells);
+    isOff ? next.delete(key) : next.add(key);
+    setRemovedCells(next);
+    void load(
+      placementsFor(tools), overridesFor(tools), fillHeightPct, undefined,
+      effectiveRemovedCells(fillHeightPct, liveGrid, allowCustomShape, next),
+    );
+  }
+
+  /** Shared by the Width/Depth "Force size" inputs' commit handlers — a
+   *  shrink can leave previously-removed cells outside the new bounds; the
+   *  server would just silently ignore them, and growing back would
+   *  re-materialize a removal the user can no longer see or account for, so
+   *  prune them from state right when the resize commits instead. */
+  function commitForceGridSize() {
+    const gx = Math.round(Number(forceGx));
+    const gy = Math.round(Number(forceGy));
+    let cells = removedCells;
+    if (gx > 0 && gy > 0 && removedCells.size > 0) {
+      const pruned = new Set(
+        [...removedCells].filter((k) => {
+          const [ix, iy] = k.split(",").map(Number);
+          return ix < gx && iy < gy;
+        }),
+      );
+      if (pruned.size !== removedCells.size) {
+        cells = pruned;
+        setRemovedCells(pruned);
+      }
+    }
+    void load(
+      placementsFor(tools), overridesFor(tools), fillHeightPct, undefined,
+      effectiveRemovedCells(fillHeightPct, liveGrid, allowCustomShape, cells),
+    );
+  }
 
   // The slice coupon is a real cross-section of the actual solid (see
   // grid_mod.slice_layer) — the server already clamps the requested
@@ -1202,7 +1316,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, customShape, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -1227,7 +1341,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
     };
-  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, customShape, removedCells]); // eslint-disable-line
+  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, bevelPockets, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
 
   /** Close never silently drops a still-debouncing autosave — flush it right
    *  now (the request survives this component unmounting; only the local
@@ -1637,6 +1751,7 @@ export function CombineEditor({
     setNudgeAnnotationDir(selectedIds.size === 1 ? (dx !== 0 ? (dx > 0 ? "right" : "left") : (dy > 0 ? "up" : "down")) : null);
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
+    if (gridEditMode) return; // Escape/Enter are handled globally in edit-grid mode
     const active = document.activeElement;
     if (active instanceof HTMLElement && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
     if (selectedFingerHoleToolIds.size === 1) {
@@ -2415,7 +2530,7 @@ export function CombineEditor({
               className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
               aria-label="Undo"
               title="Undo (Cmd/Ctrl+Z)"
-              disabled={!undoStack.length}
+              disabled={!undoStack.length || gridEditMode}
               onClick={undo}
             >
               ↶ Undo
@@ -2425,7 +2540,7 @@ export function CombineEditor({
               className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
               aria-label="Redo"
               title="Redo (Cmd/Ctrl+Shift+Z)"
-              disabled={!redoStack.length}
+              disabled={!redoStack.length || gridEditMode}
               onClick={redo}
             >
               ↷ Redo
@@ -2804,7 +2919,7 @@ export function CombineEditor({
               // pointer/drag handling.
               <g transform="scale(1,-1)">
                 {/* bin footprint + gridfinity cells */}
-                {customShape && removedCells.size > 0 ? (
+                {removedCells.size > 0 ? (
                   <path
                     d={binOutlinePath(
                       { gx: layout.gx, gy: layout.gy, pitch: meta!.pitch, cornerR: BIN_CORNER_R, centerX: layout.cx, centerY: layout.cy },
@@ -2817,7 +2932,7 @@ export function CombineEditor({
                     width={layout.ow} height={layout.od} fill="#00000022"
                     stroke="#6b7280" strokeWidth={0.6} rx={2} />
                 )}
-                {customShape && [...removedCells].map((k) => {
+                {[...removedCells].map((k) => {
                   const [ix, iy] = k.split(",").map(Number);
                   const x = layout.cx + (ix - (layout.gx - 1) / 2) * meta!.pitch;
                   const y = layout.cy + (iy - (layout.gy - 1) / 2) * meta!.pitch;
@@ -2851,6 +2966,11 @@ export function CombineEditor({
                     strokeWidth={0.7}
                   />;
                 })}
+                {/* Grid-edit mode fades every tool out of the way (so it's
+                    obvious the grid, not the tools, is what's being edited)
+                    and disables their pointer handling so a click always
+                    lands on the grid-cell overlay below instead. */}
+                <g opacity={gridEditMode ? 0.3 : 1} pointerEvents={gridEditMode ? "none" : undefined}>
                 {/* cleared pockets — turn red once locked and past the locked footprint;
                     hovering an unselected tool shades it to hint it's clickable */}
                 {tools.map((t, i) => {
@@ -2984,6 +3104,38 @@ export function CombineEditor({
                     )}
                   </g>;
                 })}
+                </g>
+                {/* Edit-grid interactive overlay — one invisible hit-target
+                    per gx×gy cell, on top of everything else so a click
+                    always toggles the grid rather than selecting a tool.
+                    Purely an interaction + hover-highlight layer; the actual
+                    "removed" visual is the red dashed rect drawn above
+                    (always shown, in or out of edit mode). */}
+                {gridEditMode && layout && meta && Array.from({ length: layout.gx }, (_, ix) => (
+                  Array.from({ length: layout.gy }, (_, iy) => {
+                    const key = cellKey(ix, iy);
+                    const isOff = removedCells.has(key);
+                    const legal = isOff || !illegalOffCells.has(key);
+                    const hovered = hoveredGridCell === key;
+                    const x = layout.cx + (ix - (layout.gx - 1) / 2) * meta.pitch;
+                    const y = layout.cy + (iy - (layout.gy - 1) / 2) * meta.pitch;
+                    const half = meta.bin_size / 2;
+                    return (
+                      <rect
+                        key={`gridedit-${key}`}
+                        aria-label={`Grid cell column ${ix + 1}, row ${iy + 1}${isOff ? " (removed)" : ""}`}
+                        x={x - half} y={y - half} width={half * 2} height={half * 2}
+                        fill={hovered && legal ? (isOff ? "#ff4d4d33" : "#2f8f9540") : "transparent"}
+                        stroke={hovered && legal ? "#2f8f95" : "transparent"}
+                        strokeWidth={0.8}
+                        style={{ cursor: legal ? "pointer" : "not-allowed" }}
+                        onPointerEnter={() => setHoveredGridCell(key)}
+                        onPointerLeave={() => setHoveredGridCell((c) => (c === key ? null : c))}
+                        onClick={() => toggleGridCell(ix, iy)}
+                      />
+                    );
+                  })
+                ))}
                 {nudgeAnnotation && [nudgeAnnotation.toward, nudgeAnnotation.away].map((hit, i) => {
                   if (!hit) return null;
                   const [sx, sy] = hit.start;
@@ -3163,107 +3315,6 @@ export function CombineEditor({
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={forceSize}
-                disabled={busy}
-                onChange={(event) => {
-                  pushSnapshot();
-                  const checked = event.target.checked;
-                  setForceSize(checked);
-                  if (!checked) {
-                    setCustomShape(false);
-                    setRemovedCells(new Set());
-                  }
-                  let gx = forceGx, gy = forceGy;
-                  if (checked && !gx && !gy && layout) {
-                    gx = String(layout.gx);
-                    gy = String(layout.gy);
-                    setForceGx(gx);
-                    setForceGy(gy);
-                  }
-                  void load(
-                    placementsFor(tools), overridesFor(tools), fillHeightPct,
-                    checked && gx && gy ? [Number(gx), Number(gy)] : null,
-                    checked ? undefined : null,
-                  );
-                }}
-              />
-              <span className="font-mono text-[10px] uppercase text-muted">Force bin size</span>
-            </label>
-            {forceSize && (
-              <div className="mt-1 grid grid-cols-2 gap-1">
-                <label className="min-w-0">
-                  <span className="block font-mono text-[9px] uppercase text-muted">Width (units)</span>
-                  <input
-                    aria-label="Forced bin width in gridfinity units"
-                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
-                    type="number" step={1} min={1}
-                    value={forceGx}
-                    onChange={(event) => { pushSnapshotCoalesced("forceGx"); setForceGx(event.target.value); }}
-                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
-                  />
-                </label>
-                <label className="min-w-0">
-                  <span className="block font-mono text-[9px] uppercase text-muted">Depth (units)</span>
-                  <input
-                    aria-label="Forced bin depth in gridfinity units"
-                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
-                    type="number" step={1} min={1}
-                    value={forceGy}
-                    onChange={(event) => { pushSnapshotCoalesced("forceGy"); setForceGy(event.target.value); }}
-                    ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
-                  />
-                </label>
-              </div>
-            )}
-            {forceSize && fillHeightPct === 100 && !liveGrid && allowCustomShape && (
-              <div className="mt-2">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={customShape}
-                    disabled={busy}
-                    onChange={(event) => {
-                      pushSnapshot();
-                      const checked = event.target.checked;
-                      setCustomShape(checked);
-                      if (!checked) {
-                        setRemovedCells(new Set());
-                        void load(placementsFor(tools), overridesFor(tools), fillHeightPct, undefined, null);
-                      }
-                    }}
-                  />
-                  <span className="font-mono text-[10px] uppercase text-muted">Custom bin shape</span>
-                </label>
-                {customShape && Number(forceGx) > 0 && Number(forceGy) > 0 && (
-                  <CustomShapeGrid
-                    gx={Math.round(Number(forceGx))}
-                    gy={Math.round(Number(forceGy))}
-                    removedCells={removedCells}
-                    disabled={busy}
-                    onToggle={(ix, iy) => {
-                      pushSnapshot();
-                      const key = cellKey(ix, iy);
-                      const next = new Set(removedCells);
-                      next.has(key) ? next.delete(key) : next.add(key);
-                      setRemovedCells(next);
-                      void load(placementsFor(tools), overridesFor(tools));
-                    }}
-                  />
-                )}
-                {customShape && removedCells.size > 0 && !isShapeConnected(
-                  Math.round(Number(forceGx)), Math.round(Number(forceGy)), removedCells,
-                ) && (
-                  <p className="mt-1 font-mono text-[9px] text-orange">
-                    Custom bin shape must be a single connected piece — some cells are cut off from the rest.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
                 checked={magnetHoles}
                 disabled={busy}
                 onChange={(event) => {
@@ -3300,6 +3351,107 @@ export function CombineEditor({
                 </label>
               </div>
             )}
+          </div>
+          </Section>
+          <Section title="Grid config" open={gridConfigFold.open} onToggle={gridConfigFold.toggle}>
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={forceSize}
+                  disabled={busy || removedCells.size > 0}
+                  title={removedCells.size > 0 ? "Clear the grid edits before turning this off" : undefined}
+                  onChange={(event) => {
+                    pushSnapshot();
+                    const checked = event.target.checked;
+                    setForceSize(checked);
+                    let gx = forceGx, gy = forceGy;
+                    if (checked && !gx && !gy && layout) {
+                      gx = String(layout.gx);
+                      gy = String(layout.gy);
+                      setForceGx(gx);
+                      setForceGy(gy);
+                    }
+                    void load(
+                      placementsFor(tools), overridesFor(tools), fillHeightPct,
+                      checked && gx && gy ? [Number(gx), Number(gy)] : null,
+                      checked ? undefined : null,
+                    );
+                  }}
+                />
+                <span className="font-mono text-[10px] uppercase text-muted">Force size</span>
+              </label>
+              <button
+                type="button"
+                className={`font-mono text-[9px] uppercase underline ${
+                  removedCells.size === 0 ? "text-muted opacity-40" : "text-muted hover:text-teal"
+                }`}
+                disabled={busy || removedCells.size === 0}
+                onClick={() => {
+                  pushSnapshot();
+                  setRemovedCells(new Set());
+                  // Mid grid-edit-mode, this itself is the undo/redo event —
+                  // reset the session baseline so exiting afterward (with
+                  // nothing left changed relative to it) doesn't push a
+                  // second, redundant "no-op" step.
+                  if (gridEditBaselineRef.current) {
+                    gridEditBaselineRef.current = { ...gridEditBaselineRef.current, removedCells: new Set() };
+                  }
+                  void load(
+                    placementsFor(tools), overridesFor(tools), fillHeightPct, undefined,
+                    effectiveRemovedCells(fillHeightPct, liveGrid, allowCustomShape, new Set()),
+                  );
+                }}
+              >
+                Clear grid edits
+              </button>
+            </div>
+            {forceSize && (
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Width (units)</span>
+                  <input
+                    aria-label="Forced bin width in gridfinity units"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={1} min={1}
+                    value={forceGx}
+                    onChange={(event) => { pushSnapshotCoalesced("forceGx"); setForceGx(event.target.value); }}
+                    ref={commitOnChange(() => commitForceGridSize())}
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="block font-mono text-[9px] uppercase text-muted">Depth (units)</span>
+                  <input
+                    aria-label="Forced bin depth in gridfinity units"
+                    className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                    type="number" step={1} min={1}
+                    value={forceGy}
+                    onChange={(event) => { pushSnapshotCoalesced("forceGy"); setForceGy(event.target.value); }}
+                    ref={commitOnChange(() => commitForceGridSize())}
+                  />
+                </label>
+              </div>
+            )}
+            <button
+              type="button"
+              aria-label="Edit grid"
+              className={`btn ${gridEditMode ? "btn-primary" : "btn-ghost"} mt-2 w-full !py-1 text-[10px]`}
+              aria-pressed={gridEditMode}
+              disabled={busy || !gridEditPreconditionsMet}
+              title={
+                !forceSize
+                  ? "Requires Force size"
+                  : !gridEditPreconditionsMet
+                  ? "Grid editing only works at 100% fill height with live grid off, on a profile that allows it"
+                  : gridEditMode
+                  ? "Click (or press Enter) to finish — Esc cancels back to how it was"
+                  : undefined
+              }
+              onClick={() => (gridEditMode ? confirmExitGridEditMode() : enterGridEditMode())}
+            >
+              {gridEditMode ? "✓ Edit grid" : "Edit grid"}
+            </button>
           </div>
           </Section>
           <Section

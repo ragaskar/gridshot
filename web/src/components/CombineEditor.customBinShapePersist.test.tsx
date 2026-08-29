@@ -83,7 +83,7 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     cleanup();
   });
 
-  it("keeps the custom shape checkbox and removed cells when switching away from pocket and back, but omits them from non-pocket requests", async () => {
+  it("keeps removed grid cells when switching away from pocket and back, but omits them from non-pocket requests", async () => {
     render(
       <CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />,
     );
@@ -91,18 +91,24 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
     const profileSelect = await screen.findByLabelText("Bin profile") as HTMLSelectElement;
     await waitFor(() => expect(profileSelect.options.length).toBe(3)); // placeholder + 2 profiles
 
-    // 1 initial auto-pack + 1 for the mount-time auto-mint's own reload
-    // (adoptSavedBinIds) + 1 auto-applied default profile (Pocket, first in
-    // the list) + 1 for this click.
-    fireEvent.click(screen.getByText("Force bin size"));
-    await waitFor(() => expect(combinePreview).toHaveBeenCalledTimes(4));
+    fireEvent.click(screen.getByText("Grid config"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Force size" }));
+    await screen.findByLabelText("Forced bin width in gridfinity units");
 
-    fireEvent.click(screen.getByText("Custom bin shape"));
+    const editGridButton = screen.getByRole("button", { name: "Edit grid" });
+    fireEvent.click(editGridButton);
     const removeCell = await screen.findByLabelText("Grid cell column 1, row 1");
     fireEvent.click(removeCell);
     await screen.findByLabelText("Grid cell column 1, row 1 (removed)");
+    // Confirm the edit-grid session (locks the toggle in as one undo step).
+    fireEvent.click(editGridButton);
 
-    // apply the Corral profile: the checkbox/grid UI disappears (Corral's
+    await waitFor(() => {
+      const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+      expect(last[1]?.removedCells).toEqual([[0, 0]]);
+    });
+
+    // apply the Corral profile: "Edit grid" becomes unusable (Corral's
     // allow_custom_shape is false), and the removed cell must NOT be sent...
     fireEvent.change(profileSelect, { target: { value: "seed-corral" } });
     await waitFor(() => {
@@ -110,18 +116,17 @@ describe("CombineEditor custom bin shape persistence across bin profile switches
       expect(last[1]?.fillHeightPct).toBe(0);
       expect(last[1]?.removedCells).toBeNull();
     });
-    expect(screen.queryByText("Custom bin shape")).toBeNull();
+    expect((screen.getByRole("button", { name: "Edit grid" }) as HTMLButtonElement).disabled).toBe(true);
 
-    // ...but applying the Pocket profile again brings both the checkbox
-    // state and the removed cell right back, without having to redraw it.
+    // ...but applying the Pocket profile again brings the removed cell right
+    // back, without having to redraw it.
     fireEvent.change(profileSelect, { target: { value: "seed-pocket" } });
     await waitFor(() => {
       const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
       expect(last[1]?.fillHeightPct).toBe(100);
       expect(last[1]?.removedCells).toEqual([[0, 0]]);
     });
-    const checkbox = screen.getByText("Custom bin shape").previousElementSibling as HTMLInputElement;
-    expect(checkbox.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Edit grid" }));
     expect(await screen.findByLabelText("Grid cell column 1, row 1 (removed)")).toBeTruthy();
   });
 });
