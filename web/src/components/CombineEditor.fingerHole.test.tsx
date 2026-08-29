@@ -548,4 +548,28 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect(Number(after.getAttribute("cx"))).toBeCloseTo(before.cx);
     expect(Number(after.getAttribute("cy"))).toBeCloseTo(before.cy);
   });
+
+  it("closes the Fingerhole subsection when its toggle turns an on hole off, and a fresh tool selection doesn't reopen it", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    // Selecting the tool auto-closes Fingerhole (Shape is what's relevant to
+    // a tool selection) — reopen it by hand, as a user inspecting it would.
+    fireEvent.click(screen.getByText("Wrench"));
+    const details = screen.getByText("Fingerhole").closest("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    fireEvent.click(screen.getByText("Fingerhole"));
+    expect(details.open).toBe(true);
+
+    const toggle = screen.getByRole("button", { name: "On" });
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(details.open).toBe(false));
+
+    // Re-selecting the same (now off) tool must not reopen it — only an
+    // actual finger-hole point selection does that.
+    fireEvent.click(screen.getByText("Pliers"));
+    fireEvent.click(screen.getByText("Wrench"));
+    expect(details.open).toBe(false);
+  });
 });

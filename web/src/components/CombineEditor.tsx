@@ -25,6 +25,7 @@ import { Section } from "./sidebar/Section";
 import { Sidebar } from "./sidebar/Sidebar";
 import { Subsection } from "./sidebar/Subsection";
 import { useFold } from "./sidebar/useFold";
+import { usePersistedBoolean } from "./sidebar/usePersistedBoolean";
 import { commitOnChange } from "../domEvents";
 import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
@@ -436,15 +437,22 @@ export function CombineEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showPreview3d, setShowPreview3d] = useState(false);
-  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
-  const binConfigFold = useFold(true);
-  const toolConfigFold = useFold(true);
-  const shapeFold = useFold(true);
-  const alignFold = useFold(true);
-  const fingerholeFold = useFold(true);
-  const editorConfigFold = useFold(true);
-  const toolsListFold = useFold(true);
+  const { value: leftSidebarCollapsed, toggle: toggleLeftSidebarCollapsed } = usePersistedBoolean(
+    false, "gridshot.combine.sidebar.left.collapsed",
+  );
+  const { value: rightSidebarCollapsed, toggle: toggleRightSidebarCollapsed } = usePersistedBoolean(
+    false, "gridshot.combine.sidebar.right.collapsed",
+  );
+  // Bin config / Tool config / Editor config / Tools all start closed with
+  // no prior session state (a quieter initial view) — Tool config's own
+  // forceOpen effect below still opens it the moment something's selected.
+  const binConfigFold = useFold(false, "gridshot.combine.fold.binConfig");
+  const toolConfigFold = useFold(false, "gridshot.combine.fold.toolConfig");
+  const shapeFold = useFold(true, "gridshot.combine.fold.shape");
+  const alignFold = useFold(true, "gridshot.combine.fold.align");
+  const fingerholeFold = useFold(true, "gridshot.combine.fold.fingerhole");
+  const editorConfigFold = useFold(false, "gridshot.combine.fold.editorConfig");
+  const toolsListFold = useFold(false, "gridshot.combine.fold.toolsList");
   const [glbUrl, setGlbUrl] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
@@ -585,11 +593,26 @@ export function CombineEditor({
     if (selectedTools.length > 0 || selectedFingerHoleToolIds.size > 0) toolConfigFold.forceOpen();
   }, [selectedTools.length, selectedFingerHoleToolIds.size, toolConfigFold.forceOpen]);
 
-  // Fingerhole expands specifically when a finger hole gets selected (not
-  // merely a tool) — matches "expands if the user has selected a fingerhole".
+  // Shape and Fingerhole track whichever kind of selection is active: a tool
+  // selection opens Shape and closes Fingerhole, a finger-hole selection
+  // does the reverse. Tool and finger-hole selection are mutually exclusive
+  // in this editor (selecting one always clears the other — see down() and
+  // downFingerHole()), so these two effects never fight each other.
+  // Deselecting to nothing triggers neither, leaving whichever the user last
+  // set alone — same "never fold what was manually opened" rule as before.
   useEffect(() => {
-    if (selectedFingerHoleToolIds.size > 0) fingerholeFold.forceOpen();
-  }, [selectedFingerHoleToolIds.size, fingerholeFold.forceOpen]);
+    if (selectedTools.length > 0) {
+      shapeFold.forceOpen();
+      fingerholeFold.forceClose();
+    }
+  }, [selectedTools.length, shapeFold.forceOpen, fingerholeFold.forceClose]);
+
+  useEffect(() => {
+    if (selectedFingerHoleToolIds.size > 0) {
+      fingerholeFold.forceOpen();
+      shapeFold.forceClose();
+    }
+  }, [selectedFingerHoleToolIds.size, fingerholeFold.forceOpen, shapeFold.forceClose]);
 
   // Esc clears the selection, and Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z undo/redo,
   // from anywhere in the modal — except while typing in a field, where none
@@ -2295,7 +2318,6 @@ export function CombineEditor({
   const fingerAllOn = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole);
   const fingerAllOff = selectedTools.length > 0 && selectedTools.every((t) => !t.finger_hole);
   const fingerMixed = selectedTools.length > 0 && !fingerAllOn && !fingerAllOff;
-  const fingerOverrideAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override === null);
   const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
   const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
   const fingerAlignPlan = layout ? computeFingerAlignPlan(
@@ -2344,17 +2366,17 @@ export function CombineEditor({
       <div className="mt-3 border-t border-line pt-3">
         <span className="font-mono text-[10px] uppercase text-muted">Horizontal align</span>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("left")}>⇤ Left</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("hcenter")}>↔ Center</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("right")}>Right ⇥</button>
         </div>
       </div>
       <div className="mt-3 border-t border-line pt-3">
         <span className="font-mono text-[10px] uppercase text-muted">Vertical align</span>
         <div className="mt-1 grid grid-cols-3 gap-1">
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
-          <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("top")}>⇡ Top</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("vcenter")}>↕ Middle</button>
+          <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 2} onClick={() => alignSelected("bottom")}>Bottom ⇣</button>
         </div>
       </div>
     </>
@@ -2364,8 +2386,8 @@ export function CombineEditor({
     <div className="mt-3 border-t border-line pt-3">
       <span className="font-mono text-[10px] uppercase text-muted">Distribute</span>
       <div className="mt-1 grid grid-cols-2 gap-1">
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("horizontal")}>↔ Horizontally</button>
-        <button className="btn btn-ghost text-knockout border-line text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("vertical")}>↕ Vertically</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("horizontal")}>↔ Horizontally</button>
+        <button className="btn btn-ghost text-[10px] !px-1 !py-2" disabled={selectedTools.length < 3} onClick={() => distributeSelected("vertical")}>↕ Vertically</button>
       </div>
     </div>
   );
@@ -2451,6 +2473,21 @@ export function CombineEditor({
               onClick={handleClose}
             >
               Close
+            </button>
+            <button
+              type="button"
+              aria-pressed={showPreview3d}
+              className={`btn !px-2 !py-1 text-[10px] normal-case ml-2 ${showPreview3d ? "border-teal text-teal" : "btn-ghost"}`}
+              onClick={() => setShowPreview3d((v) => !v)}
+            >
+              Preview 3D
+            </button>
+            <button
+              className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
+              disabled={busy}
+              onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}
+            >
+              ↻ Auto-pack
             </button>
           </span>
           {layout && (
@@ -2554,19 +2591,11 @@ export function CombineEditor({
         <Sidebar
           side="left"
           collapsed={leftSidebarCollapsed}
-          onToggleCollapse={() => setLeftSidebarCollapsed((c) => !c)}
+          onToggleCollapse={toggleLeftSidebarCollapsed}
         >
           <ControlGroup>
-            <button
-              type="button"
-              aria-pressed={showPreview3d}
-              className={`btn w-full text-xs ${showPreview3d ? "border-teal text-teal" : "btn-ghost"}`}
-              onClick={() => setShowPreview3d((v) => !v)}
-            >
-              Preview 3D
-            </button>
           {!showPreview3d && (
-            <div className="mt-2">
+            <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[10px] uppercase text-muted">Toolshapes</span>
                 <button
@@ -2669,13 +2698,6 @@ export function CombineEditor({
               )}
             </div>
           )}
-            <button
-              className="btn mt-2 w-full text-xs"
-              disabled={busy}
-              onClick={() => { pushSnapshot(); void load(undefined, overridesFor(tools), fillHeightPct); }}
-            >
-              ↻ Auto-pack
-            </button>
           </ControlGroup>
           <Section title="Editor config" open={editorConfigFold.open} onToggle={editorConfigFold.toggle}>
             <label className="block">
@@ -3038,7 +3060,7 @@ export function CombineEditor({
         <Sidebar
           side="right"
           collapsed={rightSidebarCollapsed}
-          onToggleCollapse={() => setRightSidebarCollapsed((c) => !c)}
+          onToggleCollapse={toggleRightSidebarCollapsed}
         >
           <Section title="Bin config" open={binConfigFold.open} onToggle={binConfigFold.toggle}>
           <div>
@@ -3286,45 +3308,50 @@ export function CombineEditor({
             onToggle={toolConfigFold.toggle}
             disabled={selectedTools.length === 0 && selectedFingerHoleToolIds.size === 0}
           >
-          <ControlGroup>
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs text-knockout">
-                {selectedTool
-                  ? (selectedTool.label || selectedTool.id.slice(0, 8))
-                  : selectedTools.length > 1
-                  ? `${selectedTools.length} tools selected`
-                  : "No tool selected"}
-              </span>
-              {selectedTools.length > 0 && (
-                <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
-              )}
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                className="btn btn-ghost !py-1 text-[10px]"
-                disabled={busy || duplicateBusy || !selectedTool}
-                onClick={() => void duplicateSelectedTool()}
-              >
-                {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost !py-1 text-[10px]"
-                disabled={busy || removeBusy || selectedIds.size === 0 || toolIds.length - selectedIds.size < 2}
-                title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
-                onClick={() => void removeSelectedTools()}
-              >
-                {removeBusy
-                  ? "Removing…"
-                  : `🗑 Remove${selectedTools.length > 1 ? ` ${selectedTools.length} tools` : ""}`}
-              </button>
-            </div>
-            {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
-            {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
-          </ControlGroup>
+          <Subsection
+            title="Shape"
+            open={shapeFold.open}
+            onToggle={shapeFold.toggle}
+            relevant={selectedTools.length > 0}
+          >
+            <ControlGroup>
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs text-knockout">
+                  {selectedTool
+                    ? (selectedTool.label || selectedTool.id.slice(0, 8))
+                    : selectedTools.length > 1
+                    ? `${selectedTools.length} tools selected`
+                    : "No tool selected"}
+                </span>
+                {selectedTools.length > 0 && (
+                  <span className="shrink-0 font-mono text-[9px] uppercase text-muted">Esc to clear</span>
+                )}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  className="btn btn-ghost !py-1 text-[10px]"
+                  disabled={busy || duplicateBusy || !selectedTool}
+                  onClick={() => void duplicateSelectedTool()}
+                >
+                  {duplicateBusy ? "Duplicating…" : "⧉ Duplicate"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost !py-1 text-[10px]"
+                  disabled={busy || removeBusy || selectedIds.size === 0 || toolIds.length - selectedIds.size < 2}
+                  title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
+                  onClick={() => void removeSelectedTools()}
+                >
+                  {removeBusy
+                    ? "Removing…"
+                    : `🗑 Remove${selectedTools.length > 1 ? ` ${selectedTools.length} tools` : ""}`}
+                </button>
+              </div>
+              {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
+              {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
+            </ControlGroup>
 
-          <Subsection title="Shape" open={shapeFold.open} onToggle={shapeFold.toggle}>
             {selectedTool?.toolshape_type === "rounded_rect" && (
               <ControlGroup title="Rounded rectangle">
                 <div className="grid grid-cols-2 gap-2">
@@ -3592,7 +3619,12 @@ export function CombineEditor({
             </ControlGroup>
           </Subsection>
 
-          <Subsection title="Align" open={alignFold.open} onToggle={alignFold.toggle}>
+          <Subsection
+            title="Align"
+            open={alignFold.open}
+            onToggle={alignFold.toggle}
+            relevant={selectedTools.length >= 2}
+          >
             {alignButtons}
             {distributeButtons}
           </Subsection>
@@ -3601,6 +3633,7 @@ export function CombineEditor({
             title="Fingerhole"
             open={fingerholeFold.open}
             onToggle={fingerholeFold.toggle}
+            relevant={selectedFingerHoleToolIds.size > 0}
             tooltip={
               selectedFingerHoleTool?.finger_hole_span ? (
                 <>
@@ -3617,39 +3650,25 @@ export function CombineEditor({
                 </>
               )
             }
-            foldedSummary={
+            headerExtra={
               <button
                 aria-pressed={fingerAllOn}
-                className={`btn shrink-0 !px-2 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                className={`btn shrink-0 !px-2 !py-0.5 text-[10px] normal-case ${fingerAllOn ? "border-teal text-teal" : "btn-ghost"}`}
                 disabled={busy || selectedTools.length === 0}
-                onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
+                onClick={() => {
+                  const turningOff = !fingerMixed && fingerAllOn;
+                  void setFingerHole(fingerMixed ? true : !fingerAllOn);
+                  if (turningOff) fingerholeFold.forceClose();
+                }}
               >
                 {fingerMixed ? "–" : fingerAllOn ? "On" : "Off"}
               </button>
             }
           >
             <ControlGroup>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-knockout">Finger access</div>
-                  <div className="truncate text-muted">
-                    {selectedTools.length === 0
-                      ? "No tool selected"
-                      : fingerOverrideAllInherited ? "Inherited from library" : fingerOverrideAllOverridden ? "Override for this bin" : "Mixed"}
-                  </div>
-                </div>
-                <button
-                  aria-pressed={fingerAllOn}
-                  className={`btn shrink-0 !px-3 !py-1 text-[10px] ${fingerAllOn ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
-                  disabled={busy || selectedTools.length === 0}
-                  onClick={() => void setFingerHole(fingerMixed ? true : !fingerAllOn)}
-                >
-                  {fingerMixed ? "–" : fingerAllOn ? "On" : "Off"}
-                </button>
-              </div>
               {fingerOverrideAllOverridden && (
                 <button
-                  className="mt-2 w-full text-left text-teal hover:text-knockout"
+                  className="w-full text-left text-teal hover:text-knockout"
                   disabled={busy}
                   onClick={() => void setFingerHole(null)}
                 >
@@ -3657,7 +3676,7 @@ export function CombineEditor({
                 </button>
               )}
               <button
-                className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
+                className={`w-full btn btn-ghost text-[10px] !py-1 ${fingerOverrideAllOverridden ? "mt-2" : ""}`}
                 disabled={busy || selectedTools.length < 2}
                 title="Copy the bottom-most selected tool's finger-hole style (on/off, span, diameter) onto every other selected tool — a tool with no hole yet gets its own auto-placed point, existing points never move"
                 onClick={() => void copyFingerHoleStyle()}
@@ -3734,7 +3753,7 @@ export function CombineEditor({
                       <span className="text-muted">Span both sides</span>
                       <button
                         aria-pressed={selectedFingerHoleTool.finger_hole_span}
-                        className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost text-knockout border-line"}`}
+                        className={`btn shrink-0 !px-3 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_span ? "border-teal text-teal" : "btn-ghost"}`}
                         disabled={busy}
                         onClick={() => spanFingerHole(selectedFingerHoleTool.id, !selectedFingerHoleTool.finger_hole_span)}
                       >
@@ -3754,7 +3773,7 @@ export function CombineEditor({
             )}
 
             <button
-              className="mt-2 w-full btn btn-ghost text-knockout border-line text-[10px] !py-1"
+              className="mt-2 w-full btn btn-ghost text-[10px] !py-1"
               disabled={busy || selectedFingerHoleTools.length < 2 || !fingerAlignPlan}
               title="Align every selected finger hole onto one line — needs at least 2 holes travelling on the same axis (horizontal or vertical), aligned to the bottom-most (or left-most) one"
               onClick={alignFingerHoles}
