@@ -85,3 +85,80 @@ class TestMagnetHoles:
             grid_mod.bin_solid(
                 2, 1, 3, magnet_holes=True, magnet_hole_depth_mm=0.0,
             )
+
+
+class TestMagnetCornersOnly:
+    """`magnet_corners_only` cuts a hole only where a foot corner is a convex
+    corner of the bin's own footprint — see gridfinity._magnet_corner_signs
+    and docs/magnet-holes.md."""
+
+    def _included(self, gx, gy, missing):
+        return frozenset(
+            (x, y) for x in range(gx) for y in range(gy) if (x, y) not in missing
+        )
+
+    def test_disabled_leaves_the_solid_unchanged_by_corners_only_alone(self):
+        """magnet_corners_only is a no-op unless magnet_holes is also on."""
+        off = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 2, 3, magnet_corners_only=True)
+        ).volume
+        plain = grid_mod.to_trimesh(grid_mod.bin_solid(2, 2, 3)).volume
+
+        assert off == pytest.approx(plain)
+
+    def test_plain_rectangle_gets_exactly_one_hole_per_outer_corner(self):
+        """A plain gx*gy rectangle has exactly 4 outer corners, regardless of
+        how many feet it has — vs. 4 holes per foot when corners_only is off."""
+        gx, gy = 2, 2
+        plain = grid_mod.to_trimesh(grid_mod.bin_solid(gx, gy, 3)).volume
+        corners_only = grid_mod.to_trimesh(
+            grid_mod.bin_solid(gx, gy, 3, magnet_holes=True, magnet_corners_only=True)
+        ).volume
+        every_corner = grid_mod.to_trimesh(
+            grid_mod.bin_solid(gx, gy, 3, magnet_holes=True, magnet_corners_only=False)
+        ).volume
+
+        radius = grid_mod.MAGNET_HOLE_DIAMETER_MM / 2
+        one_hole = math.pi * radius**2 * grid_mod.MAGNET_HOLE_DEPTH_MM
+
+        assert (plain - corners_only) == pytest.approx(4 * one_hole, rel=0.02)
+        assert (plain - every_corner) == pytest.approx(gx * gy * 4 * one_hole, rel=0.02)
+
+    def test_worked_example_one_notched_corner_cell(self):
+        """3x3 grid missing its (2, 0) corner cell: the notch exposes two new
+        convex corners (one on each neighbour of the missing cell) in
+        addition to the rectangle's 3 untouched corners — 5 magnet corners
+        total, none of them doubled up on one cell."""
+        included = self._included(3, 3, {(2, 0)})
+
+        totals = {
+            cell: grid_mod._magnet_corner_signs(cell[0], cell[1], 3, 3, included)
+            for cell in included
+        }
+        nonzero = {cell: signs for cell, signs in totals.items() if signs}
+
+        assert sum(len(signs) for signs in totals.values()) == 5
+        assert set(nonzero) == {(0, 0), (1, 0), (2, 1), (0, 2), (2, 2)}
+        assert all(len(signs) == 1 for signs in nonzero.values())
+
+    def test_worked_example_two_notches_leave_a_middle_bridge(self):
+        """4x3 grid missing (3, 0), (0, 1), (3, 1): the two end columns each
+        get a doubled-up corner (2 magnets, one per exposed edge) on the
+        surviving cell that used to be a full corner; the single-cell bridge
+        cells in the middle row end up fully interior/concave and get none."""
+        included = self._included(4, 3, {(3, 0), (0, 1), (3, 1)})
+
+        totals = {
+            cell: grid_mod._magnet_corner_signs(cell[0], cell[1], 4, 3, included)
+            for cell in included
+        }
+        nonzero = {cell: signs for cell, signs in totals.items() if signs}
+
+        assert sum(len(signs) for signs in totals.values()) == 7
+        assert set(nonzero) == {(0, 0), (2, 0), (0, 2), (3, 2)}
+        assert len(totals[(0, 0)]) == 2
+        assert len(totals[(2, 0)]) == 1
+        assert len(totals[(0, 2)]) == 2
+        assert len(totals[(3, 2)]) == 2
+        assert totals[(1, 1)] == []
+        assert totals[(2, 1)] == []

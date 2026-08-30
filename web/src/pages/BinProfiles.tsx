@@ -33,6 +33,7 @@ const DEFAULT_DRAFT: BinProfileFields = {
   magnet_holes_default: false,
   magnet_hole_diameter_mm_default: 6.5,
   magnet_hole_depth_mm_default: 2.0,
+  magnet_corners_only_default: false,
   lip_height_mm: null,
   lip_chamfer_top_mm: null,
   lip_straight_mm: null,
@@ -55,7 +56,7 @@ function profileToFields(p: BinProfile): BinProfileFields {
 type StructuralKey = Exclude<
   keyof BinProfileFields,
   "name" | "fill_height_pct" | "live_grid" | "lip" | "allow_custom_shape" | "magnet_holes_default"
-  | "magnet_hole_diameter_mm_default" | "magnet_hole_depth_mm_default"
+  | "magnet_hole_diameter_mm_default" | "magnet_hole_depth_mm_default" | "magnet_corners_only_default"
 >;
 
 /** Only meaningful while `lip` is on — rendered in the Stacking Lip section,
@@ -369,6 +370,19 @@ export function BinProfiles() {
                         value={structuralValue("magnet_hole_inset_from_edge_mm")}
                         onChange={(e) => setStructural("magnet_hole_inset_from_edge_mm", e.target.value)}
                       />
+                    </label>
+                    <label className="col-span-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={draft.magnet_corners_only_default}
+                        onChange={(e) => set("magnet_corners_only_default", e.target.checked)}
+                      />
+                      <span
+                        className="font-mono text-[9px] uppercase text-muted"
+                        title="Only at the bin's own outer corners — far fewer holes, faster to print"
+                      >
+                        Corners only (default)
+                      </span>
                     </label>
                   </div>
                 )}

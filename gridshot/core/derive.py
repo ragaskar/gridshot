@@ -106,6 +106,7 @@ class BinSettings:
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
+    magnet_corners_only: bool = False
 
 
 @dataclass
@@ -129,6 +130,7 @@ class DerivedBinSpec:
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
+    magnet_corners_only: bool = False
     finger_holes: list[tuple[float, float, float]] = field(default_factory=list)
     # The arc-length actually used to place `finger_holes[0]` — concrete even
     # when the request left `BinSettings.finger_hole_arc_mm` unset (the
@@ -637,6 +639,7 @@ def derive_bin_spec(
         magnet_holes=settings.magnet_holes,
         magnet_hole_diameter_mm=settings.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=settings.magnet_hole_depth_mm,
+        magnet_corners_only=settings.magnet_corners_only,
         finger_holes=fingers,
         finger_hole_arc_mm=finger_hole_arc_mm,
         finger_hole_arc2_mm=finger_hole_arc2_mm,

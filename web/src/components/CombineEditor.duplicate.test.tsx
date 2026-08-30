@@ -70,7 +70,7 @@ const DUPLICATED_TOOL: LibraryTool = {
   derived_height_u: 3, derived_overall_height_mm: 25.4, derived_key: "bintool-1-aaaaaa-key",
   derived_reserved_cells: [], derived_available_cells: [],
   lip: true, round_tool: false, finger_hole: false, magnet_holes: false,
-  magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
+  magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false,
   has_photo: false, source_project: "", source_tool: "",
   created_ts: 0, thumb: "", photo_thumb: null,
   readiness: readiness(), provenance: null, outline_revision: 0,

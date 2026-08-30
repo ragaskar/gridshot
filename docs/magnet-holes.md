@@ -18,7 +18,7 @@ There's no separate "magnet bin" style — it's a checkbox plus two numbers
   checkbox for the whole combined bin, since magnet holes are a per-foot
   property of the finished object, not a per-tool one.
 - **CLI** — `gridshot trace ... --magnet-holes --magnet-hole-diameter 6.5
-  --magnet-hole-depth 2.0`.
+  --magnet-hole-depth 2.0 --magnet-corners-only`.
 
 Defaults are **6.5mm diameter, 2mm depth** — the same nominal size
 gridfinity-rebuilt-openscad's Customizer describes as "holes for 6mm Diameter
@@ -37,6 +37,25 @@ For a multi-tool combine bin where different tools have different pocket
 depths, the magnet-hole setting is still just one checkbox for the whole
 bin — it only affects the feet, which are shared, unlike each tool's own
 recess depth.
+
+## Corners only
+
+A hole at every corner of every foot is a lot of print time on a large bin,
+and most of those holes aren't doing anything a neighboring bin or plain
+friction wasn't already providing — only the feet at the bin's own outer
+corners are load-bearing for keeping it seated on a baseplate. Checking
+**"Corners only"** (alongside the magnet-holes checkbox, wherever it appears)
+cuts holes only at the foot corners that are convex corners of the bin's own
+footprint — for a plain rectangular bin, exactly 4 holes total, regardless of
+how many feet it has.
+
+This also works for a "custom bin shape" (an irregular polyomino footprint,
+built by removing grid cells): a corner counts if the two cells orthogonally
+adjacent to it — the one sharing an edge in x, and the one sharing an edge in
+y — are both absent (including "off the edge of the grid" as absent). A
+notch cut into a rectangle's corner exposes new convex corners this way, so
+it still gets pinned; a cell in the middle of a straight or concave edge
+doesn't. See `_magnet_corner_signs()` in `gridshot/core/gridfinity.py`.
 
 ## Placement, for anyone reading the geometry code
 

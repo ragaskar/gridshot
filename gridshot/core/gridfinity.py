@@ -35,7 +35,9 @@ FOOT_CHAMFER_TOP = 2.15  # z 2.6 → 4.75
 MIN_WALL = 2.0  # pocket to outer wall
 MIN_FLOOR = 1.2  # under-pocket floor above the base
 
-# Magnet holes: one per corner of every foot, per the gridfinity.xyz spec.
+# Magnet holes: one per corner of every foot, per the gridfinity.xyz spec —
+# or, with `magnet_corners_only`, only at the bin footprint's own convex
+# corners (see `_magnet_corner_signs`).
 FOOT_BOTTOM_SIZE = BIN_SIZE - 2 * (FOOT_CHAMFER_TOP + FOOT_CHAMFER_BOT)  # 35.6
 MAGNET_HOLE_INSET_FROM_EDGE_MM = 4.8  # hole centre inset from the foot's bottom edge
 MAGNET_HOLE_OFFSET_MM = FOOT_BOTTOM_SIZE / 2 - MAGNET_HOLE_INSET_FROM_EDGE_MM  # 13.0
@@ -141,6 +143,34 @@ def _plate(w: float, d: float, r: float, z: float) -> Manifold:
 def _cell_center(ix: int, iy: int, gx: int, gy: int) -> tuple[float, float]:
     """World XY of grid cell (ix, iy)'s centre, matching the feet/socket loops."""
     return (ix - (gx - 1) / 2) * PITCH, (iy - (gy - 1) / 2) * PITCH
+
+
+def _magnet_corner_signs(
+    ix: int, iy: int, gx: int, gy: int, included: frozenset[tuple[int, int]] | None
+) -> list[tuple[int, int]]:
+    """Which of foot (ix, iy)'s 4 corners are convex corners of the bin's own
+    footprint, as (sx, sy) signs (each ±1, matching the magnet-hole offset
+    applied to that corner).
+
+    A corner is convex — an outward-pointing corner of the polyomino, the
+    kind a rectangular grid has exactly 4 of — iff both cells orthogonally
+    adjacent to it (the one sharing an edge with (ix, iy) in the x direction
+    and the one in the y direction) are absent. A cell outside the gx×gy
+    grid counts as absent. This needs no diagonal check: a straight edge or
+    an interior/concave corner always has at least one of those two present.
+    """
+
+    def present(cx: int, cy: int) -> bool:
+        if not (0 <= cx < gx and 0 <= cy < gy):
+            return False
+        return included is None or (cx, cy) in included
+
+    return [
+        (sx, sy)
+        for sx in (-1, 1)
+        for sy in (-1, 1)
+        if not present(ix + sx, iy) and not present(ix, iy + sy)
+    ]
 
 
 def _rounded_polyomino_outline(
@@ -755,6 +785,7 @@ def bin_solid(
     magnet_holes: bool = False,
     magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
+    magnet_corners_only: bool = False,
     included_cells: frozenset[tuple[int, int]] | None = None,
     lip_height_mm: float = LIP_H,
     lip_chamfer_top_mm: float = LIP_CH_TOP,
@@ -801,6 +832,13 @@ def bin_solid(
     clean channel between the two lobes instead of two disconnected holes.
     `pockets` entries may carry the same thing as an optional 4th tuple
     element: `(pocket, depth, fingers, connector)`.
+
+    `magnet_corners_only`, with `magnet_holes` on, cuts a hole only at foot
+    corners that are convex corners of the bin's own footprint (both
+    orthogonally adjacent cells sharing that corner are absent) instead of
+    every corner of every foot — far fewer holes, at the cost of relying on
+    friction/adjacent bins to hold the interior feet down. See
+    `_magnet_corner_signs`.
 
     `bevel_pockets` rounds off each pocket's top opening edge with a convex
     fillet — a round-over, tangent to both the pocket wall and the bin's top
@@ -927,7 +965,7 @@ def bin_solid(
                 continue
             cx, cy = _cell_center(ix, iy, gx, gy)
             feet.append(foot.translate((cx, cy, 0)))
-            foot_centers.append((cx, cy))
+            foot_centers.append((ix, iy, cx, cy))
     solid = Manifold.batch_boolean([body, *feet], OpType.Add)
 
     if magnet_holes:
@@ -945,11 +983,15 @@ def bin_solid(
         hole = Manifold.cylinder(
             magnet_hole_depth_mm + EPS, radius, radius, CIRCULAR_SEGMENTS
         ).translate((0, 0, -EPS))
+        all_corners = ((-1, -1), (-1, 1), (1, -1), (1, 1))
         holes = [
-            hole.translate((cx + hx, cy + hy, 0))
-            for cx, cy in foot_centers
-            for hx in (-magnet_hole_offset_mm, magnet_hole_offset_mm)
-            for hy in (-magnet_hole_offset_mm, magnet_hole_offset_mm)
+            hole.translate((cx + sx * magnet_hole_offset_mm, cy + sy * magnet_hole_offset_mm, 0))
+            for ix, iy, cx, cy in foot_centers
+            for sx, sy in (
+                _magnet_corner_signs(ix, iy, gx, gy, included_cells)
+                if magnet_corners_only
+                else all_corners
+            )
         ]
         solid = solid - Manifold.batch_boolean(holes, OpType.Add)
 

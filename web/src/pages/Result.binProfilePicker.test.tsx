@@ -18,7 +18,7 @@ import { listBinProfiles } from "../api";
 const CORRAL_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
   fill_height_pct: 0, live_grid: false, lip: false, allow_custom_shape: false,
-  magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5,
+  magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5, magnet_corners_only_default: false,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
   min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
   tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
@@ -33,7 +33,7 @@ function fakeResult(): TraceResult {
       grid: [2, 1], height_u: 3, overall_height_mm: 25.4, fill_height_pct: 100, live_grid: false,
       pocket_depth_mm: 10, pocket_depth_override_mm: null, overall_height_override_mm: null,
       thickness_mm: 4, silhouette_height_mm: 4, full_height_mm: null, clearance_mm: 1,
-      lip: true, magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2,
+      lip: true, magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false,
       derivation_key: "key-1", reserved_cells: [], available_cells: [],
     },
     calibration: {

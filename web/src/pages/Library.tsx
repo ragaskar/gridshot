@@ -375,6 +375,7 @@ export function Library() {
                               magnet_holes: profile.magnet_holes_default,
                               magnet_hole_diameter_mm: profile.magnet_hole_diameter_mm_default,
                               magnet_hole_depth_mm: profile.magnet_hole_depth_mm_default,
+                              magnet_corners_only: profile.magnet_corners_only_default,
                             }).catch(() => {});
                           }}
                         >
@@ -430,6 +431,14 @@ export function Library() {
                               ref={commitOnChange((v) => Number(v) !== t.magnet_hole_depth_mm && patch(t.id, { magnet_hole_depth_mm: Number(v) }))}
                             />
                           </label>
+                          <button
+                            className={`px-2 py-1 border col-span-2 ${t.magnet_corners_only ? "text-teal border-teal" : "text-muted border-line"}`}
+                            style={{ borderRadius: 2 }}
+                            title="Only at the bin's own outer corners — far fewer holes, faster to print"
+                            onClick={() => patch(t.id, { magnet_corners_only: !t.magnet_corners_only }).catch(() => {})}
+                          >
+                            Corners only: {t.magnet_corners_only ? "on" : "off"}
+                          </button>
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">

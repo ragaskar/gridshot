@@ -61,6 +61,9 @@ export function Result() {
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(
     (result?.bin.magnet_hole_depth_mm ?? 2).toString(),
   );
+  const [magnetCornersOnly, setMagnetCornersOnly] = useState(
+    result?.bin.magnet_corners_only ?? false,
+  );
   const [regenerating, setRegenerating] = useState(false);
   const [returning, setReturning] = useState(false);
   const [editingCutout, setEditingCutout] = useState(false);
@@ -113,6 +116,7 @@ export function Result() {
           parseOptionalPositive(magnetHoleDiameter, "Magnet hole diameter") ?? undefined,
         magnet_hole_depth_mm:
           parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
+        magnet_corners_only: magnetCornersOnly,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setResult(nextResult, nextParams);
@@ -147,6 +151,7 @@ export function Result() {
           parseOptionalPositive(magnetHoleDiameter, "Magnet hole diameter") ?? undefined,
         magnet_hole_depth_mm:
           parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
+        magnet_corners_only: magnetCornersOnly,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setEditingCutout(false);
@@ -355,6 +360,7 @@ export function Result() {
                     setMagnetHoles(profile.magnet_holes_default);
                     setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
                     setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
+                    setMagnetCornersOnly(profile.magnet_corners_only_default);
                   }}
                 >
                   <option value="" disabled>Apply a bin profile…</option>
@@ -482,13 +488,28 @@ export function Result() {
                   onChange={(event) => setMagnetHoleDepth(event.target.value)}
                 />
               </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={magnetCornersOnly}
+                  disabled={regenerating || returning || !magnetHoles}
+                  onChange={(event) => setMagnetCornersOnly(event.target.checked)}
+                />
+                <span
+                  className="grp-label"
+                  title="Only at the bin's own outer corners — far fewer holes, faster to print."
+                >
+                  Corners only
+                </span>
+              </label>
             </div>
             <p className="font-mono text-[10px] text-muted mt-4">
               Finished height includes the stacking lip and snaps upward to a whole
               7 mm Gridfinity unit. Corral places its thin tool shelf at the selected
               recess depth and runs the separator to the stacking plane. Magnet holes
-              are cut at each corner of every foot; depth must stay below the 4.75 mm
-              foot height.
+              are cut at each corner of every foot (or only at the bin's own outer
+              corners, with "corners only"); depth must stay below the 4.75 mm foot
+              height.
             </p>
             {controlError && (
               <p className="font-mono text-xs text-orange mt-4">

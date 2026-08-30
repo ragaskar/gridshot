@@ -137,6 +137,7 @@ export interface TraceResult {
     magnet_holes: boolean;
     magnet_hole_diameter_mm: number;
     magnet_hole_depth_mm: number;
+    magnet_corners_only: boolean;
     derivation_key: string;
     reserved_cells: [number, number][];
     available_cells: [number, number][];
@@ -707,6 +708,7 @@ export interface LibraryTool {
   magnet_holes: boolean;
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
+  magnet_corners_only: boolean;
   has_photo: boolean;
   source_project: string;
   source_tool: string;
@@ -978,6 +980,7 @@ export async function updateLibraryTool(
     magnet_holes?: boolean;
     magnet_hole_diameter_mm?: number;
     magnet_hole_depth_mm?: number;
+    magnet_corners_only?: boolean;
     outline?: Poly;
     raw_outline?: Poly;
     edit_source?: "sam" | "manual" | "physical";
@@ -1154,6 +1157,9 @@ export interface CombineOptions {
   magnetHoles?: boolean;
   magnetHoleDiameterMm?: number | null;
   magnetHoleDepthMm?: number | null;
+  /** Only at foot corners that are convex corners of the bin's own
+   *  footprint, instead of every corner of every foot. */
+  magnetCornersOnly?: boolean;
   /** Chamfers each pocket's top opening edge — pocket-style (100% fill,
    *  live grid off) bins only, a no-op otherwise. Server default is `true`. */
   bevelPockets?: boolean;
@@ -1194,6 +1200,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     magnet_holes: options.magnetHoles ?? false,
     magnet_hole_diameter_mm: options.magnetHoleDiameterMm ?? undefined,
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
+    magnet_corners_only: options.magnetCornersOnly ?? false,
     bevel_pockets: options.bevelPockets ?? true,
     force_gx: options.forceGx ?? undefined,
     force_gy: options.forceGy ?? undefined,
@@ -1296,6 +1303,7 @@ export interface SavedBin {
   magnet_holes: boolean;
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
+  magnet_corners_only: boolean;
   bevel_pockets: boolean;
   force_gx: number | null;
   force_gy: number | null;
@@ -1423,6 +1431,7 @@ export interface BinProfile {
   magnet_holes_default: boolean;
   magnet_hole_diameter_mm_default: number;
   magnet_hole_depth_mm_default: number;
+  magnet_corners_only_default: boolean;
   lip_height_mm: number | null;
   lip_chamfer_top_mm: number | null;
   lip_straight_mm: number | null;
@@ -1554,6 +1563,7 @@ export interface GenerateParams {
   magnet_holes?: boolean;
   magnet_hole_diameter_mm?: number;
   magnet_hole_depth_mm?: number;
+  magnet_corners_only?: boolean;
 }
 
 export async function startSession(
@@ -1658,6 +1668,7 @@ export async function sessionAddToLibrary(
     fd.append("magnet_hole_diameter_mm", String(params.magnet_hole_diameter_mm));
   if (params.magnet_hole_depth_mm != null)
     fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
+  fd.append("magnet_corners_only", String(params.magnet_corners_only ?? false));
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/library`, { method: "POST", body: fd });
   if (!r.ok) {
@@ -1689,6 +1700,7 @@ export async function sessionGenerate(
     fd.append("magnet_hole_diameter_mm", String(params.magnet_hole_diameter_mm));
   if (params.magnet_hole_depth_mm != null)
     fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
+  fd.append("magnet_corners_only", String(params.magnet_corners_only ?? false));
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/generate`, { method: "POST", body: fd });
   if (!r.ok) {

@@ -591,6 +591,9 @@ def trace(
     magnet_hole_depth: Optional[float] = typer.Option(
         None, help="Magnet hole depth, mm (default: 2.0)."
     ),
+    magnet_corners_only: bool = typer.Option(
+        False, help="Only cut magnet holes at the bin's own outer corners, not every foot."
+    ),
     mat: Optional[str] = typer.Option(None, help="Mat id (default: the single verified mat)."),
     out: Path = typer.Option(Path("out"), help="Output directory."),
 ) -> None:
@@ -615,6 +618,7 @@ def trace(
         magnet_holes=magnet_holes,
         magnet_hole_diameter_mm=magnet_hole_diameter or grid_mod.MAGNET_HOLE_DIAMETER_MM,
         magnet_hole_depth_mm=magnet_hole_depth or grid_mod.MAGNET_HOLE_DEPTH_MM,
+        magnet_corners_only=magnet_corners_only,
         mat_id=mat,
         out_dir=out,
     )

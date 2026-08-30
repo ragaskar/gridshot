@@ -63,6 +63,40 @@ class TestMagnetHolesInFinalizeBin:
             tmp_path, stem="bigger", magnet_holes=True,
             magnet_hole_diameter_mm=8.0,
         )
+        corners_only = _finalize(
+            tmp_path, stem="corners", magnet_holes=True, magnet_corners_only=True,
+        )
 
-        keys = {off.derivation_key, on.derivation_key, different_size.derivation_key}
-        assert len(keys) == 3
+        keys = {
+            off.derivation_key, on.derivation_key, different_size.derivation_key,
+            corners_only.derivation_key,
+        }
+        assert len(keys) == 4
+
+
+class TestMagnetCornersOnlyInFinalizeBin:
+    def test_disabled_by_default(self, tmp_path):
+        result = _finalize(tmp_path)
+
+        assert result.magnet_corners_only is False
+
+    def test_result_reports_the_effective_setting(self, tmp_path):
+        result = _finalize(tmp_path, magnet_holes=True, magnet_corners_only=True)
+
+        assert result.magnet_corners_only is True
+
+    def test_reduces_the_generated_mesh_volume_less_than_every_corner(self, tmp_path):
+        """A 2x1 tool bin has 2 feet — corners_only should remove fewer holes
+        than the every-foot-corner default, since interior corners are skipped."""
+        plain = trimesh.load(_finalize(tmp_path, stem="plain").files["stl"])
+        corners_only = trimesh.load(
+            _finalize(
+                tmp_path, stem="corners", magnet_holes=True, magnet_corners_only=True,
+            ).files["stl"]
+        )
+        every_corner = trimesh.load(
+            _finalize(tmp_path, stem="every", magnet_holes=True).files["stl"]
+        )
+
+        assert corners_only.volume < plain.volume
+        assert corners_only.volume > every_corner.volume

@@ -15,7 +15,7 @@ import { getHealth, listBinProfiles } from "../api";
 const CORRAL_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
   fill_height_pct: 0, live_grid: false, lip: false, allow_custom_shape: false,
-  magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0,
+  magnet_holes_default: false, magnet_hole_diameter_mm_default: 6.5, magnet_hole_depth_mm_default: 2.0, magnet_corners_only_default: false,
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
   min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
   tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
