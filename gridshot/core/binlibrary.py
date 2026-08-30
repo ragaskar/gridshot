@@ -83,6 +83,11 @@ class SavedBin(BaseModel):
     # Pydantic default) — a deliberate geometry change to bins saved before
     # this existed, per the "checked by default" ask, not just new ones.
     bevel_pockets: bool = True
+    # How large `bevel_pockets`'s round-over is, in mm — see
+    # grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius. Same
+    # legacy-backfill reasoning as bevel_pockets above: a record predating
+    # this field gets the same 0.6mm default it always rendered at.
+    pocket_round_radius_mm: float = grid_mod.POCKET_ROUND_RADIUS_MM
     force_gx: Optional[int] = None
     force_gy: Optional[int] = None
     removed_cells: Optional[list[tuple[int, int]]] = None

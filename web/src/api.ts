@@ -1163,6 +1163,10 @@ export interface CombineOptions {
   /** Chamfers each pocket's top opening edge — pocket-style (100% fill,
    *  live grid off) bins only, a no-op otherwise. Server default is `true`. */
   bevelPockets?: boolean;
+  /** How large that round-over is, in mm — still clamped per-bin against
+   *  whichever wall margin is tightest, so a value past that margin is a
+   *  silent no-op past the ceiling, not an error. Server default is 0.6. */
+  pocketRoundRadiusMm?: number | null;
   forceGx?: number | null;
   forceGy?: number | null;
   removedCells?: [number, number][] | null;
@@ -1202,6 +1206,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
     magnet_corners_only: options.magnetCornersOnly ?? false,
     bevel_pockets: options.bevelPockets ?? true,
+    pocket_round_radius_mm: options.pocketRoundRadiusMm ?? undefined,
     force_gx: options.forceGx ?? undefined,
     force_gy: options.forceGy ?? undefined,
     removed_cells: options.removedCells ?? undefined,
@@ -1305,6 +1310,7 @@ export interface SavedBin {
   magnet_hole_depth_mm: number;
   magnet_corners_only: boolean;
   bevel_pockets: boolean;
+  pocket_round_radius_mm: number;
   force_gx: number | null;
   force_gy: number | null;
   removed_cells: [number, number][] | null;

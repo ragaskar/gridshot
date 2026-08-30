@@ -31,6 +31,7 @@ export function fakeSavedBin(
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? 2,
     magnet_corners_only: options.magnetCornersOnly ?? false,
     bevel_pockets: options.bevelPockets ?? true,
+    pocket_round_radius_mm: options.pocketRoundRadiusMm ?? 0.6,
     force_gx: options.forceGx ?? null,
     force_gy: options.forceGy ?? null,
     removed_cells: options.removedCells ?? null,

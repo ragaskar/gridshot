@@ -178,6 +178,7 @@ describe("CombineEditor finger-hole radial offset", () => {
       id: "bin-1", label: "Reopened bin", appliedProfileId: null,
       placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
       magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false, bevelPockets: true,
+      pocketRoundRadiusMm: 0.6,
       forceGx: null, forceGy: null, removedCells: null,
       lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
       minWallMm: null, minFloorMm: null, floorThicknessMm: null, toolWallMm: null,

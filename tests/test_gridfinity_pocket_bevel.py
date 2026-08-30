@@ -2,7 +2,9 @@
 each pocket's top opening edge — plus its finger holes and their
 connector — in bin_solid's fast path with a convex fillet, cutting a little
 extra material at the sharp edge where the pocket wall meets the bin's top
-surface — see grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius."""
+surface — see grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius.
+`pocket_round_radius_mm` controls how large that fillet is (still clamped
+per-bin against the tightest wall margin in play)."""
 
 from __future__ import annotations
 
@@ -47,6 +49,26 @@ class TestPocketTopBevel:
         plain = grid_mod.to_trimesh(_bin_with_pocket(bevel_pockets=False)).volume
         beveled = grid_mod.to_trimesh(_bin_with_pocket(bevel_pockets=True)).volume
         assert beveled < plain
+
+    def test_larger_configured_radius_removes_more_material(self):
+        small = grid_mod.to_trimesh(
+            _bin_with_pocket(bevel_pockets=True, pocket_round_radius_mm=0.6)
+        ).volume
+        large = grid_mod.to_trimesh(
+            _bin_with_pocket(bevel_pockets=True, pocket_round_radius_mm=1.0)
+        ).volume
+        assert large < small - 1e-6
+
+    def test_configured_radius_still_clamps_to_the_wall_margin(self):
+        # tool_wall_mm/2 caps the round-over at 1.0mm by default (TOOL_WALL=2.0)
+        # regardless of how large a radius is requested.
+        at_margin = grid_mod.to_trimesh(
+            _bin_with_pocket(bevel_pockets=True, pocket_round_radius_mm=1.0)
+        ).volume
+        past_margin = grid_mod.to_trimesh(
+            _bin_with_pocket(bevel_pockets=True, pocket_round_radius_mm=5.0)
+        ).volume
+        assert past_margin == pytest.approx(at_margin)
 
     def test_produces_a_watertight_mesh(self):
         mesh = grid_mod.to_trimesh(_bin_with_pocket(bevel_pockets=True))
@@ -232,3 +254,38 @@ class TestBevelPocketsRequestWiring:
             "placements": [{"id": "tool-a", "tx": 0.0, "ty": 0.0}],
         })
         assert legacy.bevel_pockets is True
+
+
+class TestPocketRoundRadiusRequestWiring:
+    def test_defaults_to_the_module_constant_when_omitted(self, client, library_dir):
+        _seed_two_tools()
+        response = client.post("/api/library/combine/preview.glb", json={"ids": ["tool-a", "tool-b"]})
+        assert response.status_code == 200
+
+    def test_rejects_a_negative_radius(self, client, library_dir):
+        _seed_two_tools()
+        response = client.post(
+            "/api/library/combine/preview.glb",
+            json={"ids": ["tool-a", "tool-b"], "pocket_round_radius_mm": -0.1},
+        )
+        assert response.status_code == 422
+
+    def test_persists_on_a_saved_bin_and_round_trips_through_reopen(self, client, library_dir):
+        _seed_two_tools()
+        saved = client.post("/api/bins", json={
+            "ids": ["tool-a", "tool-b"], "label": "Big-fillet bin", "pocket_round_radius_mm": 1.0,
+        }).json()
+        assert saved["pocket_round_radius_mm"] == pytest.approx(1.0)
+
+        listed = client.get("/api/bins").json()["bins"]
+        assert next(b for b in listed if b["id"] == saved["id"])["pocket_round_radius_mm"] == pytest.approx(1.0)
+
+    def test_legacy_saved_bin_without_the_field_backfills_to_the_module_constant(self, tmp_path, monkeypatch):
+        from gridshot.core import binlibrary as binlibrary_mod
+
+        monkeypatch.setenv("GRIDSHOT_CONFIG_DIR", str(tmp_path))
+        legacy = binlibrary_mod.SavedBin.model_validate({
+            "id": "bin-legacy", "tool_ids": ["tool-a"],
+            "placements": [{"id": "tool-a", "tx": 0.0, "ty": 0.0}],
+        })
+        assert legacy.pocket_round_radius_mm == pytest.approx(grid_mod.POCKET_ROUND_RADIUS_MM)

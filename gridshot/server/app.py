@@ -2563,6 +2563,12 @@ class CombineRequest(BaseModel):
     # fill_height_pct=100, live_grid off) — a no-op otherwise, same scoping
     # as the existing per-tool bottom fillet.
     bevel_pockets: bool = True
+    # How large `bevel_pockets`'s round-over is, in mm — see
+    # grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius. Still clamped
+    # per-bin against whichever wall margin is tightest, so a value past that
+    # margin is a silent no-op past the ceiling, not an error. Bin-level, not
+    # a BinProfile field, same scoping as bevel_pockets above.
+    pocket_round_radius_mm: float = Field(ge=0, default=grid_mod.POCKET_ROUND_RADIUS_MM)
     # Only consulted by the /combine/slice route; None falls back to the
     # standard 1mm trace-tolerance thickness.
     # The upper bound here is just a sanity ceiling — slice_window() already
@@ -3240,6 +3246,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
             magnet_corners_only=req.magnet_corners_only,
             bevel_pockets=req.bevel_pockets,
+            pocket_round_radius_mm=req.pocket_round_radius_mm,
             included_cells=lay.get("included_cells"),
             lip_height_mm=lay["lip_height_mm"],
             lip_chamfer_top_mm=lay["lip_chamfer_top_mm"],
@@ -3355,6 +3362,7 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         magnet_hole_depth_mm=saved.magnet_hole_depth_mm,
         magnet_corners_only=saved.magnet_corners_only,
         bevel_pockets=saved.bevel_pockets,
+        pocket_round_radius_mm=saved.pocket_round_radius_mm,
         force_gx=saved.force_gx,
         force_gy=saved.force_gy,
         removed_cells=saved.removed_cells,
@@ -3397,6 +3405,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
         "magnet_corners_only": saved.magnet_corners_only,
         "bevel_pockets": saved.bevel_pockets,
+        "pocket_round_radius_mm": saved.pocket_round_radius_mm,
         "force_gx": saved.force_gx,
         "force_gy": saved.force_gy,
         "removed_cells": saved.removed_cells,
@@ -3481,6 +3490,7 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
         magnet_hole_depth_mm=req.magnet_hole_depth_mm,
         magnet_corners_only=req.magnet_corners_only,
         bevel_pockets=req.bevel_pockets,
+        pocket_round_radius_mm=req.pocket_round_radius_mm,
         force_gx=req.force_gx,
         force_gy=req.force_gy,
         removed_cells=req.removed_cells,

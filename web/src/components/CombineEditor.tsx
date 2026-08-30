@@ -240,6 +240,7 @@ export interface CombineEditorInitial {
   magnetHoleDepthMm: number;
   magnetCornersOnly: boolean;
   bevelPockets: boolean;
+  pocketRoundRadiusMm: number;
   forceGx: number | null;
   forceGy: number | null;
   removedCells: [number, number][] | null;
@@ -333,6 +334,7 @@ interface Snapshot {
   magnetHoleDepth: string;
   magnetCornersOnly: boolean;
   bevelPockets: boolean;
+  pocketRoundRadiusMm: string;
   forceSize: boolean;
   forceGx: string;
   forceGy: string;
@@ -455,6 +457,7 @@ export function CombineEditor({
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
   const [magnetCornersOnly, setMagnetCornersOnly] = useState(initial?.magnetCornersOnly ?? false);
   const [bevelPockets, setBevelPockets] = useState(initial?.bevelPockets ?? true);
+  const [pocketRoundRadiusMm, setPocketRoundRadiusMm] = useState(String(initial?.pocketRoundRadiusMm ?? "0.6"));
   const [nudge, setNudge] = useState("0.1");
   const [sliceDialogOpen, setSliceDialogOpen] = useState(false);
   const [sliceThickness, setSliceThickness] = useState("1.0"); // mirrors grid_mod.SLICE_THICKNESS_MM
@@ -765,6 +768,7 @@ export function CombineEditor({
         magnetHoleDepthMm: Number(magnetHoleDepthOverride),
         magnetCornersOnly: magnetCornersOnlyOverride,
         bevelPockets: bevelPocketsOverride,
+        pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: force ? force[0] : null,
         forceGy: force ? force[1] : null,
         removedCells: removed,
@@ -886,6 +890,7 @@ export function CombineEditor({
       magnetHoleDepth,
       magnetCornersOnly,
       bevelPockets,
+      pocketRoundRadiusMm,
       forceSize,
       forceGx,
       forceGy,
@@ -948,6 +953,7 @@ export function CombineEditor({
     setMagnetHoleDepth(s.magnetHoleDepth);
     setMagnetCornersOnly(s.magnetCornersOnly);
     setBevelPockets(s.bevelPockets);
+    setPocketRoundRadiusMm(s.pocketRoundRadiusMm);
     setForceSize(s.forceSize);
     setForceGx(s.forceGx);
     setForceGy(s.forceGy);
@@ -1323,6 +1329,7 @@ export function CombineEditor({
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
         bevelPockets,
+        pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
         ...structural,
       })
@@ -1343,7 +1350,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, forceSize, forceGx, forceGy, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -1368,7 +1375,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
     };
-  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
+  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
 
   /** Close never silently drops a still-debouncing autosave — flush it right
    *  now (the request survives this component unmounting; only the local
@@ -2069,6 +2076,7 @@ export function CombineEditor({
         magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
         bevelPockets,
+        pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
         removedCells: effectiveRemovedCells(fillHeightPct),
@@ -2100,6 +2108,7 @@ export function CombineEditor({
         magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
         bevelPockets,
+        pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         sliceThicknessMm: thicknessMm,
         forceGx: force ? Number(forceGx) : null,
         forceGy: force ? Number(forceGy) : null,
@@ -2346,6 +2355,7 @@ export function CombineEditor({
       magnetHoleDepthMm: Number(magnetHoleDepth),
       magnetCornersOnly,
       bevelPockets,
+      pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
       forceGx: force ? Number(forceGx) : null,
       forceGy: force ? Number(forceGy) : null,
       removedCells: effectiveRemovedCells(fillHeightPct),
@@ -3336,6 +3346,23 @@ export function CombineEditor({
             />
             <span className="font-mono text-[10px] uppercase text-muted">Round pocket edges</span>
           </label>
+          {bevelPockets && (
+            <label className="mb-1 block min-w-0">
+              <span className="block font-mono text-[9px] uppercase text-muted">Round radius (mm)</span>
+              <input
+                aria-label="Pocket round radius"
+                className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                type="number" step={0.01} min={0}
+                value={pocketRoundRadiusMm}
+                title="Still clamped to whichever surrounding wall margin is tightest — a value past that margin has no further visible effect."
+                onChange={(event) => {
+                  pushSnapshotCoalesced("pocketRoundRadiusMm");
+                  setPocketRoundRadiusMm(event.target.value);
+                }}
+                ref={commitOnChange(() => void load(placementsFor(tools), overridesFor(tools)))}
+              />
+            </label>
+          )}
           <div>
             <label className="flex items-center gap-2">
               <input

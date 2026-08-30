@@ -64,11 +64,15 @@ function bevelPocketsCheckbox(): HTMLInputElement {
   return screen.getByText("Round pocket edges").previousElementSibling as HTMLInputElement;
 }
 
+function roundRadiusInput(): HTMLInputElement {
+  return screen.getByLabelText("Pocket round radius") as HTMLInputElement;
+}
+
 function undoButton(): HTMLButtonElement {
   return screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement;
 }
 
-const REOPEN_INITIAL_BASE: Omit<CombineEditorInitial, "bevelPockets"> = {
+const REOPEN_INITIAL_BASE: Omit<CombineEditorInitial, "bevelPockets" | "pocketRoundRadiusMm"> = {
   id: "bin-1", label: "Reopened bin", appliedProfileId: null,
   placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
   magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false,
@@ -144,12 +148,26 @@ describe("CombineEditor bevel pockets", () => {
         ids={["tool-a", "tool-b"]}
         overallHeight={null}
         onClose={() => {}}
-        initial={{ ...REOPEN_INITIAL_BASE, bevelPockets: false }}
+        initial={{ ...REOPEN_INITIAL_BASE, bevelPockets: false, pocketRoundRadiusMm: 0.6 }}
       />,
     );
     await screen.findByText("Wrench");
 
     expect(bevelPocketsCheckbox().checked).toBe(false);
+  });
+
+  it("reopening a saved bin with a non-default round radius shows it in the input", async () => {
+    render(
+      <CombineEditor
+        ids={["tool-a", "tool-b"]}
+        overallHeight={null}
+        onClose={() => {}}
+        initial={{ ...REOPEN_INITIAL_BASE, bevelPockets: true, pocketRoundRadiusMm: 1.2 }}
+      />,
+    );
+    await screen.findByText("Wrench");
+
+    expect(roundRadiusInput().value).toBe("1.2");
   });
 
   it("undo restores the previous toggle state", async () => {

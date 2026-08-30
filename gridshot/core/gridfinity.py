@@ -79,11 +79,12 @@ FILLET_LOFT_STEPS = 8
 # A pocket's top opening edge (`bevel_pockets`, fast path only — see
 # bin_solid) gets a convex round-over (a curved fillet, tangent to both the
 # pocket wall and the bin's top face — "rounded off," not "rounded inward")
-# of this radius, hardcoded rather than user-configurable for now, same as
-# TOOLSHAPE_FILLET_RADIUS_MM above. Clamped per-bin against the tightest
-# configured wall margin in play (see _pocket_top_round_radius), so this is
-# a ceiling, not a guarantee — it only reaches the full 0.6mm when the
-# surrounding walls are comfortably wider than that.
+# of this radius by default — user-configurable per bin via bin_solid's own
+# `pocket_round_radius_mm` param (see CombineRequest.pocket_round_radius_mm).
+# Clamped per-bin against the tightest configured wall margin in play (see
+# _pocket_top_round_radius), so whatever radius is requested is a ceiling,
+# not a guarantee — a value past the surrounding walls' own margin silently
+# caps at that margin instead of breaching it.
 POCKET_ROUND_RADIUS_MM = 0.6
 
 # Legacy (fill_height_pct, live_grid) mapping — exact and lossless. See
@@ -440,8 +441,9 @@ def _pocket_bottom_fillet(
 
 def _pocket_top_round_radius(
     depth: float, min_wall_mm: float, min_wall_lip_mm: float, tool_wall_mm: float, lip: bool,
+    requested_radius_mm: float = POCKET_ROUND_RADIUS_MM,
 ) -> float:
-    """How large a `POCKET_ROUND_RADIUS_MM` round-over can safely go on one
+    """How large a `requested_radius_mm` round-over can safely go on one
     pocket's top opening edge without threatening to breach a neighbouring
     wall — the round-over flares the opening outward by its radius on every
     side, so it's clamped against whichever configured wall margin is
@@ -453,7 +455,7 @@ def _pocket_top_round_radius(
     taller than itself. Degrades to 0 (no round-over, not an error) for a
     bin configured with wall margins already thinner than any round-over."""
     wall_margin = min(min_wall_mm, min_wall_lip_mm if lip else min_wall_mm, tool_wall_mm / 2)
-    return max(0.0, min(POCKET_ROUND_RADIUS_MM, wall_margin - EPS, depth - EPS))
+    return max(0.0, min(requested_radius_mm, wall_margin - EPS, depth - EPS))
 
 
 def _pocket_top_fillet(
@@ -799,6 +801,7 @@ def bin_solid(
     tool_wall_reinforcement_h_mm: float = TOOL_WALL_REINFORCEMENT_H,
     magnet_hole_inset_from_edge_mm: float = MAGNET_HOLE_INSET_FROM_EDGE_MM,
     bevel_pockets: bool = False,
+    pocket_round_radius_mm: float = POCKET_ROUND_RADIUS_MM,
 ) -> Manifold:
     """A Gridfinity tool holder, parameterized instead of style-branched — see
     docs/bin-profiles-v2-proposal.md.
@@ -842,8 +845,9 @@ def bin_solid(
 
     `bevel_pockets` rounds off each pocket's top opening edge with a convex
     fillet — a round-over, tangent to both the pocket wall and the bin's top
-    face, not a straight chamfer (see
-    POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius) — plus, on the same
+    face, not a straight chamfer, of radius `pocket_round_radius_mm` (see
+    POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius, which clamps it down
+    against the tightest wall margin actually in play) — plus, on the same
     entry, its finger holes and finger-hole connector, so a tool's whole set
     of openings reads as one consistent edge treatment. Fast path only, same
     as the per-entry bottom fillet (`pockets` entries' optional 5th tuple
@@ -1067,7 +1071,7 @@ def bin_solid(
         if bevel_pockets:
             top_z = floor_z + depth  # == total_h, the bin's own top face here
             round_radius = _pocket_top_round_radius(
-                depth, min_wall_mm, min_wall_lip_mm, tool_wall_mm, lip,
+                depth, min_wall_mm, min_wall_lip_mm, tool_wall_mm, lip, pocket_round_radius_mm,
             )
             if round_radius > EPS:
                 # Each opening gets its own round-over call rather than one
