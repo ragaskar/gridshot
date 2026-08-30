@@ -29,12 +29,14 @@ def _pocket(cx: float, w: float = 10.0, d: float = 8.0) -> Poly:
 
 def _stub_layout(monkeypatch, depths, height_u=4):
     """Bypass real library tool loading/packing: feed `_combine_solid` and
-    `library_combine_slice` a small, controlled two-pocket layout directly."""
+    `library_combine_slice` a small, controlled two-pocket layout directly.
+    `depths` may be empty (a tool-less bin) — `centered`/`fingers`/
+    `connectors` are sized to match."""
     lay = {
-        "centered": [_pocket(-15.0), _pocket(15.0)],
+        "centered": [_pocket(-15.0), _pocket(15.0)][: len(depths)],
         "depths": depths,
-        "fingers": [[], []],
-        "connectors": [None, None],
+        "fingers": [[], []][: len(depths)],
+        "connectors": [None, None][: len(depths)],
         "gx": 3, "gy": 1,
         "lip": False,
         "height_u": height_u,
@@ -96,6 +98,18 @@ class TestCombineSlice:
 
         assert response.status_code == 422
         assert "0.2" in response.json()["detail"]
+
+    def test_no_tools_is_rejected_with_a_clear_reason_not_a_crash(self, client, monkeypatch):
+        # slice_window(total_h, []) returns None (nothing to intersect) —
+        # the 422 handler used to build its message with min(lay["depths"]),
+        # which crashes on an empty list instead of reporting the real
+        # reason.
+        _stub_layout(monkeypatch, depths=[])
+
+        response = _post(client, ids=())
+
+        assert response.status_code == 422
+        assert "no tools" in response.json()["detail"]
 
     def test_thickness_below_half_a_millimetre_is_rejected(self, client, monkeypatch):
         _stub_layout(monkeypatch, depths=[6.0, 9.0])

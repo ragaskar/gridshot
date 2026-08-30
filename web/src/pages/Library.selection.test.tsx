@@ -90,7 +90,7 @@ describe("Library view toggle and selection", () => {
     await waitFor(() => expect(screen.getByText("Select all")).toBeTruthy());
   });
 
-  it("tile view: compose/combine buttons reflect the selection and are absent for a solo pick", async () => {
+  it("tile view: compose/combine buttons reflect the selection — Combine appears from a solo pick, no minimum", async () => {
     render(<Library />);
     await screen.findByDisplayValue("Wrench");
     // grab the select-all checkbox before its label text changes away from "Select all"
@@ -103,7 +103,8 @@ describe("Library view toggle and selection", () => {
     fireEvent.click(screen.getAllByTitle("Select for compose or combine")[0]);
     await waitFor(() => expect(screen.getByText("Compose 1 tool…")).toBeTruthy());
     expect((screen.getByText("Compose 1 tool…").closest("button") as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.queryByText("⧉ Combine into ONE bin…")).toBeNull();
+    // A single selected tool can still be combined into its own one-tool bin.
+    expect(screen.getByText("⧉ Combine into ONE bin…")).toBeTruthy();
 
     fireEvent.click(selectAll);
     await waitFor(() => expect(screen.getByText("Compose 3 tools…")).toBeTruthy());

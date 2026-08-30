@@ -11,7 +11,7 @@ import {
 import { clearBinPreviewCache } from "../binPreviewCache";
 import { BinThumbnail } from "../components/BinThumbnail";
 import { binExportName } from "../exportNaming";
-import { pathForBinReopen } from "../urlState";
+import { pathForBinReopen, pathForNewBin } from "../urlState";
 
 /** Saved multi-tool combine-editor arrangements — a recipe (tools, placements,
  *  overrides, bin-wide settings), not a frozen geometry snapshot. Export and
@@ -87,6 +87,13 @@ export function BinLibrary() {
             <span className="text-teal">BIN</span> <span className="text-muted">LIBRARY</span>
           </h1>
         </div>
+        <button
+          className="btn btn-primary"
+          title="Start a blank bin — no tools required, add them later"
+          onClick={() => navigate(pathForNewBin())}
+        >
+          + New bin
+        </button>
       </header>
 
       {notice && (
@@ -98,9 +105,9 @@ export function BinLibrary() {
       {bins.length === 0 && (
         <div className="panel">
           <p className="font-body">
-            No saved bins yet. Arrange a multi-tool bin from the{" "}
-            <strong>Tool Library</strong>, then use <strong>Save to Bin Library</strong> once
-            you're happy with the arrangement.
+            No saved bins yet. Click <strong>+ New bin</strong> above to start a blank one, or
+            arrange a multi-tool bin from the <strong>Tool Library</strong> and use{" "}
+            <strong>Save to Bin Library</strong> once you're happy with the arrangement.
           </p>
         </div>
       )}

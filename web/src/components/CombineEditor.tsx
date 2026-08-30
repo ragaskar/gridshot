@@ -344,6 +344,7 @@ export function CombineEditor({
   ids,
   overallHeight: initialOverallHeight,
   initial,
+  defaultForceSize,
   onClose,
   onSaved,
 }: {
@@ -352,6 +353,11 @@ export function CombineEditor({
   /** When set, the editor opens seeded from this saved arrangement instead
    *  of auto-packing fresh — see `initial`-aware mount effect below. */
   initial?: CombineEditorInitial;
+  /** Seeds a fresh (non-`initial`) session's forced bin size — the "New
+   *  bin" flow's default footprint, since a tool-less auto-pack has nothing
+   *  of its own to size a bin against. Ignored once `initial` is set (a
+   *  reopened bin's own forceGx/forceGy, if any, already win). */
+  defaultForceSize?: [number, number];
   onClose: () => void;
   /** Fired after "Save As" mints a new Bin Library entry (not the initial
    *  auto-mint, and not a plain autosave to the same entry) — lets the
@@ -454,9 +460,15 @@ export function CombineEditor({
   // with the slice dialog.
   const [sliceErr, setSliceErr] = useState<string | null>(null);
   const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
-  const [forceSize, setForceSize] = useState(Boolean(initial?.forceGx && initial?.forceGy));
-  const [forceGx, setForceGx] = useState(initial?.forceGx ? String(initial.forceGx) : "");
-  const [forceGy, setForceGy] = useState(initial?.forceGy ? String(initial.forceGy) : "");
+  const [forceSize, setForceSize] = useState(
+    Boolean(initial?.forceGx && initial?.forceGy) || Boolean(!initial && defaultForceSize),
+  );
+  const [forceGx, setForceGx] = useState(
+    initial?.forceGx ? String(initial.forceGx) : !initial && defaultForceSize ? String(defaultForceSize[0]) : "",
+  );
+  const [forceGy, setForceGy] = useState(
+    initial?.forceGy ? String(initial.forceGy) : !initial && defaultForceSize ? String(defaultForceSize[1]) : "",
+  );
   const [removedCells, setRemovedCells] = useState<Set<CellKey>>(
     () => new Set((initial?.removedCells ?? []).map(([ix, iy]) => cellKey(ix, iy))),
   );
@@ -497,7 +509,6 @@ export function CombineEditor({
   const [placeToolBusy, setPlaceToolBusy] = useState(false);
   const [placeToolErr, setPlaceToolErr] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
-  const [removeErr, setRemoveErr] = useState<string | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
@@ -985,7 +996,7 @@ export function CombineEditor({
   // unless "force bin size" is on, in which case the footprint is LOCKED to the
   // forced gx/gy and never re-fit to wherever tools currently sit (drag included).
   const layout = useMemo(() => {
-    if (!meta || !tools.length) return null;
+    if (!meta) return null;
     const polys = tools.map((t) => placed(t.stamp, t.tx, t.ty, t.rot, t.mirror_x, t.mirror_y));
     const fingerCircles = tools.flatMap((tool) => tool.finger_holes.map(([x, y, diameter], pointIndex) => {
       const [cx, cy] = placedPoint([x, y], tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y);
@@ -1011,8 +1022,12 @@ export function CombineEditor({
       ...polys.flat().map((p) => p[1]),
       ...fingerCircles.flatMap((hole) => [hole.cy - hole.radius, hole.cy + hole.radius]),
     ];
-    const minx = Math.min(...xs), maxx = Math.max(...xs);
-    const miny = Math.min(...ys), maxy = Math.max(...ys);
+    // No tools (a blank bin) leaves xs/ys empty — Math.min/max of nothing is
+    // +/-Infinity, so fall back to a degenerate point at the origin instead;
+    // the "locked" (forced-size) branch below ignores these anyway, and the
+    // unlocked one just yields a minimum-size bin centred on (0,0).
+    const minx = xs.length ? Math.min(...xs) : 0, maxx = xs.length ? Math.max(...xs) : 0;
+    const miny = ys.length ? Math.min(...ys) : 0, maxy = ys.length ? Math.max(...ys) : 0;
     const { pitch, bin_size, wall } = meta;
 
     const locked = forceSize && Number(forceGx) > 0 && Number(forceGy) > 0;
@@ -1275,9 +1290,10 @@ export function CombineEditor({
     // message is derived straight from `hasOverflow` at the render site
     // instead, so it can never outlive the condition that produced it (a
     // stale fetch error used to survive here too: this guard used to return
-    // before clearing it, so dropping back below 2 tools while an error was
-    // showing left it stuck until the editor was remounted).
-    if (!meta || tools.length < 2) { setPreviewErr(null); return; }
+    // before clearing it, so a state change while an error was showing left
+    // it stuck until the editor was remounted). No tool-count floor any
+    // more — a blank (or single-tool) bin previews as a plain shell.
+    if (!meta) { setPreviewErr(null); return; }
     const sequence = ++previewSequence.current;
     if (hasOverflow) {
       setPreviewBusy(false);
@@ -2185,22 +2201,17 @@ export function CombineEditor({
     }
   }
 
-  /** Drops every currently-selected tool from this bin — the server requires
-   *  at least 2 tools with outlines (_combine_layout), so this refuses to go
-   *  below that rather than let the next reload 422. No backend call beyond
-   *  the reload itself: a tool id is just an entry in the ids array this
-   *  editor sends, with no per-bin "reference" bookkeeping to update — an
-   *  orphaned bin-tool (one forked via Duplicate/toolshape-place/Add and
-   *  then dropped without ever being saved) is swept up later the same way
-   *  an abandoned Duplicate already is (see `gridshot bin-tools gc`). */
+  /** Drops every currently-selected tool from this bin — no minimum tool
+   *  count any more (an empty bin is a plain shell, same as "New bin"
+   *  starts with). No backend call beyond the reload itself: a tool id is
+   *  just an entry in the ids array this editor sends, with no per-bin
+   *  "reference" bookkeeping to update — an orphaned bin-tool (one forked
+   *  via Duplicate/toolshape-place/Add and then dropped without ever being
+   *  saved) is swept up later the same way an abandoned Duplicate already
+   *  is (see `gridshot bin-tools gc`). */
   async function removeSelectedTools() {
     if (selectedIds.size === 0) return;
     const nextIds = toolIds.filter((id) => !selectedIds.has(id));
-    if (nextIds.length < 2) {
-      setRemoveErr("A bin needs at least 2 tools — remove fewer, or add another first.");
-      return;
-    }
-    setRemoveErr(null);
     setRemoveBusy(true);
     try {
       pushSnapshot();
@@ -3491,8 +3502,7 @@ export function CombineEditor({
                 <button
                   type="button"
                   className="btn btn-ghost !py-1 text-[10px]"
-                  disabled={busy || removeBusy || selectedIds.size === 0 || toolIds.length - selectedIds.size < 2}
-                  title={toolIds.length - selectedIds.size < 2 ? "A bin needs at least 2 tools" : undefined}
+                  disabled={busy || removeBusy || selectedIds.size === 0}
                   onClick={() => void removeSelectedTools()}
                 >
                   {removeBusy
@@ -3501,7 +3511,6 @@ export function CombineEditor({
                 </button>
               </div>
               {duplicateErr && <p className="mt-1 text-orange">{duplicateErr}</p>}
-              {removeErr && <p className="mt-1 text-orange">{removeErr}</p>}
             </ControlGroup>
 
             {selectedTool?.toolshape_type === "rounded_rect" && (

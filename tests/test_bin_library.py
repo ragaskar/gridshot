@@ -275,12 +275,30 @@ class TestBinLibrary:
 
         assert response.status_code == 404
 
-    def test_saving_with_fewer_than_two_tools_is_rejected(self, client, library_dir):
+    def test_saving_with_a_single_tool_succeeds(self, client, library_dir):
         _seed_two_tools()
 
-        response = client.post("/api/bins", json={"ids": ["tool-a"], "label": "Too few"})
+        response = client.post("/api/bins", json={"ids": ["tool-a"], "label": "Just one"})
 
-        assert response.status_code == 422
+        assert response.status_code == 200
+        assert response.json()["tool_ids"] == ["tool-a"] or len(response.json()["tool_ids"]) == 1
+
+    def test_saving_with_no_tools_succeeds_and_produces_a_blank_bin(self, client, library_dir):
+        response = client.post(
+            "/api/bins",
+            json={"ids": [], "label": "Blank", "force_gx": 1, "force_gy": 5},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["tool_ids"] == []
+        assert body["force_gx"] == 1
+        assert body["force_gy"] == 5
+
+        export = client.post(f"/api/bins/{body['id']}/export")
+        assert export.status_code == 200
+        assert export.headers["content-type"] == "model/3mf"
+        assert len(export.content) > 0
 
     def test_a_newly_saved_bin_is_unaffected_by_deleting_the_source_library_tool(self, client, library_dir):
         """Fork-at-save means a bin saved through the normal API no longer

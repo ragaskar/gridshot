@@ -828,8 +828,6 @@ def bin_solid(
         )]
         if pocket is not None and pocket_depth > 0 else []
     )
-    if not fast_path and not cuts:
-        raise ValueError("a non-fast-path bin needs at least one tool footprint")
 
     min_wall_lip_mm = lip_chamfer_top_mm + lip_chamfer_bottom_mm + 0.8
 

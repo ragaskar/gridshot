@@ -2803,8 +2803,6 @@ def _combine_layout(req: "CombineRequest") -> dict:
         inherited_clearances.append(t.clearance_mm)
         radial_offsets.append(radial_offset)
         inherited_radial_offsets.append(t.finger_hole_radial_offset_mm)
-    if len(pack_stamps) < 2:
-        raise HTTPException(status_code=422, detail="select at least 2 tools with outlines")
 
     if req.placements:  # manual arrange → honour the given transforms
         pmap = {p.id: p for p in req.placements}
@@ -2886,10 +2884,17 @@ def _combine_layout(req: "CombineRequest") -> dict:
         else:
             placed_connectors.append(None)
 
-    union = unary_union(
-        [contour_mod.to_shapely(p) for p in placed_envelopes]
-    )
-    minx, miny, maxx, maxy = union.bounds
+    if placed_envelopes:
+        union = unary_union(
+            [contour_mod.to_shapely(p) for p in placed_envelopes]
+        )
+        minx, miny, maxx, maxy = union.bounds
+    else:
+        # No tools at all (a brand-new blank bin, or every tool just got
+        # removed) — nothing to bound; auto_grid degrades to its own 1x1
+        # floor below, and force_gx/gy (always set by the "New bin" flow)
+        # overrides it immediately after regardless.
+        minx = miny = maxx = maxy = 0.0
     rect = contour_mod.Poly(exterior=[(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)], holes=[])
     gx, gy = grid_mod.auto_grid(rect, wall=wall)
     if req.force_gx is not None:
@@ -2984,7 +2989,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
         (specs[i].height_u for i in range(len(specs)) if depth_kinds[i] == "fixed"),
         default=1,
     )
-    natural_seed_u = max(spec.height_u for spec in specs)
+    natural_seed_u = max((spec.height_u for spec in specs), default=1)
     height_u = (
         max(
             min_height_u,
@@ -3274,13 +3279,13 @@ def library_combine_slice(req: CombineRequest) -> Response:
     total_h = lay["height_u"] * grid_mod.UNIT_H
     window = grid_mod.slice_window(total_h, lay["depths"], thickness=thickness_mm)
     if window is None:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"shallowest recess ({min(lay['depths']):.1f}mm) is too thin "
-                f"for a {thickness_mm:.1f}mm trace-tolerance slice"
-            ),
+        detail = (
+            "no tools in this bin to slice through"
+            if not lay["depths"] else
+            f"shallowest recess ({min(lay['depths']):.1f}mm) is too thin "
+            f"for a {thickness_mm:.1f}mm trace-tolerance slice"
         )
+        raise HTTPException(status_code=422, detail=detail)
     z0, thickness = window
     # The window can land within the round-over's own radius of the top for
     # a shallow pocket (see slice_window), which would make the coupon

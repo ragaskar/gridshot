@@ -226,12 +226,27 @@ describe("CombineEditor add/remove tools", () => {
     });
   });
 
-  it("disables Remove when it would drop the bin below 2 tools", async () => {
+  it("stays enabled removing down to a single tool, and down to zero — no minimum any more", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(screen.getByText("Wrench"));
 
     const removeBtn = await screen.findByText("🗑 Remove");
-    expect((removeBtn.closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((removeBtn.closest("button") as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(removeBtn);
+    await waitFor(() => {
+      const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+      expect(last[0]).toEqual(["tool-b"]);
+    });
+
+    await screen.findByText("Pliers");
+    fireEvent.click(screen.getByText("Pliers"));
+    fireEvent.click(await screen.findByText("🗑 Remove"));
+
+    await waitFor(() => {
+      const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+      expect(last[0]).toEqual([]);
+    });
   });
 });

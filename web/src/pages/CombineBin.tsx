@@ -91,12 +91,16 @@ export function CombineBin() {
     );
   }
 
-  if (ids && ids.length > 0) {
+  // `ids` is `[]`, not `null`, for a valid zero-tool session (a brand-new
+  // blank bin from /combine/new, or a reopened bin every tool has since
+  // been removed from) — only `null` means no combine route matched at all.
+  if (ids !== null) {
     return (
       <CombineEditor
         ids={ids}
         overallHeight={reopenBin?.overall_height ?? null}
         initial={reopenBin ? reopenInitial(reopenBin) : undefined}
+        defaultForceSize={!reopenBin && ids.length === 0 ? [1, 5] : undefined}
         onClose={close}
         onSaved={(saved) => {
           setReopenBin(saved);
@@ -111,7 +115,8 @@ export function CombineBin() {
       <div className="panel">
         <p className="font-body">
           No tools selected. Pick some from the <strong>Tool Library</strong> and use{" "}
-          <strong>Combine into ONE bin</strong>.
+          <strong>Combine into ONE bin</strong>, or start a{" "}
+          <strong>+ New bin</strong> from the <strong>Bin Library</strong>.
         </p>
       </div>
     </div>

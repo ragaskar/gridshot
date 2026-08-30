@@ -538,7 +538,7 @@ export function Library() {
               >
                 Compose {sel.size} tool{sel.size === 1 ? "" : "s"}…
               </button>
-              {sel.size >= 2 && (
+              {sel.size >= 1 && (
                 <button
                   className="btn w-full"
                   onClick={() => {
@@ -562,7 +562,7 @@ export function Library() {
                   >
                     Compose {sel.size} Tool{sel.size === 1 ? "" : "s"}…
                   </button>
-                  {sel.size >= 2 && (
+                  {sel.size >= 1 && (
                     <button
                       className="btn"
                       onClick={() => {

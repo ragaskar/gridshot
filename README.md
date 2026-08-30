@@ -539,6 +539,12 @@ Features added on top of the original public release, newest last:
   outward normal of the outline at its own point rather than a fixed axis
   (see
   [docs/combine-finger-hole-radial-offset.md](docs/combine-finger-hole-radial-offset.md))
+- No minimum tool count on a combine bin any more — a bin can be saved,
+  exported, and reopened with 1 tool, or with 0 (a plain, pocketless shell);
+  "🗑 Remove" in the combine editor stays enabled down to zero instead of
+  refusing below 2. A new **"+ New bin"** button on the Bin Library page
+  opens a blank combine session directly, defaulting to a 1×5-unit forced
+  footprint (see [docs/combine-new-bin.md](docs/combine-new-bin.md))
 
 ## License
 

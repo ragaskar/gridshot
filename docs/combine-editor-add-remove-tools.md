@@ -42,6 +42,6 @@ inspector, alongside "⧉ Duplicate". Removing drops the selected tool(s)
 from the bin's arrangement (client-side only — the server has no
 per-bin membership to update) and reloads the layout.
 
-A bin needs at least 2 tools, so Remove is disabled — with a tooltip
-explaining why — whenever removing the current selection would drop the
-bin below that floor.
+There's no minimum tool count — Remove stays enabled all the way down to
+zero, leaving a plain, pocketless bin shell (the same starting point
+"+ New bin" produces; see [combine-new-bin.md](combine-new-bin.md)).

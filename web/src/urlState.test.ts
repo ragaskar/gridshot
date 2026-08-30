@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  decodeUrlState, pathForBinProfileEdit, pathForBinReopen, pathForCombine, pathForCompose, pathForView,
+  decodeUrlState, pathForBinProfileEdit, pathForBinReopen, pathForCombine, pathForCompose,
+  pathForNewBin, pathForView,
 } from "./urlState";
 
 const NOTHING = {
@@ -40,6 +41,12 @@ describe("decodeUrlState", () => {
   it("reads a saved-bin reopen from its own page path", () => {
     expect(decodeUrlState("/combine/reopen/bin1")).toEqual({
       ...NOTHING, view: "combine", reopenBinId: "bin1",
+    });
+  });
+
+  it("reads a brand-new blank bin from its own page path, with an empty (not null) id list", () => {
+    expect(decodeUrlState("/combine/new")).toEqual({
+      ...NOTHING, view: "combine", combineIds: [],
     });
   });
 
@@ -119,6 +126,12 @@ describe("pathForCombine / pathForCompose / pathForBinReopen / pathForBinProfile
     const path = pathForBinReopen("bin1");
     expect(path).toBe("/combine/reopen/bin1");
     expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "combine", reopenBinId: "bin1" });
+  });
+
+  it("builds and round-trips a new-blank-bin path", () => {
+    const path = pathForNewBin();
+    expect(path).toBe("/combine/new");
+    expect(decodeUrlState(path)).toEqual({ ...NOTHING, view: "combine", combineIds: [] });
   });
 
   it("builds and round-trips a fresh compose path", () => {

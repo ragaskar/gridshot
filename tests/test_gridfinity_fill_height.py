@@ -110,6 +110,21 @@ class TestLegacyStylesMatchTheirReference:
         assert len(pieces) == 1
         assert all(p.volume() > 0 for p in pieces)
 
+    @pytest.mark.parametrize("live_grid", [False, True])
+    def test_no_tools_produces_a_plain_watertight_shell(self, live_grid):
+        """A bin with zero tool footprints — a fresh "New bin", or every
+        tool removed from a saved one — used to be rejected outright by a
+        `not fast_path and not cuts` guard on any path but the fast one
+        (fill_height_pct=100). There's no minimum tool count any more: an
+        empty `pockets`/`cuts` list should just build the plain deck+wall(+
+        fill) shell with nothing cut into it."""
+        solid = grid_mod.bin_solid(
+            2, 2, 4, pockets=[], fill_height_pct=50, live_grid=live_grid, lip=True,
+        )
+        mesh = grid_mod.to_trimesh(solid)
+        assert mesh.is_watertight
+        assert mesh.volume > 0
+
     def test_lip_is_never_a_disconnected_floating_piece(self):
         """Regression test for the second bug this file's docstring
         describes: for some grid layouts, `_lip_ring`'s zero-overlap seam

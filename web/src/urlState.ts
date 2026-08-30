@@ -58,6 +58,12 @@ export function decodeUrlState(pathname: string): DecodedUrlState {
   if (head === "combine" && rest[0] === "reopen" && rest[1]) {
     return { ...NOTHING_DECODED, view: "combine", reopenBinId: rest[1] };
   }
+  if (head === "combine" && rest[0] === "new") {
+    // A brand-new blank bin — no tools yet, distinct from "nothing decoded"
+    // (combineIds: null): an empty array is a valid, addressable combine
+    // session, not the absence of one. See pathForNewBin.
+    return { ...NOTHING_DECODED, view: "combine", combineIds: [] };
+  }
   if (head === "combine" && rest[0]) {
     return { ...NOTHING_DECODED, view: "combine", combineIds: rest[0].split(",").filter(Boolean) };
   }
@@ -97,6 +103,11 @@ export function pathForView(
  *  page, not nested under Library (which just starts the selection). */
 export function pathForCombine(ids: string[]): string {
   return `/combine/${ids.map(encodeURIComponent).join(",")}`;
+}
+
+/** Path for a brand-new, blank combine-editor session — no tools yet. */
+export function pathForNewBin(): string {
+  return "/combine/new";
 }
 
 /** Path for reopening the combine editor from a saved Bin Library entry —
