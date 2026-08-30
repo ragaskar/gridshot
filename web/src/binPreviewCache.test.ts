@@ -92,6 +92,18 @@ describe("binPreviewHash", () => {
     const b = savedBin({ placements: [placement("t-a", 10)] });
     expect(binPreviewHash(a)).not.toBe(binPreviewHash(b));
   });
+
+  it("changes when bevel_pockets changes", () => {
+    const a = savedBin({ bevel_pockets: true });
+    const b = savedBin({ bevel_pockets: false });
+    expect(binPreviewHash(a)).not.toBe(binPreviewHash(b));
+  });
+
+  it("changes when pocket_round_radius_mm changes", () => {
+    const a = savedBin({ pocket_round_radius_mm: 0.6 });
+    const b = savedBin({ pocket_round_radius_mm: 1.2 });
+    expect(binPreviewHash(a)).not.toBe(binPreviewHash(b));
+  });
 });
 
 describe("getBinPreview", () => {
@@ -133,6 +145,15 @@ describe("getBinPreview", () => {
     await getBinPreview(bin);
     await getBinPreview(savedBin({ label: "New name" }));
     expect(combinePreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards bevel_pockets and pocket_round_radius_mm to combinePreview", async () => {
+    vi.mocked(combinePreview).mockResolvedValue(preview());
+    const bin = savedBin({ bevel_pockets: false, pocket_round_radius_mm: 1.2 });
+    await getBinPreview(bin);
+    const options = vi.mocked(combinePreview).mock.calls[0][1];
+    expect(options?.bevelPockets).toBe(false);
+    expect(options?.pocketRoundRadiusMm).toBe(1.2);
   });
 
   it("clearBinPreviewCache forces the next call to re-fetch", async () => {

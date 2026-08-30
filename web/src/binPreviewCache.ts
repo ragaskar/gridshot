@@ -11,72 +11,83 @@ function fnv1a(str: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
+/** SavedBin fields that do NOT affect its rendered 2D-arrange-view preview —
+ *  renaming a bin, or a tool it uses losing its library entry, shouldn't
+ *  invalidate a cached preview or need forwarding to `combinePreview`. */
+const COSMETIC_BIN_FIELDS = [
+  "id", "label", "created_ts", "tool_labels", "applied_profile_id",
+] as const satisfies readonly (keyof SavedBin)[];
+
+/** Every remaining SavedBin field — one that DOES affect the rendered
+ *  preview — paired with its `CombineOptions` key, so `binPreviewHash`'s
+ *  cache key and `optionsFor`'s request body are both built from this one
+ *  list instead of drifting out of sync with each other (as `bevel_pockets`/
+ *  `pocket_round_radius_mm` did — added to `bin_solid` and `SavedBin` but
+ *  never wired into either of these). `tool_ids` is geometry too, but isn't
+ *  a `CombineOptions` key — it's passed positionally to `combinePreview` —
+ *  so it's folded in separately below instead of listed here. */
+const GEOMETRY_OPTION_FIELDS = [
+  ["placements", "placements"],
+  ["overrides", "overrides"],
+  ["overall_height", "overallHeight"],
+  ["lip", "lip"],
+  ["fill_height_pct", "fillHeightPct"],
+  ["live_grid", "liveGrid"],
+  ["magnet_holes", "magnetHoles"],
+  ["magnet_hole_diameter_mm", "magnetHoleDiameterMm"],
+  ["magnet_hole_depth_mm", "magnetHoleDepthMm"],
+  ["magnet_corners_only", "magnetCornersOnly"],
+  ["bevel_pockets", "bevelPockets"],
+  ["pocket_round_radius_mm", "pocketRoundRadiusMm"],
+  ["force_gx", "forceGx"],
+  ["force_gy", "forceGy"],
+  ["removed_cells", "removedCells"],
+  ["lip_height_mm", "lipHeightMm"],
+  ["lip_chamfer_top_mm", "lipChamferTopMm"],
+  ["lip_straight_mm", "lipStraightMm"],
+  ["lip_chamfer_bottom_mm", "lipChamferBottomMm"],
+  ["min_wall_mm", "minWallMm"],
+  ["min_floor_mm", "minFloorMm"],
+  ["floor_thickness_mm", "floorThicknessMm"],
+  ["tool_wall_mm", "toolWallMm"],
+  ["tool_wall_flare_mm", "toolWallFlareMm"],
+  ["tool_wall_reinforcement_h_mm", "toolWallReinforcementHMm"],
+  ["edge_margin_mm", "edgeMarginMm"],
+  ["magnet_hole_inset_from_edge_mm", "magnetHoleInsetFromEdgeMm"],
+] as const satisfies readonly [keyof SavedBin, keyof CombineOptions][];
+
+const GEOMETRY_BIN_FIELDS = [
+  "tool_ids",
+  ...GEOMETRY_OPTION_FIELDS.map(([snakeKey]) => snakeKey),
+] as const;
+
+// Compile-time guardrail: every SavedBin field must be classified as either
+// cosmetic or geometry above. Adding a field to SavedBin without adding it to
+// one of those two lists leaves it here as an "unclassified" key, which
+// makes this assignment a type error (`true` isn't assignable to `never`) —
+// `npm run build` fails until the new field is deliberately classified,
+// instead of it silently defaulting to invisible-to-the-cache like
+// bevel_pockets/pocket_round_radius_mm did.
+type UnclassifiedBinField = Exclude<
+  keyof SavedBin,
+  typeof COSMETIC_BIN_FIELDS[number] | typeof GEOMETRY_BIN_FIELDS[number]
+>;
+const _assertAllBinFieldsClassified: UnclassifiedBinField extends never ? true : never = true;
+void _assertAllBinFieldsClassified;
+
 /** Every field on a saved bin that affects its rendered 2D-arrange-view
- *  preview — placements/overrides plus every structural/style field, same
- *  set `CombineBin.tsx`'s `reopenInitial` feeds the editor. Deliberately
- *  excludes the cosmetic ones (`id`, `label`, `created_ts`, `tool_labels`,
- *  `applied_profile_id`) — renaming a bin, or a tool it uses losing its
- *  library entry, shouldn't invalidate its cached preview. */
+ *  preview — see GEOMETRY_OPTION_FIELDS/GEOMETRY_BIN_FIELDS above, the
+ *  canonical list shared with `optionsFor`. */
 export function binPreviewHash(bin: SavedBin): string {
-  const geometry = {
-    tool_ids: bin.tool_ids,
-    placements: bin.placements,
-    overrides: bin.overrides,
-    overall_height: bin.overall_height,
-    lip: bin.lip,
-    fill_height_pct: bin.fill_height_pct,
-    live_grid: bin.live_grid,
-    magnet_holes: bin.magnet_holes,
-    magnet_hole_diameter_mm: bin.magnet_hole_diameter_mm,
-    magnet_hole_depth_mm: bin.magnet_hole_depth_mm,
-    magnet_corners_only: bin.magnet_corners_only,
-    force_gx: bin.force_gx,
-    force_gy: bin.force_gy,
-    removed_cells: bin.removed_cells,
-    lip_height_mm: bin.lip_height_mm,
-    lip_chamfer_top_mm: bin.lip_chamfer_top_mm,
-    lip_straight_mm: bin.lip_straight_mm,
-    lip_chamfer_bottom_mm: bin.lip_chamfer_bottom_mm,
-    min_wall_mm: bin.min_wall_mm,
-    min_floor_mm: bin.min_floor_mm,
-    floor_thickness_mm: bin.floor_thickness_mm,
-    tool_wall_mm: bin.tool_wall_mm,
-    tool_wall_flare_mm: bin.tool_wall_flare_mm,
-    tool_wall_reinforcement_h_mm: bin.tool_wall_reinforcement_h_mm,
-    edge_margin_mm: bin.edge_margin_mm,
-    magnet_hole_inset_from_edge_mm: bin.magnet_hole_inset_from_edge_mm,
-  };
+  const geometry: Record<string, unknown> = { tool_ids: bin.tool_ids };
+  for (const [snakeKey] of GEOMETRY_OPTION_FIELDS) geometry[snakeKey] = bin[snakeKey];
   return fnv1a(JSON.stringify(geometry));
 }
 
 function optionsFor(bin: SavedBin): CombineOptions {
-  return {
-    placements: bin.placements,
-    overallHeight: bin.overall_height,
-    lip: bin.lip,
-    overrides: bin.overrides,
-    fillHeightPct: bin.fill_height_pct,
-    liveGrid: bin.live_grid,
-    magnetHoles: bin.magnet_holes,
-    magnetHoleDiameterMm: bin.magnet_hole_diameter_mm,
-    magnetHoleDepthMm: bin.magnet_hole_depth_mm,
-    magnetCornersOnly: bin.magnet_corners_only,
-    forceGx: bin.force_gx,
-    forceGy: bin.force_gy,
-    removedCells: bin.removed_cells,
-    lipHeightMm: bin.lip_height_mm,
-    lipChamferTopMm: bin.lip_chamfer_top_mm,
-    lipStraightMm: bin.lip_straight_mm,
-    lipChamferBottomMm: bin.lip_chamfer_bottom_mm,
-    minWallMm: bin.min_wall_mm,
-    minFloorMm: bin.min_floor_mm,
-    floorThicknessMm: bin.floor_thickness_mm,
-    toolWallMm: bin.tool_wall_mm,
-    toolWallFlareMm: bin.tool_wall_flare_mm,
-    toolWallReinforcementHMm: bin.tool_wall_reinforcement_h_mm,
-    edgeMarginMm: bin.edge_margin_mm,
-    magnetHoleInsetFromEdgeMm: bin.magnet_hole_inset_from_edge_mm,
-  };
+  const options: Record<string, unknown> = {};
+  for (const [snakeKey, camelKey] of GEOMETRY_OPTION_FIELDS) options[camelKey] = bin[snakeKey];
+  return options as CombineOptions;
 }
 
 interface CacheEntry {
