@@ -28,6 +28,13 @@ def test_generic_unhandled_exception_returns_error_text(client):
     def _boom():
         raise KeyError("mystery_key")
 
+    # A route added via decorator lands at the end of app.router.routes. If
+    # the SPA catch-all (`/{full_path:path}`, matched for any /api/ path it
+    # doesn't recognize — see spa_fallback) is already mounted, it's earlier
+    # in that list and would shadow this newly added route. Move ours to the
+    # front so the test exercises this route regardless of route order.
+    app_module.app.router.routes.insert(0, app_module.app.router.routes.pop())
+
     response = client.get("/api/_test/boom")
 
     assert response.status_code == 500

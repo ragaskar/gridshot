@@ -5538,7 +5538,16 @@ def spa_fallback(full_path: str) -> FileResponse:
     dist file if there is one, else index.html so a full reload lands back in
     the SPA instead of 404ing. index.html is revalidated on every load
     (no-cache) — otherwise the browser keeps an old index pointing at stale,
-    content-hashed JS and the UI silently freezes on an old build."""
+    content-hashed JS and the UI silently freezes on an old build.
+
+    `/api/...` never falls through to here in normal operation — every real
+    route is registered above, earlier in the router, so it matches first.
+    Reaching here with an `/api/` path means the endpoint genuinely doesn't
+    exist (a typo, a removed route); a bare 404 beats silently "succeeding"
+    with the SPA's HTML, which would mask the mistake from any client/test
+    checking the status code."""
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail=f"Not found: /{full_path}")
     candidate = (WEB_DIST / full_path).resolve()
     dist_root = WEB_DIST.resolve()
     if full_path and candidate.is_file() and str(candidate).startswith(str(dist_root)):
