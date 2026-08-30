@@ -2659,7 +2659,7 @@ export function CombineEditor({
         {savedBinId && saveErr && !saveDialogOpen && (
           <p className="font-mono text-[10px] text-orange">{saveErr}</p>
         )}
-        {saveDone && <p className="font-mono text-[10px] text-teal">Saved.</p>}
+        <p className={`font-mono text-[10px] text-teal ${saveDone ? "" : "invisible"}`}>Saved.</p>
         {sliceDialogOpen && (
           <div className="mt-2 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
             <label className="block">
