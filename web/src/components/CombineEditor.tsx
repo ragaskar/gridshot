@@ -1892,9 +1892,10 @@ export function CombineEditor({
   }
 
   async function setFingerHole(enabled: boolean | null) {
-    if (!selectedIds.size) return;
+    const targetIds = selectedIds.size > 0 ? selectedIds : selectedFingerHoleToolIds;
+    if (!targetIds.size) return;
     pushSnapshot();
-    const updated = tools.map((tool) => selectedIds.has(tool.id) ? {
+    const updated = tools.map((tool) => targetIds.has(tool.id) ? {
       ...tool,
       finger: enabled ?? tool.finger_hole_inherited,
       finger_hole: enabled ?? tool.finger_hole_inherited,
@@ -2465,11 +2466,17 @@ export function CombineEditor({
   const clearanceAllInherited = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override === null);
   const clearanceAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.clearance_mm_override !== null);
   const clearanceInherited = allEqual(selectedTools, (t) => t.clearance_mm_inherited);
-  const fingerAllOn = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole);
-  const fingerAllOff = selectedTools.length > 0 && selectedTools.every((t) => !t.finger_hole);
-  const fingerMixed = selectedTools.length > 0 && !fingerAllOn && !fingerAllOff;
-  const fingerOverrideAllOverridden = selectedTools.length > 0 && selectedTools.every((t) => t.finger_hole_override !== null);
-  const fingerInheritedShared = allEqual(selectedTools, (t) => t.finger_hole_inherited);
+  // Selecting a finger hole deselects every tool (see the note above
+  // selectedFingerHoleToolIds), so the header On/Off toggle falls back to
+  // the finger-hole selection's owning tool(s) whenever no tool is
+  // selected — otherwise it reads as permanently "Off" the moment a hole
+  // is picked, even though the hole obviously has one.
+  const fingerHoleTargetTools = selectedTools.length > 0 ? selectedTools : selectedFingerHoleTools;
+  const fingerAllOn = fingerHoleTargetTools.length > 0 && fingerHoleTargetTools.every((t) => t.finger_hole);
+  const fingerAllOff = fingerHoleTargetTools.length > 0 && fingerHoleTargetTools.every((t) => !t.finger_hole);
+  const fingerMixed = fingerHoleTargetTools.length > 0 && !fingerAllOn && !fingerAllOff;
+  const fingerOverrideAllOverridden = fingerHoleTargetTools.length > 0 && fingerHoleTargetTools.every((t) => t.finger_hole_override !== null);
+  const fingerInheritedShared = allEqual(fingerHoleTargetTools, (t) => t.finger_hole_inherited);
   const fingerAlignPlan = layout ? computeFingerAlignPlan(
     selectedFingerHoleTools
       .filter((t) => t.finger_hole)
@@ -3876,7 +3883,7 @@ export function CombineEditor({
               <button
                 aria-pressed={fingerAllOn}
                 className={`btn shrink-0 !px-2 !py-0.5 text-[10px] normal-case ${fingerAllOn ? "border-teal text-teal" : "btn-ghost"}`}
-                disabled={busy || selectedTools.length === 0}
+                disabled={busy || fingerHoleTargetTools.length === 0}
                 onClick={() => {
                   const turningOff = !fingerMixed && fingerAllOn;
                   void setFingerHole(fingerMixed ? true : !fingerAllOn);

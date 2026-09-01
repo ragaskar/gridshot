@@ -154,6 +154,20 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect((screen.getByText("⧉ Duplicate") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("the header On/Off toggle reflects and controls the selected hole's tool, not the (now-empty) tool selection", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    fireEvent.pointerDown(fingerCircle(), { clientX: 0, clientY: -5, pointerId: 1 });
+    expect(screen.getByText(/— finger hole/)).toBeTruthy();
+
+    const toggle = screen.getByRole("button", { name: "On" });
+    expect(toggle.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Off" })).toBeTruthy());
+  });
+
   it("clicking a tool polygon deselects the finger hole", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
