@@ -138,6 +138,19 @@ describe("CombineEditor finger-hole multi-select", () => {
     expect(alignButton().disabled).toBe(true);
   });
 
+  it("every selected hole gets the marching-ants class, not just a lone 'active' one", async () => {
+    render(<CombineEditor ids={["tool-x", "tool-y"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    const [xHole, yHole] = visibleFingerCircles();
+    const xPos = circlePos(xHole), yPos = circlePos(yHole);
+
+    fireEvent.pointerDown(xHole, { clientX: xPos.cx, clientY: -xPos.cy, pointerId: 1 });
+    fireEvent.pointerDown(yHole, { clientX: yPos.cx, clientY: -yPos.cy, pointerId: 2, shiftKey: true });
+
+    const ants = document.querySelectorAll("circle.marching-ants");
+    expect(ants.length).toBe(2);
+  });
+
   it("tool multi-select alone does not enable Align (the regression this feature fixes)", async () => {
     render(<CombineEditor ids={["tool-x", "tool-y"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");

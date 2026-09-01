@@ -165,6 +165,26 @@ describe("CombineEditor finger-hole radial offset", () => {
     expect(override?.finger_hole_radial_offset_mm).toBe(1.5);
   });
 
+  it("switching selection away from an edited hole and back shows the edited value, not the stale original", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    const [holeA, holeB] = document.querySelectorAll("circle");
+    fireEvent.pointerDown(holeA, { clientX: 0, clientY: -5, pointerId: 1 });
+    fireEvent.change(screen.getByLabelText(/radial offset/i), { target: { value: "3" } });
+
+    fireEvent.pointerDown(holeB, {
+      clientX: Number(holeB.getAttribute("cx")), clientY: Number(holeB.getAttribute("cy")), pointerId: 2,
+    });
+    expect((screen.getByLabelText(/radial offset/i) as HTMLInputElement).value).toBe("0");
+
+    const holeAAfterEdit = document.querySelector("circle")!; // tool-a is drawn first
+    fireEvent.pointerDown(holeAAfterEdit, {
+      clientX: Number(holeAAfterEdit.getAttribute("cx")), clientY: Number(holeAAfterEdit.getAttribute("cy")), pointerId: 3,
+    });
+    expect((screen.getByLabelText(/radial offset/i) as HTMLInputElement).value).toBe("3");
+  });
+
   it("reopening a bin with a saved offset shows it in the input and on the circle", async () => {
     vi.mocked(combinePreview).mockImplementation(
       (ids, options) => Promise.resolve(buildResponse(

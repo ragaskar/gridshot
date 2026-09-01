@@ -179,6 +179,7 @@ function withLocalInteractiveFields(serverTool: CombineTool, local: CombineTool)
     finger_hole_arc2_mm: local.finger_hole_arc2_mm,
     finger_hole_arc2_mm_override: local.finger_hole_arc2_mm_override,
     finger_hole_diameter_mm_override: local.finger_hole_diameter_mm_override,
+    finger_hole_radial_offset_mm: local.finger_hole_radial_offset_mm,
     finger_hole_radial_offset_mm_override: local.finger_hole_radial_offset_mm_override,
     finger_holes: local.finger_holes,
   };
@@ -1532,7 +1533,7 @@ export function CombineEditor({
       const finger_holes = t.finger_hole_span
         ? [offsetPoint(t.finger_hole_arc_mm), offsetPoint(t.finger_hole_arc2_mm)]
         : [offsetPoint(t.finger_hole_arc_mm)];
-      return { ...t, finger_hole_radial_offset_mm_override: offsetMm, finger_holes };
+      return { ...t, finger_hole_radial_offset_mm: offsetMm, finger_hole_radial_offset_mm_override: offsetMm, finger_holes };
     }));
   }
   /** World point → the arc-length of the nearest point on `tool`'s own ring,
@@ -3111,6 +3112,11 @@ export function CombineEditor({
                   const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   const holeSelected = selectedFingerHoleToolIds.has(hole.toolId);
                   const isActive = holeSelected && selectedFingerHoleToolIds.size === 1 && selectedFingerPointIndex === hole.pointIndex;
+                  // In multi-select, there's no single "active" point (see
+                  // handleFingerHoleKeyDownMulti — every selected hole moves
+                  // together), so every selected hole gets the ants rather
+                  // than none of them.
+                  const showAnts = isActive || (holeSelected && selectedFingerHoleToolIds.size > 1);
                   const isSpan = tools.find((t) => t.id === hole.toolId)?.finger_hole_span ?? false;
                   const isHinted = hoveredFingerPoint?.toolId === hole.toolId && hoveredFingerPoint.pointIndex === hole.pointIndex;
                   return <g key={`${hole.toolId}-finger-${index}`}>
@@ -3134,7 +3140,7 @@ export function CombineEditor({
                       stroke={holeColor}
                       strokeWidth={isActive ? 1.4 : holeSelected ? 1 : 0.6}
                       strokeDasharray="2 1"
-                      className={isActive ? "marching-ants" : undefined}
+                      className={showAnts ? "marching-ants" : undefined}
                       style={{ cursor: "grab" }}
                       onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
                     />
