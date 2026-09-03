@@ -1448,13 +1448,19 @@ export function CombineEditor({
    *  (`finger_holes[pointIndex]`, patched in place — the other point, if
    *  any, is left untouched), the same two-tier pattern tx/ty dragging
    *  already uses (local state now, a debounced server round-trip once the
-   *  gesture settles). */
+   *  gesture settles). Re-applies the tool's existing radial offset along
+   *  the outline's outward normal at the new arc length — the offset is a
+   *  standing property of the hole, not something a drag/nudge/align should
+   *  silently reset to 0 by landing back on the raw outline. */
   function commitFingerHoleArc(id: string, arcMm: number, pointIndex: 0 | 1 = 0) {
     setTools((ts) => ts.map((t) => {
       if (t.id !== id) return t;
       if (pointIndex === 1 && !t.finger_hole_span) return t;
       const wrapped = wrapArcLength(t.stamp, arcMm);
-      const [lx, ly] = pointAtArcLength(t.stamp, wrapped);
+      const [px, py] = pointAtArcLength(t.stamp, wrapped);
+      const [nx, ny] = outwardNormalAtArcLength(t.stamp, wrapped);
+      const offset = t.finger_hole_radial_offset_mm;
+      const lx = px + nx * offset, ly = py + ny * offset;
       const diameter = t.finger_holes[pointIndex]?.[2] ?? t.finger_holes[0]?.[2] ?? 20;
       const finger_holes = t.finger_holes.map((entry, i) => (i === pointIndex ? [lx, ly, diameter] : entry)) as typeof t.finger_holes;
       return pointIndex === 1

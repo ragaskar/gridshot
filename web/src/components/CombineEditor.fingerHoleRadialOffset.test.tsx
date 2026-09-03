@@ -47,6 +47,16 @@ const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
   "tool-b": { ...baseTool("tool-b", "Pliers"), tx: 40 },
   "bintool-a": baseTool("bintool-a", "Wrench"),
   "bintool-b": { ...baseTool("bintool-b", "Pliers"), tx: 40 },
+  // Align reference/target pair for the radial-offset-survives-align test.
+  // tx is a small 5mm offset (not tool-b's 40) so the aligned arc position
+  // stays on the same straight bottom edge instead of wrapping onto a
+  // different edge, which the align math's straight-edge assumption
+  // doesn't cover. The target's offset is negative (pulled toward the
+  // outline, world y *higher* than the reference's) so it never displaces
+  // the reference — "bottom-most P1" picks the candidate with smaller
+  // world y.
+  "tool-align-ref": baseTool("tool-align-ref", "Wrench"),
+  "tool-align-target": { ...baseTool("tool-align-target", "Pliers", -3), tx: 5 },
 };
 
 function buildResponse(ids: string[], placements: Placement[] | null | undefined) {
@@ -76,6 +86,21 @@ describe("CombineEditor finger-hole radial offset", () => {
     });
     if (!Element.prototype.setPointerCapture) {
       Element.prototype.setPointerCapture = () => {};
+    }
+    // jsdom has no PointerEvent constructor, so @testing-library/dom's
+    // fireEvent.pointer* falls back to a bare Event with no shiftKey — a
+    // MouseEvent-backed polyfill is the standard workaround (see
+    // CombineEditor.fingerHoleMultiSelect.test.tsx), needed here for the
+    // shift-click align test below.
+    if (typeof (globalThis as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined") {
+      class PointerEventPolyfill extends MouseEvent {
+        pointerId: number;
+        constructor(type: string, params: PointerEventInit = {}) {
+          super(type, params);
+          this.pointerId = params.pointerId ?? 0;
+        }
+      }
+      (globalThis as unknown as { PointerEvent: unknown }).PointerEvent = PointerEventPolyfill;
     }
   });
 
@@ -183,6 +208,33 @@ describe("CombineEditor finger-hole radial offset", () => {
       clientX: Number(holeAAfterEdit.getAttribute("cx")), clientY: Number(holeAAfterEdit.getAttribute("cy")), pointerId: 3,
     });
     expect((screen.getByLabelText(/radial offset/i) as HTMLInputElement).value).toBe("3");
+  });
+
+  it("aligning a finger hole preserves its own radial offset instead of resetting it to 0", async () => {
+    render(<CombineEditor ids={["tool-align-ref", "tool-align-target"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+
+    const [refHole, targetHole] = document.querySelectorAll("circle");
+    fireEvent.pointerDown(refHole, {
+      clientX: Number(refHole.getAttribute("cx")), clientY: Number(refHole.getAttribute("cy")), pointerId: 1,
+    });
+    fireEvent.pointerDown(targetHole, {
+      clientX: Number(targetHole.getAttribute("cx")), clientY: Number(targetHole.getAttribute("cy")), pointerId: 2, shiftKey: true,
+    });
+
+    fireEvent.click(screen.getByText("⟷ Align finger holes"));
+
+    // The target moved (aligned onto the reference's world x, 0) but its
+    // radial offset — its distance off the raw outline point — must
+    // survive: still -3mm inward, not reset to sitting on the outline.
+    const alignedTarget = document.querySelectorAll("circle")[1];
+    expect(Number(alignedTarget.getAttribute("cx"))).toBeCloseTo(0);
+    fireEvent.pointerDown(alignedTarget, {
+      clientX: Number(alignedTarget.getAttribute("cx")), clientY: Number(alignedTarget.getAttribute("cy")), pointerId: 3,
+    });
+    expect((screen.getByLabelText(/radial offset/i) as HTMLInputElement).value).toBe("-3");
+    // world y = -5 - offset on the bottom edge; offset -3 means y = -2.
+    expect(Number(alignedTarget.getAttribute("cy"))).toBeCloseTo(-2);
   });
 
   it("reopening a bin with a saved offset shows it in the input and on the circle", async () => {
