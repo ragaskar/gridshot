@@ -28,7 +28,7 @@ function savedBin(overrides: Partial<SavedBin> = {}): SavedBin {
     live_grid: false,
     magnet_holes: false,
     magnet_hole_diameter_mm: 6.5,
-    magnet_hole_depth_mm: 2, magnet_corners_only: false,
+    magnet_hole_depth_mm: 2, magnet_corners_only: false, magnet_easy_release: "off",
     bevel_pockets: true,
     pocket_round_radius_mm: 0.6,
     force_gx: null,

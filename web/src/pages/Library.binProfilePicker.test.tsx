@@ -34,7 +34,7 @@ function tool(id: string, label: string): LibraryTool {
     derived_overall_height_mm: 25.4, derived_key: `${id}-key`,
     derived_reserved_cells: [], derived_available_cells: [],
     lip: true, round_tool: false, finger_hole: false, magnet_holes: false,
-    magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false,
+    magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false, magnet_easy_release: "off",
     has_photo: false, source_project: `${id}-proj`, source_tool: id,
     created_ts: 0, thumb: `/thumb/${id}.png`, photo_thumb: null,
     readiness: { status: "pass", checks: [], metrics: {} }, provenance: null, outline_revision: 1,
@@ -44,7 +44,7 @@ function tool(id: string, label: string): LibraryTool {
 const CORRAL_PROFILE: BinProfile = {
   id: "p1", name: "My Corral", created_ts: 0,
   fill_height_pct: 0, live_grid: false, lip: false, allow_custom_shape: false,
-  magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5, magnet_corners_only_default: false,
+  magnet_holes_default: true, magnet_hole_diameter_mm_default: 5.0, magnet_hole_depth_mm_default: 1.5, magnet_corners_only_default: false, magnet_easy_release_default: "off",
   lip_height_mm: null, lip_chamfer_top_mm: null, lip_straight_mm: null, lip_chamfer_bottom_mm: null,
   min_wall_mm: null, min_floor_mm: null, floor_thickness_mm: null, tool_wall_mm: null,
   tool_wall_flare_mm: null, tool_wall_reinforcement_h_mm: null, edge_margin_mm: null,
@@ -81,7 +81,7 @@ describe("Library per-tool bin profile picker", () => {
         live_grid: false,
         magnet_holes: true,
         magnet_hole_diameter_mm: 5.0,
-        magnet_hole_depth_mm: 1.5, magnet_corners_only: false,
+        magnet_hole_depth_mm: 1.5, magnet_corners_only: false, magnet_easy_release: "off",
       });
     });
   });

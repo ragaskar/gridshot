@@ -8,6 +8,10 @@ export interface Poly {
 
 export type OutlineVariant = "raw" | "cleaned";
 
+/** Pry-groove beside each magnet hole — see gridshot/core/gridfinity.py's
+ *  MAGNET_EASY_RELEASE_VALUES. "auto" resolves to "inner" server-side. */
+export type MagnetEasyRelease = "off" | "auto" | "inner" | "outer";
+
 export interface OutlineCleanup {
   available: boolean;
   recommended: OutlineVariant;
@@ -138,6 +142,7 @@ export interface TraceResult {
     magnet_hole_diameter_mm: number;
     magnet_hole_depth_mm: number;
     magnet_corners_only: boolean;
+    magnet_easy_release: MagnetEasyRelease;
     derivation_key: string;
     reserved_cells: [number, number][];
     available_cells: [number, number][];
@@ -709,6 +714,7 @@ export interface LibraryTool {
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
   magnet_corners_only: boolean;
+  magnet_easy_release: MagnetEasyRelease;
   has_photo: boolean;
   source_project: string;
   source_tool: string;
@@ -981,6 +987,7 @@ export async function updateLibraryTool(
     magnet_hole_diameter_mm?: number;
     magnet_hole_depth_mm?: number;
     magnet_corners_only?: boolean;
+    magnet_easy_release?: MagnetEasyRelease;
     outline?: Poly;
     raw_outline?: Poly;
     edit_source?: "sam" | "manual" | "physical";
@@ -1160,6 +1167,8 @@ export interface CombineOptions {
   /** Only at foot corners that are convex corners of the bin's own
    *  footprint, instead of every corner of every foot. */
   magnetCornersOnly?: boolean;
+  /** Pry-groove beside each magnet hole. Server default is `"off"`. */
+  magnetEasyRelease?: MagnetEasyRelease;
   /** Chamfers each pocket's top opening edge — pocket-style (100% fill,
    *  live grid off) bins only, a no-op otherwise. Server default is `true`. */
   bevelPockets?: boolean;
@@ -1205,6 +1214,7 @@ function combineRequestBody(ids: string[], options: CombineOptions): Record<stri
     magnet_hole_diameter_mm: options.magnetHoleDiameterMm ?? undefined,
     magnet_hole_depth_mm: options.magnetHoleDepthMm ?? undefined,
     magnet_corners_only: options.magnetCornersOnly ?? false,
+    magnet_easy_release: options.magnetEasyRelease ?? "off",
     bevel_pockets: options.bevelPockets ?? true,
     pocket_round_radius_mm: options.pocketRoundRadiusMm ?? undefined,
     force_gx: options.forceGx ?? undefined,
@@ -1309,6 +1319,7 @@ export interface SavedBin {
   magnet_hole_diameter_mm: number;
   magnet_hole_depth_mm: number;
   magnet_corners_only: boolean;
+  magnet_easy_release: MagnetEasyRelease;
   bevel_pockets: boolean;
   pocket_round_radius_mm: number;
   force_gx: number | null;
@@ -1438,6 +1449,7 @@ export interface BinProfile {
   magnet_hole_diameter_mm_default: number;
   magnet_hole_depth_mm_default: number;
   magnet_corners_only_default: boolean;
+  magnet_easy_release_default: MagnetEasyRelease;
   lip_height_mm: number | null;
   lip_chamfer_top_mm: number | null;
   lip_straight_mm: number | null;
@@ -1570,6 +1582,7 @@ export interface GenerateParams {
   magnet_hole_diameter_mm?: number;
   magnet_hole_depth_mm?: number;
   magnet_corners_only?: boolean;
+  magnet_easy_release?: MagnetEasyRelease;
 }
 
 export async function startSession(
@@ -1675,6 +1688,7 @@ export async function sessionAddToLibrary(
   if (params.magnet_hole_depth_mm != null)
     fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
   fd.append("magnet_corners_only", String(params.magnet_corners_only ?? false));
+  fd.append("magnet_easy_release", params.magnet_easy_release ?? "off");
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/library`, { method: "POST", body: fd });
   if (!r.ok) {
@@ -1707,6 +1721,7 @@ export async function sessionGenerate(
   if (params.magnet_hole_depth_mm != null)
     fd.append("magnet_hole_depth_mm", String(params.magnet_hole_depth_mm));
   fd.append("magnet_corners_only", String(params.magnet_corners_only ?? false));
+  fd.append("magnet_easy_release", params.magnet_easy_release ?? "off");
   fd.append("outline_variant", outlineVariant);
   const r = await fetch(`/api/session/${session}/generate`, { method: "POST", body: fd });
   if (!r.ok) {

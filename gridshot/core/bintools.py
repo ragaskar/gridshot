@@ -135,6 +135,7 @@ def _fork(source: LibraryTool, new_id: str, *, label: str) -> LibraryTool:
         magnet_hole_diameter_mm=source.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=source.magnet_hole_depth_mm,
         magnet_corners_only=source.magnet_corners_only,
+        magnet_easy_release=source.magnet_easy_release,
         toolshape_type=source.toolshape_type,
         toolshape_width_mm=source.toolshape_width_mm,
         toolshape_length_mm=source.toolshape_length_mm,

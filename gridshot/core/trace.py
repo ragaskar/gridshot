@@ -45,6 +45,7 @@ class TraceResult:
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     magnet_corners_only: bool = False
+    magnet_easy_release: str = "off"
     tool_poly: Poly | None = None  # tool outline in the same bin frame as pocket
     thickness_mm: float = 0.0
     silhouette_height_mm: float = 0.0
@@ -630,6 +631,7 @@ def run(
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM,
     magnet_corners_only: bool = False,
+    magnet_easy_release: str = "off",
     mat_id: str | None = None,
     out_dir: Path = Path("out"),
     stem: str | None = None,
@@ -696,6 +698,7 @@ def run(
         magnet_hole_diameter_mm=magnet_hole_diameter_mm,
         magnet_hole_depth_mm=magnet_hole_depth_mm,
         magnet_corners_only=magnet_corners_only,
+        magnet_easy_release=magnet_easy_release,
         out_dir=out_dir,
         stem=stem or f"{photo.stem}-bin",
         warnings=warnings,
@@ -725,6 +728,7 @@ def finalize_bin(
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM,
     magnet_corners_only: bool = False,
+    magnet_easy_release: str = "off",
     out_dir: Path = Path("out"),
     stem: str = "bin",
     warnings: list[str] | None = None,
@@ -789,6 +793,7 @@ def finalize_bin(
             magnet_hole_diameter_mm=magnet_hole_diameter_mm,
             magnet_hole_depth_mm=magnet_hole_depth_mm,
             magnet_corners_only=magnet_corners_only,
+            magnet_easy_release=magnet_easy_release,
         ),
         printer,
     )
@@ -814,6 +819,7 @@ def finalize_bin(
         magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
         magnet_corners_only=spec.magnet_corners_only,
+        magnet_easy_release=spec.magnet_easy_release,
     )
     mesh = grid_mod.to_trimesh(solid)
     if not mesh.is_watertight:
@@ -883,6 +889,7 @@ def finalize_bin(
         magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
         magnet_corners_only=spec.magnet_corners_only,
+        magnet_easy_release=spec.magnet_easy_release,
         tool_poly=tool_bin,
         thickness_mm=thickness_mm,
         silhouette_height_mm=thickness_mm,

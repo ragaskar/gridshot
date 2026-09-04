@@ -857,6 +857,7 @@ def _result_payload(
                 result, "magnet_hole_depth_mm", grid_mod.MAGNET_HOLE_DEPTH_MM
             ),
             "magnet_corners_only": getattr(result, "magnet_corners_only", False),
+            "magnet_easy_release": getattr(result, "magnet_easy_release", "off"),
             "derivation_key": result.derivation_key,
             "reserved_cells": [
                 list(cell) for cell in getattr(result, "reserved_cells", [])
@@ -1168,6 +1169,7 @@ def session_generate(
     magnet_hole_diameter_mm: float = Form(grid_mod.MAGNET_HOLE_DIAMETER_MM),
     magnet_hole_depth_mm: float = Form(grid_mod.MAGNET_HOLE_DEPTH_MM),
     magnet_corners_only: bool = Form(False),
+    magnet_easy_release: str = Form("off"),
     outline_variant: str = Form("recommended"),
 ) -> dict:
     sess = _single_session(sid)
@@ -1199,6 +1201,7 @@ def session_generate(
             magnet_hole_diameter_mm=magnet_hole_diameter_mm,
             magnet_hole_depth_mm=magnet_hole_depth_mm,
             magnet_corners_only=magnet_corners_only,
+            magnet_easy_release=magnet_easy_release,
             mat_id=sess["mat_id"],
             out_dir=proj,
             stem="bin",
@@ -1250,6 +1253,7 @@ def session_add_to_library(
     magnet_hole_diameter_mm: float = Form(grid_mod.MAGNET_HOLE_DIAMETER_MM),
     magnet_hole_depth_mm: float = Form(grid_mod.MAGNET_HOLE_DEPTH_MM),
     magnet_corners_only: bool = Form(False),
+    magnet_easy_release: str = Form("off"),
     outline_variant: str = Form("recommended"),
 ) -> dict:
     """Save the accepted selection without constructing or exporting a bin."""
@@ -1316,6 +1320,7 @@ def session_add_to_library(
                 magnet_hole_diameter_mm=magnet_hole_diameter_mm,
                 magnet_hole_depth_mm=magnet_hole_depth_mm,
                 magnet_corners_only=magnet_corners_only,
+                magnet_easy_release=magnet_easy_release,
             ),
             bench_mod.load_profile() or bench_mod.default_profile(),
         )
@@ -1352,6 +1357,7 @@ def session_add_to_library(
         magnet_hole_diameter_mm=magnet_hole_diameter_mm,
         magnet_hole_depth_mm=magnet_hole_depth_mm,
         magnet_corners_only=magnet_corners_only,
+        magnet_easy_release=magnet_easy_release,
         calibration=calibration,
         photo_src=PROJECTS / sid / "display.jpg",
         readiness=readiness,
@@ -1613,7 +1619,8 @@ def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
                raw_outline=None, readiness=None, provenance=None,
                outline_history=None, outline_revision=0,
                magnet_holes=False, magnet_hole_diameter_mm=None,
-               magnet_hole_depth_mm=None, magnet_corners_only=False):
+               magnet_hole_depth_mm=None, magnet_corners_only=False,
+               magnet_easy_release="off"):
     _render_thumb(thumb_points, library_mod.library_dir() / f"{tool_id}.png")
     has_photo = _store_lib_photo(tool_id, photo_src) if (photo_src and calibration is not None) else False
     outline_poly = contour_mod.Poly(**outline) if isinstance(outline, dict) else outline
@@ -1641,6 +1648,7 @@ def _add_entry(tool_id, grid, thickness, project, source_tool, thumb_points,
             else grid_mod.MAGNET_HOLE_DEPTH_MM
         ),
         magnet_corners_only=bool(magnet_corners_only),
+        magnet_easy_release=str(magnet_easy_release) if magnet_easy_release is not None else "off",
         has_photo=has_photo, calibration=calibration,
         source_project=project, source_tool=source_tool,
         readiness=readiness, provenance=provenance, created_ts=int(time.time()),
@@ -1700,6 +1708,7 @@ def library_add(project: str) -> dict:
             magnet_hole_diameter_mm=b.get("magnet_hole_diameter_mm"),
             magnet_hole_depth_mm=b.get("magnet_hole_depth_mm"),
             magnet_corners_only=b.get("magnet_corners_only", False),
+            magnet_easy_release=b.get("magnet_easy_release", "off"),
             calibration=cal_full, photo_src=disp,
             readiness=stored_readiness, provenance=r.get("provenance")))
     else:
@@ -2128,6 +2137,7 @@ class LibraryUpdate(BaseModel):
     magnet_hole_diameter_mm: Optional[float] = Field(None, gt=0)
     magnet_hole_depth_mm: Optional[float] = Field(None, gt=0)
     magnet_corners_only: Optional[bool] = None
+    magnet_easy_release: Optional[str] = None
     outline: Optional[dict] = None  # edited Poly from the outline editor
     raw_outline: Optional[dict] = None  # matching visible silhouette on the photo
     edit_source: Optional[Literal["sam", "manual", "physical"]] = None
@@ -2355,6 +2365,7 @@ def library_compose_preview_glb(req: ComposeRequest) -> Response:
             magnet_hole_diameter_mm=spec.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=spec.magnet_hole_depth_mm,
             magnet_corners_only=spec.magnet_corners_only,
+            magnet_easy_release=spec.magnet_easy_release,
         )
         mesh = grid_mod.to_trimesh(solid)
         if placement.rotated:
@@ -2442,6 +2453,7 @@ def library_export(req: ComposeRequest) -> Response:
                 magnet_hole_diameter_mm=t.magnet_hole_diameter_mm,
                 magnet_hole_depth_mm=t.magnet_hole_depth_mm,
                 magnet_corners_only=t.magnet_corners_only,
+                magnet_easy_release=t.magnet_easy_release,
                 readiness=_tool_readiness(t),
                 thickness_source=(
                     t.provenance.thickness_source if t.provenance else "legacy"
@@ -2553,6 +2565,7 @@ class CombineRequest(BaseModel):
     # (see gridfinity._magnet_corner_signs), instead of every corner of every
     # foot — far fewer holes, at the cost of interior feet not being pinned.
     magnet_corners_only: bool = False
+    magnet_easy_release: str = "off"
     # Rounds off each pocket's top opening edge, plus its finger holes and
     # finger-hole connector, with a convex fillet — see
     # grid_mod.POCKET_ROUND_RADIUS_MM/_pocket_top_round_radius. Field name
@@ -3245,6 +3258,7 @@ def _combine_solid(req: CombineRequest, lay: dict | None = None):
             magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=req.magnet_hole_depth_mm,
             magnet_corners_only=req.magnet_corners_only,
+            magnet_easy_release=req.magnet_easy_release,
             bevel_pockets=req.bevel_pockets,
             pocket_round_radius_mm=req.pocket_round_radius_mm,
             included_cells=lay.get("included_cells"),
@@ -3361,6 +3375,7 @@ def _combine_request_from_saved_bin(saved: binlibrary_mod.SavedBin) -> CombineRe
         magnet_hole_diameter_mm=saved.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=saved.magnet_hole_depth_mm,
         magnet_corners_only=saved.magnet_corners_only,
+        magnet_easy_release=saved.magnet_easy_release,
         bevel_pockets=saved.bevel_pockets,
         pocket_round_radius_mm=saved.pocket_round_radius_mm,
         force_gx=saved.force_gx,
@@ -3404,6 +3419,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
         "magnet_hole_diameter_mm": saved.magnet_hole_diameter_mm,
         "magnet_hole_depth_mm": saved.magnet_hole_depth_mm,
         "magnet_corners_only": saved.magnet_corners_only,
+        "magnet_easy_release": saved.magnet_easy_release,
         "bevel_pockets": saved.bevel_pockets,
         "pocket_round_radius_mm": saved.pocket_round_radius_mm,
         "force_gx": saved.force_gx,
@@ -3489,6 +3505,7 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
         magnet_hole_diameter_mm=req.magnet_hole_diameter_mm,
         magnet_hole_depth_mm=req.magnet_hole_depth_mm,
         magnet_corners_only=req.magnet_corners_only,
+        magnet_easy_release=req.magnet_easy_release,
         bevel_pockets=req.bevel_pockets,
         pocket_round_radius_mm=req.pocket_round_radius_mm,
         force_gx=req.force_gx,
@@ -3610,6 +3627,7 @@ class BinProfileCreate(BaseModel):
     magnet_hole_diameter_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
     magnet_hole_depth_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
     magnet_corners_only_default: bool = False
+    magnet_easy_release_default: str = "off"
     lip_height_mm: Optional[float] = None
     lip_chamfer_top_mm: Optional[float] = None
     lip_straight_mm: Optional[float] = None
@@ -3634,6 +3652,7 @@ class BinProfileUpdate(BaseModel):
     magnet_hole_diameter_mm_default: Optional[float] = Field(gt=0, default=None)
     magnet_hole_depth_mm_default: Optional[float] = Field(gt=0, default=None)
     magnet_corners_only_default: Optional[bool] = None
+    magnet_easy_release_default: Optional[str] = None
     lip_height_mm: Optional[float] = None
     lip_chamfer_top_mm: Optional[float] = None
     lip_straight_mm: Optional[float] = None
@@ -3659,6 +3678,7 @@ class BinProfilePreviewRequest(BaseModel):
     magnet_hole_diameter_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DIAMETER_MM)
     magnet_hole_depth_mm_default: float = Field(gt=0, default=grid_mod.MAGNET_HOLE_DEPTH_MM)
     magnet_corners_only_default: bool = False
+    magnet_easy_release_default: str = "off"
     lip_height_mm: Optional[float] = None
     lip_chamfer_top_mm: Optional[float] = None
     lip_straight_mm: Optional[float] = None
@@ -3762,6 +3782,7 @@ def bin_profiles_preview_glb(req: BinProfilePreviewRequest) -> Response:
         magnet_hole_diameter_mm=req.magnet_hole_diameter_mm_default,
         magnet_hole_depth_mm=req.magnet_hole_depth_mm_default,
         magnet_corners_only=req.magnet_corners_only_default,
+        magnet_easy_release=req.magnet_easy_release_default,
         min_floor_mm=min_floor_mm,
     )
     for field in _BIN_PROFILE_STRUCTURAL_FIELDS:

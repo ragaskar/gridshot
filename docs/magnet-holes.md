@@ -18,7 +18,7 @@ There's no separate "magnet bin" style — it's a checkbox plus two numbers
   checkbox for the whole combined bin, since magnet holes are a per-foot
   property of the finished object, not a per-tool one.
 - **CLI** — `gridshot trace ... --magnet-holes --magnet-hole-diameter 6.5
-  --magnet-hole-depth 2.0 --magnet-corners-only`.
+  --magnet-hole-depth 2.0 --magnet-corners-only --magnet-easy-release auto`.
 
 Defaults are **6.5mm diameter, 2mm depth** — the same nominal size
 gridfinity-rebuilt-openscad's Customizer describes as "holes for 6mm Diameter
@@ -56,6 +56,31 @@ y — are both absent (including "off the edge of the grid" as absent). A
 notch cut into a rectangle's corner exposes new convex corners this way, so
 it still gets pinned; a cell in the middle of a straight or concave edge
 doesn't. See `_magnet_corner_signs()` in `gridshot/core/gridfinity.py`.
+
+## Easy release
+
+Magnets seated with 0.5mm of clearance can be stubborn to pop back out once
+pressed in. **"Easy release"** (off/auto/inner/outer, alongside the
+magnet-holes checkbox wherever it appears) cuts a narrow pry groove from the
+edge of each magnet hole so a thin blade can lever the magnet out — matching
+`gridfinity_extended_openscad`'s `magnet_release()`.
+
+- **off** — no groove (the default; today's behavior, unchanged).
+- **outer** — the groove points out along the hole's own corner diagonal,
+  toward the bin's own edge.
+- **inner** — the groove points back toward the foot's centre.
+- **auto** — resolves to **inner**. Upstream's own auto rule picks "inner"
+  unless the floor is built with material-saving "efficient floor" ribbing,
+  which GridShot's bins never have — every GridShot bin's floor is solid, so
+  the "inner" case is the one that always applies here.
+
+Both directions stay well inside the foot's own 35.6mm bottom face — see
+`test_stays_inside_the_foot_bottom_footprint` in
+`tests/test_gridfinity_magnet_holes.py` — so neither breaks out through a
+side wall; the groove is just a shallow notch on the flat bottom, at the same
+depth as the magnet hole itself. See `_magnet_hole_cross_section()` and
+`MAGNET_EASY_RELEASE_WIDTH_MM`/`MAGNET_EASY_RELEASE_LENGTH_MM` in
+`gridshot/core/gridfinity.py`.
 
 ## Placement, for anyone reading the geometry code
 

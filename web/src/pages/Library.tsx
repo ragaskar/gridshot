@@ -15,6 +15,7 @@ import {
   updateLibraryTool,
   type LibraryEditResult,
   type LibraryTool,
+  type MagnetEasyRelease,
   type OutlineVariant,
   type PhotoOutline,
   type Poly,
@@ -376,6 +377,7 @@ export function Library() {
                               magnet_hole_diameter_mm: profile.magnet_hole_diameter_mm_default,
                               magnet_hole_depth_mm: profile.magnet_hole_depth_mm_default,
                               magnet_corners_only: profile.magnet_corners_only_default,
+                              magnet_easy_release: profile.magnet_easy_release_default,
                             }).catch(() => {});
                           }}
                         >
@@ -439,6 +441,22 @@ export function Library() {
                           >
                             Corners only: {t.magnet_corners_only ? "on" : "off"}
                           </button>
+                          <label className="col-span-2 min-w-0">
+                            <span className="block font-mono text-[9px] uppercase text-muted">Easy release</span>
+                            <select
+                              aria-label="Magnet easy release"
+                              className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                              value={t.magnet_easy_release}
+                              onChange={(e) =>
+                                patch(t.id, { magnet_easy_release: e.target.value as MagnetEasyRelease }).catch(() => {})
+                              }
+                            >
+                              <option value="off">Off</option>
+                              <option value="auto">Auto</option>
+                              <option value="inner">Inner</option>
+                              <option value="outer">Outer</option>
+                            </select>
+                          </label>
                         </div>
                       )}
                       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">

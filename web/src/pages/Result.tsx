@@ -6,6 +6,7 @@ import {
   sessionGenerate,
   sessionSetPhysicalOutline,
   type GenerateParams,
+  type MagnetEasyRelease,
   type Poly,
 } from "../api";
 import { Silhouette } from "../components/Silhouette";
@@ -64,6 +65,9 @@ export function Result() {
   const [magnetCornersOnly, setMagnetCornersOnly] = useState(
     result?.bin.magnet_corners_only ?? false,
   );
+  const [magnetEasyRelease, setMagnetEasyRelease] = useState<MagnetEasyRelease>(
+    result?.bin.magnet_easy_release ?? "off",
+  );
   const [regenerating, setRegenerating] = useState(false);
   const [returning, setReturning] = useState(false);
   const [editingCutout, setEditingCutout] = useState(false);
@@ -117,6 +121,7 @@ export function Result() {
         magnet_hole_depth_mm:
           parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
         magnet_corners_only: magnetCornersOnly,
+        magnet_easy_release: magnetEasyRelease,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setResult(nextResult, nextParams);
@@ -152,6 +157,7 @@ export function Result() {
         magnet_hole_depth_mm:
           parseOptionalPositive(magnetHoleDepth, "Magnet hole depth") ?? undefined,
         magnet_corners_only: magnetCornersOnly,
+        magnet_easy_release: magnetEasyRelease,
       };
       const nextResult = await sessionGenerate(session.session, nextParams);
       setEditingCutout(false);
@@ -502,6 +508,23 @@ export function Result() {
                   Corners only
                 </span>
               </label>
+              <label className="block">
+                <span className="grp-label block mb-2">Easy release</span>
+                <select
+                  aria-label="Magnet easy release"
+                  className="mono-input w-full"
+                  value={magnetEasyRelease}
+                  disabled={regenerating || returning || !magnetHoles}
+                  onChange={(event) =>
+                    setMagnetEasyRelease(event.target.value as MagnetEasyRelease)
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="auto">Auto</option>
+                  <option value="inner">Inner</option>
+                  <option value="outer">Outer</option>
+                </select>
+              </label>
             </div>
             <p className="font-mono text-[10px] text-muted mt-4">
               Finished height includes the stacking lip and snaps upward to a whole
@@ -509,7 +532,8 @@ export function Result() {
               recess depth and runs the separator to the stacking plane. Magnet holes
               are cut at each corner of every foot (or only at the bin's own outer
               corners, with "corners only"); depth must stay below the 4.75 mm foot
-              height.
+              height. Easy release cuts a narrow pry groove beside each magnet hole
+              so a thin blade can lever the magnet out.
             </p>
             {controlError && (
               <p className="font-mono text-xs text-orange mt-4">

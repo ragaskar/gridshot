@@ -15,6 +15,7 @@ import {
   type CombineTool,
   type CombineToolOverride,
   type LibraryTool,
+  type MagnetEasyRelease,
   type Placement,
   type RoundedRectToolshapeParams,
   type SavedBin,
@@ -240,6 +241,7 @@ export interface CombineEditorInitial {
   magnetHoleDiameterMm: number;
   magnetHoleDepthMm: number;
   magnetCornersOnly: boolean;
+  magnetEasyRelease: MagnetEasyRelease;
   bevelPockets: boolean;
   pocketRoundRadiusMm: number;
   forceGx: number | null;
@@ -334,6 +336,7 @@ interface Snapshot {
   magnetHoleDiameter: string;
   magnetHoleDepth: string;
   magnetCornersOnly: boolean;
+  magnetEasyRelease: MagnetEasyRelease;
   bevelPockets: boolean;
   pocketRoundRadiusMm: string;
   forceSize: boolean;
@@ -457,6 +460,7 @@ export function CombineEditor({
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
   const [magnetCornersOnly, setMagnetCornersOnly] = useState(initial?.magnetCornersOnly ?? false);
+  const [magnetEasyRelease, setMagnetEasyRelease] = useState<MagnetEasyRelease>(initial?.magnetEasyRelease ?? "off");
   const [bevelPockets, setBevelPockets] = useState(initial?.bevelPockets ?? true);
   const [pocketRoundRadiusMm, setPocketRoundRadiusMm] = useState(String(initial?.pocketRoundRadiusMm ?? "0.6"));
   const [nudge, setNudge] = useState("0.1");
@@ -751,6 +755,7 @@ export function CombineEditor({
     // up the live `bevelPockets`/`magnetCornersOnly` state as its default.
     bevelPocketsOverride: boolean = bevelPockets,
     magnetCornersOnlyOverride: boolean = magnetCornersOnly,
+    magnetEasyReleaseOverride: MagnetEasyRelease = magnetEasyRelease,
   ) {
     const baseline = tools; // local state as of the moment this request was built
     setBusy(true);
@@ -768,6 +773,7 @@ export function CombineEditor({
         magnetHoleDiameterMm: Number(magnetHoleDiameterOverride),
         magnetHoleDepthMm: Number(magnetHoleDepthOverride),
         magnetCornersOnly: magnetCornersOnlyOverride,
+        magnetEasyRelease: magnetEasyReleaseOverride,
         bevelPockets: bevelPocketsOverride,
         pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: force ? force[0] : null,
@@ -831,6 +837,7 @@ export function CombineEditor({
     setMagnetHoleDiameter(String(profile.magnet_hole_diameter_mm_default));
     setMagnetHoleDepth(String(profile.magnet_hole_depth_mm_default));
     setMagnetCornersOnly(profile.magnet_corners_only_default);
+    setMagnetEasyRelease(profile.magnet_easy_release_default);
     const nextStructural = structuralFromProfile(profile);
     setStructural(nextStructural);
     void load(
@@ -843,6 +850,7 @@ export function CombineEditor({
       toolIds, profile.live_grid,
       undefined, undefined, undefined,
       profile.magnet_corners_only_default,
+      profile.magnet_easy_release_default,
     );
   }
 
@@ -890,6 +898,7 @@ export function CombineEditor({
       magnetHoleDiameter,
       magnetHoleDepth,
       magnetCornersOnly,
+      magnetEasyRelease,
       bevelPockets,
       pocketRoundRadiusMm,
       forceSize,
@@ -953,6 +962,7 @@ export function CombineEditor({
     setMagnetHoleDiameter(s.magnetHoleDiameter);
     setMagnetHoleDepth(s.magnetHoleDepth);
     setMagnetCornersOnly(s.magnetCornersOnly);
+    setMagnetEasyRelease(s.magnetEasyRelease);
     setBevelPockets(s.bevelPockets);
     setPocketRoundRadiusMm(s.pocketRoundRadiusMm);
     setForceSize(s.forceSize);
@@ -1329,6 +1339,7 @@ export function CombineEditor({
         placements, overallHeight, lip, overrides, fillHeightPct, liveGrid,
         magnetHoles, magnetHoleDiameterMm: Number(magnetHoleDiameter), magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
+        magnetEasyRelease,
         bevelPockets,
         pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: forceGxVal, forceGy: forceGyVal, removedCells: removedVal,
@@ -1351,7 +1362,7 @@ export function CombineEditor({
         });
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
+  }, [idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, magnetEasyRelease, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells, hasOverflow, Boolean(meta)]); // eslint-disable-line
 
   useEffect(() => () => {
     previewSequence.current += 1;
@@ -1376,7 +1387,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
     };
-  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
+  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, magnetEasyRelease, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
 
   /** Close never silently drops a still-debouncing autosave — flush it right
    *  now (the request survives this component unmounting; only the local
@@ -2083,6 +2094,7 @@ export function CombineEditor({
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
+        magnetEasyRelease,
         bevelPockets,
         pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         forceGx: force ? Number(forceGx) : null,
@@ -2115,6 +2127,7 @@ export function CombineEditor({
         magnetHoleDiameterMm: Number(magnetHoleDiameter),
         magnetHoleDepthMm: Number(magnetHoleDepth),
         magnetCornersOnly,
+        magnetEasyRelease,
         bevelPockets,
         pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
         sliceThicknessMm: thicknessMm,
@@ -2362,6 +2375,7 @@ export function CombineEditor({
       magnetHoleDiameterMm: Number(magnetHoleDiameter),
       magnetHoleDepthMm: Number(magnetHoleDepth),
       magnetCornersOnly,
+      magnetEasyRelease,
       bevelPockets,
       pocketRoundRadiusMm: Number(pocketRoundRadiusMm),
       forceGx: force ? Number(forceGx) : null,
@@ -3440,6 +3454,27 @@ export function CombineEditor({
                 >
                   Corners only
                 </span>
+              </label>
+            )}
+            {magnetHoles && (
+              <label className="mt-1 block">
+                <span className="font-mono text-[9px] uppercase text-muted">Easy release</span>
+                <select
+                  aria-label="Magnet easy release"
+                  className="mono-input mt-0.5 w-full !px-2 !py-1 !text-sm"
+                  disabled={busy}
+                  value={magnetEasyRelease}
+                  onChange={(event) => {
+                    pushSnapshot();
+                    setMagnetEasyRelease(event.target.value as MagnetEasyRelease);
+                    void load(placementsFor(tools), overridesFor(tools));
+                  }}
+                >
+                  <option value="off">Off</option>
+                  <option value="auto">Auto</option>
+                  <option value="inner">Inner</option>
+                  <option value="outer">Outer</option>
+                </select>
               </label>
             )}
           </div>

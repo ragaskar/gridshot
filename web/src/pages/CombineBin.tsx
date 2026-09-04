@@ -18,6 +18,7 @@ function reopenInitial(b: SavedBin): CombineEditorInitial {
     magnetHoleDiameterMm: b.magnet_hole_diameter_mm,
     magnetHoleDepthMm: b.magnet_hole_depth_mm,
     magnetCornersOnly: b.magnet_corners_only,
+    magnetEasyRelease: b.magnet_easy_release,
     bevelPockets: b.bevel_pockets,
     pocketRoundRadiusMm: b.pocket_round_radius_mm,
     forceGx: b.force_gx,

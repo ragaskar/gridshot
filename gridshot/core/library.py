@@ -142,6 +142,7 @@ class LibraryTool(BaseModel):
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
     magnet_hole_depth_mm: float = grid_mod.MAGNET_HOLE_DEPTH_MM
     magnet_corners_only: bool = False
+    magnet_easy_release: str = "off"
     # Toolshapes: a parametric, no-photo outline (e.g. "rounded rectangle")
     # generated in code from these fields, rather than traced from a photo.
     # Bin-tool-only (see gridshot/core/bintools.py) — `None` for every real,
@@ -328,6 +329,7 @@ def derive_tool_spec(
             magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,
             magnet_hole_depth_mm=tool.magnet_hole_depth_mm,
             magnet_corners_only=tool.magnet_corners_only,
+            magnet_easy_release=tool.magnet_easy_release,
         ),
         printer,
     )

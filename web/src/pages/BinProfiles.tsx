@@ -10,6 +10,7 @@ import {
   uploadBinProfilePreview,
   type BinProfile,
   type BinProfileFields,
+  type MagnetEasyRelease,
 } from "../api";
 import { BinViewer } from "../components/BinViewer";
 import { decodeUrlState, pathForBinProfileEdit, pathForView } from "../urlState";
@@ -34,6 +35,7 @@ const DEFAULT_DRAFT: BinProfileFields = {
   magnet_hole_diameter_mm_default: 6.5,
   magnet_hole_depth_mm_default: 2.0,
   magnet_corners_only_default: false,
+  magnet_easy_release_default: "off",
   lip_height_mm: null,
   lip_chamfer_top_mm: null,
   lip_straight_mm: null,
@@ -57,6 +59,7 @@ type StructuralKey = Exclude<
   keyof BinProfileFields,
   "name" | "fill_height_pct" | "live_grid" | "lip" | "allow_custom_shape" | "magnet_holes_default"
   | "magnet_hole_diameter_mm_default" | "magnet_hole_depth_mm_default" | "magnet_corners_only_default"
+  | "magnet_easy_release_default"
 >;
 
 /** Only meaningful while `lip` is on — rendered in the Stacking Lip section,
@@ -383,6 +386,24 @@ export function BinProfiles() {
                       >
                         Corners only (default)
                       </span>
+                    </label>
+                    <label className="col-span-2 min-w-0">
+                      <span className="block font-mono text-[9px] uppercase text-muted">
+                        Easy release (default)
+                      </span>
+                      <select
+                        aria-label="Default magnet easy release"
+                        className="mono-input min-w-0 !px-2 !py-1 !text-sm"
+                        value={draft.magnet_easy_release_default}
+                        onChange={(e) =>
+                          set("magnet_easy_release_default", e.target.value as MagnetEasyRelease)
+                        }
+                      >
+                        <option value="off">Off</option>
+                        <option value="auto">Auto</option>
+                        <option value="inner">Inner</option>
+                        <option value="outer">Outer</option>
+                      </select>
                     </label>
                   </div>
                 )}

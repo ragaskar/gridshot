@@ -70,6 +70,7 @@ class BinProfile(BaseModel):
     magnet_hole_diameter_mm_default: float = 6.5
     magnet_hole_depth_mm_default: float = 2.0
     magnet_corners_only_default: bool = False
+    magnet_easy_release_default: str = "off"
     # Structural overrides. None means "inherit gridfinity.py's module
     # constant" — what makes the seeded profiles reproduce today's geometry
     # exactly, byte for byte.

@@ -44,6 +44,14 @@ MAGNET_HOLE_OFFSET_MM = FOOT_BOTTOM_SIZE / 2 - MAGNET_HOLE_INSET_FROM_EDGE_MM  #
 MAGNET_HOLE_DIAMETER_MM = 6.5
 MAGNET_HOLE_DEPTH_MM = 2.0
 
+# "Easy release" pry tail: a narrow groove cut into the bottom face beside the
+# magnet hole (same depth as the hole) so a thin blade can lever the magnet
+# out. Sized to gridfinity_extended's `magnet_release()` — fixed regardless of
+# magnet diameter, not user-configurable, matching upstream.
+MAGNET_EASY_RELEASE_WIDTH_MM = 2.0
+MAGNET_EASY_RELEASE_LENGTH_MM = 1.5
+MAGNET_EASY_RELEASE_VALUES = ("off", "auto", "inner", "outer")
+
 # stacking lip, per gridfinity.xyz spec (gridfinity-rebuilt STACKING_LIP_LINE):
 # from the opening at the outer wall going down-inward: 1.9mm 45° chamfer,
 # 1.8mm vertical, 0.7mm 45° to the inner tip 2.6mm inside the wall face
@@ -172,6 +180,34 @@ def _magnet_corner_signs(
         for sy in (-1, 1)
         if not present(ix + sx, iy) and not present(ix, iy + sy)
     ]
+
+
+def _normalize_magnet_easy_release(value: str) -> str:
+    """Validate `magnet_easy_release` and resolve "auto" to "inner" — this
+    codebase always has a solid (non-"efficient") floor under the foot, the
+    case gridfinity_extended's own auto rule maps to "inner"."""
+    if value not in MAGNET_EASY_RELEASE_VALUES:
+        raise ValueError(f"unknown magnet_easy_release: {value!r}")
+    return "inner" if value == "auto" else value
+
+
+def _magnet_hole_cross_section(
+    radius: float, sx: int, sy: int, easy_release: str
+) -> CrossSection:
+    """A single magnet hole's footprint, optionally with an "easy release"
+    pry tail: a narrow groove running from the hole out along its own corner
+    diagonal (`easy_release="outer"`, `(sx, sy)`) or back toward the foot's
+    centre (`"inner"`, `(-sx, -sy)`) — see MAGNET_EASY_RELEASE_WIDTH_MM."""
+    hole = CrossSection.circle(radius, CIRCULAR_SEGMENTS)
+    if easy_release == "off":
+        return hole
+    half_w = MAGNET_EASY_RELEASE_WIDTH_MM / 2
+    tail_len = radius + MAGNET_EASY_RELEASE_LENGTH_MM
+    tail = CrossSection.square((tail_len, MAGNET_EASY_RELEASE_WIDTH_MM), center=True).translate(
+        (tail_len / 2, 0)
+    ) + CrossSection.circle(half_w, CIRCULAR_SEGMENTS).translate((tail_len, 0))
+    direction_deg = math.degrees(math.atan2(sy, sx)) + (0 if easy_release == "outer" else 180)
+    return hole + tail.rotate(direction_deg)
 
 
 def _rounded_polyomino_outline(
@@ -788,6 +824,7 @@ def bin_solid(
     magnet_hole_diameter_mm: float = MAGNET_HOLE_DIAMETER_MM,
     magnet_hole_depth_mm: float = MAGNET_HOLE_DEPTH_MM,
     magnet_corners_only: bool = False,
+    magnet_easy_release: str = "off",
     included_cells: frozenset[tuple[int, int]] | None = None,
     lip_height_mm: float = LIP_H,
     lip_chamfer_top_mm: float = LIP_CH_TOP,
@@ -842,6 +879,15 @@ def bin_solid(
     every corner of every foot — far fewer holes, at the cost of relying on
     friction/adjacent bins to hold the interior feet down. See
     `_magnet_corner_signs`.
+
+    `magnet_easy_release` ("off"/"auto"/"inner"/"outer") cuts a narrow pry
+    groove beside each magnet hole so a thin blade can lever the magnet out
+    — see gridfinity_extended's `magnet_release()`. "outer" points the
+    groove out along the hole's own corner diagonal (toward the bin's own
+    edge); "inner" points it back toward the foot's centre; "auto" resolves
+    to "inner" (this codebase has no "efficient floor" the way upstream
+    does, the case upstream's own auto rule maps to "inner"). See
+    `_normalize_magnet_easy_release`/`_magnet_hole_cross_section`.
 
     `bevel_pockets` rounds off each pocket's top opening edge with a convex
     fillet — a round-over, tangent to both the pocket wall and the bin's top
@@ -984,19 +1030,40 @@ def bin_solid(
             )
         radius = magnet_hole_diameter_mm / 2
         magnet_hole_offset_mm = FOOT_BOTTOM_SIZE / 2 - magnet_hole_inset_from_edge_mm
-        hole = Manifold.cylinder(
-            magnet_hole_depth_mm + EPS, radius, radius, CIRCULAR_SEGMENTS
-        ).translate((0, 0, -EPS))
+        easy_release = _normalize_magnet_easy_release(magnet_easy_release)
         all_corners = ((-1, -1), (-1, 1), (1, -1), (1, 1))
-        holes = [
-            hole.translate((cx + sx * magnet_hole_offset_mm, cy + sy * magnet_hole_offset_mm, 0))
-            for ix, iy, cx, cy in foot_centers
-            for sx, sy in (
-                _magnet_corner_signs(ix, iy, gx, gy, included_cells)
-                if magnet_corners_only
-                else all_corners
-            )
-        ]
+        if easy_release == "off":
+            hole = Manifold.cylinder(
+                magnet_hole_depth_mm + EPS, radius, radius, CIRCULAR_SEGMENTS
+            ).translate((0, 0, -EPS))
+            holes = [
+                hole.translate((cx + sx * magnet_hole_offset_mm, cy + sy * magnet_hole_offset_mm, 0))
+                for ix, iy, cx, cy in foot_centers
+                for sx, sy in (
+                    _magnet_corner_signs(ix, iy, gx, gy, included_cells)
+                    if magnet_corners_only
+                    else all_corners
+                )
+            ]
+        else:
+            holes_by_corner = {
+                (sx, sy): Manifold.extrude(
+                    _magnet_hole_cross_section(radius, sx, sy, easy_release),
+                    magnet_hole_depth_mm + EPS,
+                ).translate((0, 0, -EPS))
+                for sx, sy in all_corners
+            }
+            holes = [
+                holes_by_corner[sx, sy].translate(
+                    (cx + sx * magnet_hole_offset_mm, cy + sy * magnet_hole_offset_mm, 0)
+                )
+                for ix, iy, cx, cy in foot_centers
+                for sx, sy in (
+                    _magnet_corner_signs(ix, iy, gx, gy, included_cells)
+                    if magnet_corners_only
+                    else all_corners
+                )
+            ]
         solid = solid - Manifold.batch_boolean(holes, OpType.Add)
 
     for entry in cuts:

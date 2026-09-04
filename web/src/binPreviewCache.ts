@@ -37,6 +37,7 @@ const GEOMETRY_OPTION_FIELDS = [
   ["magnet_hole_diameter_mm", "magnetHoleDiameterMm"],
   ["magnet_hole_depth_mm", "magnetHoleDepthMm"],
   ["magnet_corners_only", "magnetCornersOnly"],
+  ["magnet_easy_release", "magnetEasyRelease"],
   ["bevel_pockets", "bevelPockets"],
   ["pocket_round_radius_mm", "pocketRoundRadiusMm"],
   ["force_gx", "forceGx"],

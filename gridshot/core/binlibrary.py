@@ -79,6 +79,7 @@ class SavedBin(BaseModel):
     magnet_hole_diameter_mm: float = 6.5
     magnet_hole_depth_mm: float = 2.0
     magnet_corners_only: bool = False
+    magnet_easy_release: str = "off"
     # Default True applies to legacy on-disk records too (missing key ->
     # Pydantic default) — a deliberate geometry change to bins saved before
     # this existed, per the "checked by default" ask, not just new ones.

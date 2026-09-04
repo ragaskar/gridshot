@@ -162,3 +162,96 @@ class TestMagnetCornersOnly:
         assert len(totals[(3, 2)]) == 2
         assert totals[(1, 1)] == []
         assert totals[(2, 1)] == []
+
+
+class TestMagnetEasyRelease:
+    """"off"/"auto"/"inner"/"outer" — a narrow pry groove cut beside each
+    magnet hole, matching gridfinity_extended's `magnet_release()`. "auto"
+    resolves to "inner" (this codebase has no "efficient floor" concept, the
+    case upstream's own auto rule maps to "inner")."""
+
+    def test_off_leaves_the_solid_unchanged(self):
+        plain = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True)
+        ).volume
+        explicit_off = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="off")
+        ).volume
+
+        assert explicit_off == pytest.approx(plain)
+
+    def test_off_is_a_noop_when_magnet_holes_is_off(self):
+        plain = grid_mod.to_trimesh(grid_mod.bin_solid(2, 1, 3)).volume
+        released = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_easy_release="outer")
+        ).volume
+
+        assert released == pytest.approx(plain)
+
+    @pytest.mark.parametrize("value", ["auto", "inner", "outer"])
+    def test_removes_more_material_than_a_plain_hole(self, value):
+        plain_holes = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True)
+        ).volume
+        with_release = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release=value)
+        ).volume
+
+        assert with_release < plain_holes
+
+    def test_auto_matches_inner(self):
+        auto = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="auto")
+        ).volume
+        inner = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="inner")
+        ).volume
+
+        assert auto == pytest.approx(inner)
+
+    def test_inner_and_outer_remove_the_same_volume(self):
+        """Same tail shape, just mirrored per corner — same total volume."""
+        inner = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="inner")
+        ).volume
+        outer = grid_mod.to_trimesh(
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="outer")
+        ).volume
+
+        assert inner == pytest.approx(outer)
+
+    def test_still_watertight_and_manifold(self):
+        for value in ("inner", "outer"):
+            solid = grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release=value)
+            mesh = grid_mod.to_trimesh(solid)
+            assert mesh.is_watertight
+            assert mesh.is_winding_consistent
+
+    def test_stays_inside_the_foot_bottom_footprint(self):
+        tail_reach = (
+            grid_mod.MAGNET_HOLE_OFFSET_MM
+            + grid_mod.MAGNET_HOLE_DIAMETER_MM / 2
+            + grid_mod.MAGNET_EASY_RELEASE_LENGTH_MM
+        )
+        assert tail_reach < grid_mod.FOOT_BOTTOM_SIZE / 2
+
+    def test_unknown_value_is_rejected(self):
+        with pytest.raises(ValueError, match="magnet_easy_release"):
+            grid_mod.bin_solid(2, 1, 3, magnet_holes=True, magnet_easy_release="sideways")
+
+    def test_honours_corners_only(self):
+        plain = grid_mod.to_trimesh(grid_mod.bin_solid(2, 2, 3)).volume
+        corners_only = grid_mod.to_trimesh(
+            grid_mod.bin_solid(
+                2, 2, 3, magnet_holes=True, magnet_corners_only=True,
+                magnet_easy_release="outer",
+            )
+        ).volume
+        every_corner = grid_mod.to_trimesh(
+            grid_mod.bin_solid(
+                2, 2, 3, magnet_holes=True, magnet_corners_only=False,
+                magnet_easy_release="outer",
+            )
+        ).volume
+
+        assert plain > corners_only > every_corner
