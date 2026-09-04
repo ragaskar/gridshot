@@ -101,7 +101,7 @@ describe("CombineEditor export filenames", () => {
         overallHeight={null}
         onClose={() => {}}
         initial={{
-          id: "bin-3", label: "Workbench Drawer 3", appliedProfileId: null,
+          id: "bin-3", label: "Workbench Drawer 3", notes: "", appliedProfileId: null,
           placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
           magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false, magnetEasyRelease: "off", bevelPockets: true,
           pocketRoundRadiusMm: 0.6,
@@ -124,7 +124,7 @@ describe("CombineEditor export filenames", () => {
 
   it("uses the newly-saved name for exports made later in the same session", async () => {
     vi.mocked(saveBin).mockResolvedValue({
-      id: "bin-1", label: "Fresh Save", created_ts: 0,
+      id: "bin-1", label: "Fresh Save", notes: "", created_ts: 0,
       tool_ids: ["tool-a", "tool-b"], tool_labels: ["Wrench", "Pliers"],
       placements: [], overrides: [], overall_height: null, lip: true, fill_height_pct: 100, live_grid: false,
       magnet_holes: false, magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false, magnet_easy_release: "off", bevel_pockets: true,

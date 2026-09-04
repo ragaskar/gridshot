@@ -17,6 +17,7 @@ function savedBin(overrides: Partial<SavedBin> = {}): SavedBin {
   return {
     id: "bin-1",
     label: "My bin",
+    notes: "",
     created_ts: 0,
     tool_ids: ["t-a"],
     tool_labels: ["Wrench"],

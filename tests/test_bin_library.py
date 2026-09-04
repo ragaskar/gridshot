@@ -183,6 +183,34 @@ class TestBinLibrary:
         listed = client.get("/api/bins").json()["bins"][0]
         assert listed["applied_profile_id"] == "seed-corral"
 
+    def test_save_stores_notes_and_defaults_to_empty(self, client, library_dir):
+        _seed_two_tools()
+
+        with_notes = _save_bin(client, notes="# Screwdriver bin\n\nFits the *long* handles.").json()
+        assert with_notes["notes"] == "# Screwdriver bin\n\nFits the *long* handles."
+
+        without_notes = _save_bin(client, label="Plain").json()
+        assert without_notes["notes"] == ""
+
+        listed = {b["id"]: b for b in client.get("/api/bins").json()["bins"]}
+        assert listed[with_notes["id"]]["notes"] == "# Screwdriver bin\n\nFits the *long* handles."
+        assert listed[without_notes["id"]]["notes"] == ""
+
+    def test_overwrite_replaces_notes(self, client, library_dir):
+        _seed_two_tools()
+        original = _save_bin(client, label="Original", notes="first draft").json()
+        bin_id = original["id"]
+
+        response = client.put(
+            f"/api/bins/{bin_id}",
+            json={"ids": ["tool-a", "tool-b"], "label": "Original", "notes": "revised"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["notes"] == "revised"
+        listed = client.get("/api/bins").json()["bins"]
+        assert listed[0]["notes"] == "revised"
+
     def test_overwrite_replaces_the_recipe_keeping_the_same_id(self, client, library_dir):
         _seed_two_tools()
         original = _save_bin(client, label="Original", lip=True).json()

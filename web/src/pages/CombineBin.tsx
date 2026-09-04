@@ -8,6 +8,7 @@ function reopenInitial(b: SavedBin): CombineEditorInitial {
   return {
     id: b.id,
     label: b.label,
+    notes: b.notes,
     appliedProfileId: b.applied_profile_id,
     placements: b.placements,
     overrides: b.overrides,

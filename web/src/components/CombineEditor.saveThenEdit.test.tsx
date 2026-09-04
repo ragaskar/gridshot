@@ -82,7 +82,7 @@ describe("CombineEditor Save then edit", () => {
 
   it("keeps the arrangement and forked ids in sync after the mount-time mint, so a later edit doesn't collapse placements", async () => {
     vi.mocked(saveBin).mockResolvedValue({
-      id: "bin-1", label: "My Bin", created_ts: 0,
+      id: "bin-1", label: "My Bin", notes: "", created_ts: 0,
       tool_ids: ["bintool-a", "bintool-b"],
       tool_labels: ["Wrench", "Pliers"],
       placements: [

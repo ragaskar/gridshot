@@ -247,7 +247,7 @@ describe("CombineEditor finger-hole radial offset", () => {
     TOOL_POOL["bintool-a"] = baseTool("bintool-a", "Wrench", 2.5);
 
     const initial: CombineEditorInitial = {
-      id: "bin-1", label: "Reopened bin", appliedProfileId: null,
+      id: "bin-1", label: "Reopened bin", notes: "", appliedProfileId: null,
       placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
       magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false, magnetEasyRelease: "off", bevelPockets: true,
       pocketRoundRadiusMm: 0.6,

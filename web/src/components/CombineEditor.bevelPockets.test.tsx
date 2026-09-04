@@ -73,7 +73,7 @@ function undoButton(): HTMLButtonElement {
 }
 
 const REOPEN_INITIAL_BASE: Omit<CombineEditorInitial, "bevelPockets" | "pocketRoundRadiusMm"> = {
-  id: "bin-1", label: "Reopened bin", appliedProfileId: null,
+  id: "bin-1", label: "Reopened bin", notes: "", appliedProfileId: null,
   placements: [], overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
   magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false, magnetEasyRelease: "off",
   forceGx: null, forceGy: null, removedCells: null,

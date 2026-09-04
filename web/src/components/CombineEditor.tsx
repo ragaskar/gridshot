@@ -20,6 +20,7 @@ import {
   type RoundedRectToolshapeParams,
   type SavedBin,
 } from "../api";
+import { BinNotes } from "./BinNotes";
 import { BinViewer } from "./BinViewer";
 import { ControlGroup } from "./sidebar/ControlGroup";
 import { Section } from "./sidebar/Section";
@@ -231,6 +232,7 @@ export function defaultBinName(): string {
 export interface CombineEditorInitial {
   id: string;
   label: string;
+  notes: string;
   appliedProfileId: string | null;
   placements: Placement[];
   overrides: CombineToolOverride[];
@@ -332,6 +334,7 @@ interface Snapshot {
   lip: boolean;
   allowCustomShape: boolean;
   structural: StructuralOverrides;
+  notes: string;
   magnetHoles: boolean;
   magnetHoleDiameter: string;
   magnetHoleDepth: string;
@@ -456,6 +459,7 @@ export function CombineEditor({
   // Every edit from then on autosaves here; "Save As…" attaches to a new
   // entry instead, forked off the current state.
   const [savedBinId, setSavedBinId] = useState<string | null>(initial?.id ?? null);
+  const [notes, setNotes] = useState(initial?.notes ?? "");
   const [magnetHoles, setMagnetHoles] = useState(initial?.magnetHoles ?? false);
   const [magnetHoleDiameter, setMagnetHoleDiameter] = useState(String(initial?.magnetHoleDiameterMm ?? "6.5"));
   const [magnetHoleDepth, setMagnetHoleDepth] = useState(String(initial?.magnetHoleDepthMm ?? "2"));
@@ -567,6 +571,9 @@ export function CombineEditor({
   // Non-null exactly while a debounced autosave is scheduled but hasn't
   // fired yet — Close flushes it immediately instead of losing the edit.
   const pendingAutosaveTimer = useRef<number | null>(null);
+  // Same, but for the notes-only autosave below (its own, longer debounce —
+  // see NOTES_AUTOSAVE_DEBOUNCE_MS).
+  const pendingNotesAutosaveTimer = useRef<number | null>(null);
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
   const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
@@ -894,6 +901,7 @@ export function CombineEditor({
       lip,
       allowCustomShape,
       structural: { ...structural },
+      notes,
       magnetHoles,
       magnetHoleDiameter,
       magnetHoleDepth,
@@ -958,6 +966,7 @@ export function CombineEditor({
     setLip(s.lip);
     setAllowCustomShape(s.allowCustomShape);
     setStructural(s.structural);
+    setNotes(s.notes);
     setMagnetHoles(s.magnetHoles);
     setMagnetHoleDiameter(s.magnetHoleDiameter);
     setMagnetHoleDepth(s.magnetHoleDepth);
@@ -1389,15 +1398,52 @@ export function CombineEditor({
     };
   }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, magnetEasyRelease, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
 
+  const NOTES_AUTOSAVE_DEBOUNCE_MS = 5000;
+  // Notes get their own (much longer) debounce, separate from the geometry
+  // autosave above — geometry changes come from discrete clicks/drags/blurs
+  // that already coalesce naturally, but notes autosave while still mid-
+  // keystroke, so 1.5s would fire constantly while someone is typing.
+  // Blurring the notes editor (see the render below) flushes immediately
+  // instead of waiting this out. Deliberately keyed only on `notes` (not the
+  // whole geometry dependency list) — editing a magnet setting shouldn't
+  // reset this timer, and vice versa.
+  useEffect(() => {
+    if (!savedBinId) return;
+    const timer = window.setTimeout(() => {
+      pendingNotesAutosaveTimer.current = null;
+      void autoSave();
+    }, NOTES_AUTOSAVE_DEBOUNCE_MS);
+    pendingNotesAutosaveTimer.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingNotesAutosaveTimer.current === timer) pendingNotesAutosaveTimer.current = null;
+    };
+  }, [notes, savedBinId]); // eslint-disable-line
+
+  /** Blurring the notes editor (see the render below) — cancels the pending
+   *  debounce (if any) and saves right away instead of waiting it out. */
+  function flushNotesSave() {
+    if (pendingNotesAutosaveTimer.current !== null) {
+      window.clearTimeout(pendingNotesAutosaveTimer.current);
+      pendingNotesAutosaveTimer.current = null;
+    }
+    void autoSave();
+  }
+
   /** Close never silently drops a still-debouncing autosave — flush it right
    *  now (the request survives this component unmounting; only the local
    *  success/error UI feedback wouldn't be seen, which is fine on Close). */
   function handleClose() {
+    const pending = pendingAutosaveTimer.current !== null || pendingNotesAutosaveTimer.current !== null;
     if (pendingAutosaveTimer.current !== null) {
       window.clearTimeout(pendingAutosaveTimer.current);
       pendingAutosaveTimer.current = null;
-      void autoSave();
     }
+    if (pendingNotesAutosaveTimer.current !== null) {
+      window.clearTimeout(pendingNotesAutosaveTimer.current);
+      pendingNotesAutosaveTimer.current = null;
+    }
+    if (pending) void autoSave();
     onClose();
   }
 
@@ -2428,7 +2474,7 @@ export function CombineEditor({
     setSaveErr(null);
     try {
       const label = saveName.trim() || defaultBinName();
-      const saved = await saveBin(label, toolIds, saveOptions());
+      const saved = await saveBin(label, toolIds, saveOptions(), notes);
       setSavedBinId(saved.id);
       setSavedLabel(label);
       await adoptSavedBinIds(saved);
@@ -2454,7 +2500,7 @@ export function CombineEditor({
   async function mintInitialSave(freshTools: CombineTool[]) {
     try {
       const label = defaultBinName();
-      const saved = await saveBin(label, toolIds, saveOptions(freshTools));
+      const saved = await saveBin(label, toolIds, saveOptions(freshTools), notes);
       setSavedBinId(saved.id);
       setSavedLabel(label);
       await adoptSavedBinIds(saved);
@@ -2471,7 +2517,7 @@ export function CombineEditor({
   async function autoSave() {
     if (!savedBinId) return;
     try {
-      await overwriteBin(savedBinId, savedLabel ?? defaultBinName(), toolIds, saveOptions());
+      await overwriteBin(savedBinId, savedLabel ?? defaultBinName(), toolIds, saveOptions(), notes);
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
@@ -2926,7 +2972,7 @@ export function CombineEditor({
           </Section>
         </Sidebar>
 
-        <div className="min-w-0 flex-1 lg:min-h-0 lg:overflow-hidden">
+        <div className="min-w-0 flex-1 lg:min-h-0 lg:overflow-y-auto">
           <div
             ref={arrangeRef}
             className="border border-line bg-field min-w-0 overflow-hidden"
@@ -3275,6 +3321,14 @@ export function CombineEditor({
               </div>
             )}
           </div>
+          <BinNotes
+            value={notes}
+            onChange={(next) => {
+              pushSnapshotCoalesced("notes");
+              setNotes(next);
+            }}
+            onBlurCommit={flushNotesSave}
+          />
         </div>
 
         <Sidebar

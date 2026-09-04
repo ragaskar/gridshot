@@ -1306,6 +1306,8 @@ export async function combineLibrarySlice(
 export interface SavedBin {
   id: string;
   label: string;
+  /** Freeform, GitHub-flavored-markdown notes about this bin. */
+  notes: string;
   created_ts: number;
   tool_ids: string[];
   tool_labels: (string | null)[]; // null = that tool has since been deleted
@@ -1341,12 +1343,12 @@ export interface SavedBin {
 }
 
 export async function saveBin(
-  label: string, ids: string[], options: CombineOptions = {},
+  label: string, ids: string[], options: CombineOptions = {}, notes: string = "",
 ): Promise<SavedBin> {
   const r = await fetch("/api/bins", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...combineRequestBody(ids, options), label }),
+    body: JSON.stringify({ ...combineRequestBody(ids, options), label, notes }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));
@@ -1358,12 +1360,12 @@ export async function saveBin(
 /** "Save" (as opposed to `saveBin`'s "Save As") — replaces an existing Bin
  *  Library entry's recipe in place, keeping its id and created_ts. */
 export async function overwriteBin(
-  id: string, label: string, ids: string[], options: CombineOptions = {},
+  id: string, label: string, ids: string[], options: CombineOptions = {}, notes: string = "",
 ): Promise<SavedBin> {
   const r = await fetch(`/api/bins/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...combineRequestBody(ids, options), label }),
+    body: JSON.stringify({ ...combineRequestBody(ids, options), label, notes }),
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({ detail: r.statusText }));

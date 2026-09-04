@@ -3348,6 +3348,7 @@ def library_combine_slice(req: CombineRequest) -> Response:
 
 class SaveBinRequest(CombineRequest):
     label: str
+    notes: str = ""
     applied_profile_id: Optional[str] = None
 
 
@@ -3406,6 +3407,7 @@ def _bin_json(saved: binlibrary_mod.SavedBin) -> dict:
     return {
         "id": saved.id,
         "label": saved.label,
+        "notes": saved.notes,
         "created_ts": saved.created_ts,
         "tool_ids": saved.tool_ids,
         "tool_labels": tool_labels,
@@ -3482,6 +3484,7 @@ def _build_saved_bin(req: SaveBinRequest, *, bin_id: str, created_ts: int) -> bi
     return binlibrary_mod.SavedBin(
         id=bin_id,
         label=req.label,
+        notes=req.notes,
         created_ts=created_ts,
         tool_ids=tool_ids,
         placements=[

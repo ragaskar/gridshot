@@ -17,7 +17,7 @@ function placement(id: string): Placement {
 
 function savedBin(): SavedBin {
   return {
-    id: "bin-1", label: "My bin", created_ts: 0, tool_ids: ["t-a"], tool_labels: ["Wrench"],
+    id: "bin-1", label: "My bin", notes: "", created_ts: 0, tool_ids: ["t-a"], tool_labels: ["Wrench"],
     placements: [placement("t-a")], overrides: [], overall_height: null, lip: true,
     fill_height_pct: 100, live_grid: false, magnet_holes: false, magnet_hole_diameter_mm: 6.5,
     magnet_hole_depth_mm: 2, magnet_corners_only: false, magnet_easy_release: "off", bevel_pockets: true, pocket_round_radius_mm: 0.6, force_gx: null, force_gy: null, removed_cells: null,

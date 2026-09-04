@@ -15,7 +15,7 @@ function fnv1a(str: string): string {
  *  renaming a bin, or a tool it uses losing its library entry, shouldn't
  *  invalidate a cached preview or need forwarding to `combinePreview`. */
 const COSMETIC_BIN_FIELDS = [
-  "id", "label", "created_ts", "tool_labels", "applied_profile_id",
+  "id", "label", "notes", "created_ts", "tool_labels", "applied_profile_id",
 ] as const satisfies readonly (keyof SavedBin)[];
 
 /** Every remaining SavedBin field — one that DOES affect the rendered

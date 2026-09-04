@@ -98,7 +98,7 @@ describe("CombineEditor bin name + Save As redirect", () => {
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(overwriteBin).toHaveBeenCalledWith(
-      minted.id, "My Toolbox Drawer", expect.anything(), expect.anything(),
+      minted.id, "My Toolbox Drawer", expect.anything(), expect.anything(), expect.anything(),
     );
   });
 

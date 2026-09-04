@@ -67,6 +67,7 @@ class SavedBin(BaseModel):
 
     id: str
     label: str = ""
+    notes: str = ""
     created_ts: int = 0
     tool_ids: list[str]
     placements: list[SavedBinPlacement]

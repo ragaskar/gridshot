@@ -148,6 +148,74 @@
   .mono-input:focus {
     @apply border-teal bg-paper;
   }
+  .bin-notes {
+    @apply font-body text-sm text-ink;
+  }
+  .bin-notes > :first-child {
+    margin-top: 0;
+  }
+  .bin-notes > :last-child {
+    margin-bottom: 0;
+  }
+  .bin-notes p {
+    @apply my-2;
+  }
+  .bin-notes h1,
+  .bin-notes h2,
+  .bin-notes h3,
+  .bin-notes h4 {
+    @apply mb-2 mt-4 font-display font-bold text-ink;
+  }
+  .bin-notes h1 {
+    @apply text-lg;
+  }
+  .bin-notes h2 {
+    @apply text-base;
+  }
+  .bin-notes h3,
+  .bin-notes h4 {
+    @apply text-sm uppercase text-muted;
+  }
+  .bin-notes ul {
+    @apply my-2 list-disc pl-5;
+  }
+  .bin-notes ol {
+    @apply my-2 list-decimal pl-5;
+  }
+  .bin-notes li {
+    @apply my-1;
+  }
+  .bin-notes a {
+    @apply text-teal underline;
+  }
+  .bin-notes code {
+    @apply bg-paper-2 px-1 py-0.5 font-mono text-[0.85em];
+    border-radius: 2px;
+  }
+  .bin-notes pre {
+    @apply my-2 overflow-x-auto bg-paper-2 p-2 font-mono text-xs;
+    border-radius: 2px;
+  }
+  .bin-notes pre code {
+    @apply bg-transparent p-0;
+  }
+  .bin-notes blockquote {
+    @apply my-2 border-l-2 border-line pl-3 text-muted;
+  }
+  .bin-notes hr {
+    @apply my-3 border-line;
+  }
+  .bin-notes table {
+    @apply my-2 w-full font-mono text-xs;
+    border-collapse: collapse;
+  }
+  .bin-notes th,
+  .bin-notes td {
+    @apply border border-line px-2 py-1 text-left;
+  }
+  .bin-notes input[type="checkbox"] {
+    @apply mr-1;
+  }
   .app-nav {
     @apply sticky top-0 z-40 border-b border-line bg-paper;
   }

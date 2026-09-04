@@ -12,11 +12,12 @@ import type { CombineOptions, SavedBin } from "../api";
  *  Only a test specifically about the first-ever fork (ids actually
  *  changing) needs its own, different mock instead of this one. */
 export function fakeSavedBin(
-  id: string, label: string, ids: string[], options: CombineOptions,
+  id: string, label: string, ids: string[], options: CombineOptions, notes: string = "",
 ): SavedBin {
   return {
     id,
     label,
+    notes,
     created_ts: 0,
     tool_ids: ids,
     tool_labels: ids,
@@ -76,11 +77,11 @@ export function mockPassthroughSaves(
 ) {
   let counter = 0;
   saveBinMock.mockReset().mockImplementation(
-    async (label: string, ids: string[], options: CombineOptions = {}) =>
-      fakeSavedBin(`auto-bin-${++counter}`, label, ids, options),
+    async (label: string, ids: string[], options: CombineOptions = {}, notes: string = "") =>
+      fakeSavedBin(`auto-bin-${++counter}`, label, ids, options, notes),
   );
   overwriteBinMock?.mockReset().mockImplementation(
-    async (id: string, label: string, ids: string[], options: CombineOptions = {}) =>
-      fakeSavedBin(id, label, ids, options),
+    async (id: string, label: string, ids: string[], options: CombineOptions = {}, notes: string = "") =>
+      fakeSavedBin(id, label, ids, options, notes),
   );
 }
