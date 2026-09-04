@@ -453,6 +453,21 @@ export function CombineEditor({
   // the "apply the first bin profile automatically" effect below so it never
   // races that load with a stale/empty placements array.
   const [autoPacked, setAutoPacked] = useState(false);
+  // True once the mount effect's very first `load()` (reopen's manual-
+  // placement load, or a fresh session's auto-pack) has settled — gates the
+  // autosave effects below so neither can fire with `tools` still at its
+  // pre-mount `[]`. Reopening a saved bin sets `savedBinId` synchronously
+  // from `initial.id`, before that first `load()` resolves; without this
+  // gate, a slow-enough initial load lets the debounce timer's *stale*
+  // closure (captured at mount, over the still-empty `tools`) fire first —
+  // `saveOptions()` then reports empty placements, the server falls back to
+  // a fresh auto-pack that ignores this bin's removed cells, and a
+  // completely valid, already-rendered arrangement gets a spurious
+  // "overlaps a removed grid cell" error. A fresh session doesn't need this:
+  // `savedBinId` there is only set by `mintInitialSave`, which itself awaits
+  // this same first `load()`, so `tools` is already populated by the time
+  // either autosave effect's `savedBinId` guard can pass.
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const defaultProfileApplied = useRef(false);
   // The Bin Library entry this session is attached to — either reopened, or
   // (for a fresh session) minted immediately at mount by mintInitialSave.
@@ -818,9 +833,10 @@ export function CombineEditor({
         initial.forceGx && initial.forceGy ? [initial.forceGx, initial.forceGy] : null,
         initial.removedCells,
         undefined, undefined, undefined, undefined, undefined, toolIds, initial.liveGrid,
-      );
+      ).then(() => setInitialLoadDone(true));
     } else {
       void load().then(async (freshTools) => {
+        setInitialLoadDone(true);
         setAutoPacked(true); // auto-pack on open
         if (freshTools) await mintInitialSave(freshTools);
       });
@@ -1386,7 +1402,7 @@ export function CombineEditor({
   // of a preview rebuild. Deliberately doesn't touch `tools`/`setTools` at
   // all, so it can never interact with undo/redo (see `autoSave` above).
   useEffect(() => {
-    if (!savedBinId) return;
+    if (!savedBinId || !initialLoadDone) return;
     const timer = window.setTimeout(() => {
       pendingAutosaveTimer.current = null;
       void autoSave();
@@ -1396,7 +1412,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingAutosaveTimer.current === timer) pendingAutosaveTimer.current = null;
     };
-  }, [savedBinId, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, magnetEasyRelease, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
+  }, [savedBinId, initialLoadDone, savedLabel, idsKey, geometryKey, overallHeight, lip, fillHeightPct, liveGrid, allowCustomShape, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, magnetCornersOnly, magnetEasyRelease, bevelPockets, pocketRoundRadiusMm, forceSize, forceGx, forceGy, removedCells]); // eslint-disable-line
 
   const NOTES_AUTOSAVE_DEBOUNCE_MS = 5000;
   // Notes get their own (much longer) debounce, separate from the geometry
@@ -1408,7 +1424,7 @@ export function CombineEditor({
   // whole geometry dependency list) — editing a magnet setting shouldn't
   // reset this timer, and vice versa.
   useEffect(() => {
-    if (!savedBinId) return;
+    if (!savedBinId || !initialLoadDone) return;
     const timer = window.setTimeout(() => {
       pendingNotesAutosaveTimer.current = null;
       void autoSave();
@@ -1418,7 +1434,7 @@ export function CombineEditor({
       window.clearTimeout(timer);
       if (pendingNotesAutosaveTimer.current === timer) pendingNotesAutosaveTimer.current = null;
     };
-  }, [notes, savedBinId]); // eslint-disable-line
+  }, [notes, savedBinId, initialLoadDone]); // eslint-disable-line
 
   /** Blurring the notes editor (see the render below) — cancels the pending
    *  debounce (if any) and saves right away instead of waiting it out. */
@@ -2513,9 +2529,23 @@ export function CombineEditor({
    *  to (`savedBinId`) — called from the debounced autosave effect below, and
    *  flushed immediately on Close if one is still pending. Never re-forks or
    *  reloads: once `toolIds` are bin-tool ids, the server's own fork step is
-   *  a no-op, so nothing about local state could change from this response. */
+   *  a no-op, so nothing about local state could change from this response.
+   *
+   *  Refuses to persist `toolIds` non-empty but `tools` still empty — `tools`
+   *  only lags `toolIds` while a `load()` is in flight (reopening a saved bin
+   *  sets `toolIds` synchronously from `initial`, before the round trip that
+   *  populates `tools` lands), and `saveOptions()` reads placements off
+   *  `tools`. Saving through that gap sends empty placements, which the
+   *  server reads as "no manual arrangement" and auto-packs fresh — ignoring
+   *  this bin's removed cells and reporting a bogus overlap on an
+   *  already-correctly-rendered arrangement. This is the actual invariant
+   *  (never persist a bin as emptied out); the `initialLoadDone`-gated
+   *  effects below close the common *timing* path into it, but a direct
+   *  caller (the notes editor's blur handler) can still reach `autoSave`
+   *  before that first load lands, so the check belongs here too. */
   async function autoSave() {
     if (!savedBinId) return;
+    if (toolIds.length > 0 && tools.length === 0) return;
     try {
       await overwriteBin(savedBinId, savedLabel ?? defaultBinName(), toolIds, saveOptions(), notes);
       setSaveDone(true);
