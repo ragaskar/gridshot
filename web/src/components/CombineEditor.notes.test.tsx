@@ -257,15 +257,112 @@ describe("CombineEditor notes", () => {
     ]));
     await screen.findByText("Wrench");
 
-    // Now that the real load has landed, the debounce is free to arm and
-    // fire — with the actual, non-empty placements this time.
+    // The real load landed with the exact same recipe that was already
+    // persisted (`initial`) — nothing changed, so becoming able to autosave
+    // must not itself trigger one. Wait out both debounce windows.
+    await new Promise((r) => setTimeout(r, 5500));
+    expect(overwriteBin).not.toHaveBeenCalled();
+
+    // A genuine edit now, on the other hand, must still save correctly —
+    // with the real placements `tools` settled on, not the empty ones a
+    // stale pre-load closure used to send.
+    fireEvent.click(screen.getByText("Magnet holes").previousElementSibling as HTMLInputElement);
     await waitFor(() => expect(overwriteBin).toHaveBeenCalled(), { timeout: 3000 });
     const [, , , options] = vi.mocked(overwriteBin).mock.calls[0];
     expect(options?.placements).toEqual([
       { id: "tool-a", tx: -15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
       { id: "tool-b", tx: 15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
     ]);
-  });
+  }, 15000);
+
+  it("reopening a bin with no edits never autosaves at all", async () => {
+    // Becoming *able* to autosave (the mount load settling) used to be
+    // itself treated as a reason to autosave — both the geometry and notes
+    // effects would arm their very first debounce timer the moment
+    // `initialLoadDone` flipped, re-persisting a recipe that was already
+    // exactly correct. Two silent, pointless PUTs on every reopen.
+    render(
+      <CombineEditor
+        ids={["tool-a", "tool-b"]}
+        overallHeight={null}
+        onClose={() => {}}
+        initial={{
+          id: "bin-1", label: "Reopened bin", notes: "kept notes", appliedProfileId: null,
+          placements: [
+            { id: "tool-a", tx: -15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+            { id: "tool-b", tx: 15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+          ],
+          overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
+          magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false,
+          magnetEasyRelease: "off", bevelPockets: true, pocketRoundRadiusMm: 0.6,
+          forceGx: null, forceGy: null, removedCells: null,
+          lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
+          minWallMm: null, minFloorMm: null, floorThicknessMm: null, toolWallMm: null,
+          toolWallFlareMm: null, toolWallReinforcementHMm: null, edgeMarginMm: null,
+          magnetHoleInsetFromEdgeMm: null,
+        }}
+      />,
+    );
+    await screen.findByText("Wrench");
+
+    // Past both the 1.5s geometry debounce and the 5s notes debounce.
+    await new Promise((r) => setTimeout(r, 5500));
+
+    expect(overwriteBin).not.toHaveBeenCalled();
+  }, 10000);
+
+  it("renaming a reopened bin while its initial load is still pending still autosaves the new name", async () => {
+    // The bin-name field is disabled only by `!savedBinId`, which a reopen
+    // sets synchronously — so, unlike the rest of Bin config, it's editable
+    // during the pending load. A rename typed in that window must not get
+    // eaten by the geometry-autosave effect's "becoming ready" skip.
+    let resolveFirstPreview: (value: unknown) => void = () => {};
+    const firstPreview = new Promise((resolve) => { resolveFirstPreview = resolve; });
+    let calls = 0;
+    vi.mocked(combinePreview).mockImplementation((_ids, options) => {
+      calls += 1;
+      if (calls === 1) return firstPreview as ReturnType<typeof combinePreview>;
+      return Promise.resolve(buildResponse(options?.overrides, options?.placements));
+    });
+
+    render(
+      <CombineEditor
+        ids={["tool-a", "tool-b"]}
+        overallHeight={null}
+        onClose={() => {}}
+        initial={{
+          id: "bin-1", label: "Reopened bin", notes: "", appliedProfileId: null,
+          placements: [
+            { id: "tool-a", tx: -15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+            { id: "tool-b", tx: 15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+          ],
+          overrides: [], fillHeightPct: 100, liveGrid: false, lip: true,
+          magnetHoles: false, magnetHoleDiameterMm: 6.5, magnetHoleDepthMm: 2, magnetCornersOnly: false,
+          magnetEasyRelease: "off", bevelPockets: true, pocketRoundRadiusMm: 0.6,
+          forceGx: null, forceGy: null, removedCells: [[0, 0]],
+          lipHeightMm: null, lipChamferTopMm: null, lipStraightMm: null, lipChamferBottomMm: null,
+          minWallMm: null, minFloorMm: null, floorThicknessMm: null, toolWallMm: null,
+          toolWallFlareMm: null, toolWallReinforcementHMm: null, edgeMarginMm: null,
+          magnetHoleInsetFromEdgeMm: null,
+        }}
+      />,
+    );
+
+    const nameInput = await screen.findByLabelText("Bin name") as HTMLInputElement;
+    expect(nameInput.disabled).toBe(false);
+    fireEvent.change(nameInput, { target: { value: "Renamed mid-load" } });
+    fireEvent.blur(nameInput);
+
+    resolveFirstPreview(buildResponse([], [
+      { id: "tool-a", tx: -15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+      { id: "tool-b", tx: 15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
+    ]));
+    await screen.findByText("Wrench");
+
+    await waitFor(() => expect(overwriteBin).toHaveBeenCalled(), { timeout: 3000 });
+    const [, labelArg] = vi.mocked(overwriteBin).mock.calls[0];
+    expect(labelArg).toBe("Renamed mid-load");
+  }, 15000);
 
   it("blurring the notes editor while a reopened bin's initial load is still pending does not autosave empty placements", async () => {
     // Same failure mode as the debounce race above, reached a different way:
@@ -319,16 +416,14 @@ describe("CombineEditor notes", () => {
     ]));
     await screen.findByText("Wrench");
 
-    // The typed note isn't lost — the geometry-autosave effect arms once the
-    // real load lands and persists it, non-empty placements included.
-    await waitFor(() => expect(overwriteBin).toHaveBeenCalled(), { timeout: 3000 });
-    const [, , , options, notesArg] = vi.mocked(overwriteBin).mock.calls[0];
+    // The typed note isn't lost — the notes-autosave effect sees it differs
+    // from what's persisted (`initial.notes`) and arms once the real load
+    // lands, regardless of geometry being unchanged (see the "does not
+    // autosave" test above for that case on its own).
+    await waitFor(() => expect(overwriteBin).toHaveBeenCalled(), { timeout: 8000 });
+    const [, , , , notesArg] = vi.mocked(overwriteBin).mock.calls[0];
     expect(notesArg).toBe("typed before the load landed");
-    expect(options?.placements).toEqual([
-      { id: "tool-a", tx: -15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
-      { id: "tool-b", tx: 15, ty: 0, rot: 0, mirror_x: false, mirror_y: false },
-    ]);
-  });
+  }, 15000);
 
   it("reopening a saved bin shows its existing notes instead of starting blank", async () => {
     render(

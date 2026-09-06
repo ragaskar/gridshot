@@ -589,6 +589,36 @@ export function CombineEditor({
   // Same, but for the notes-only autosave below (its own, longer debounce —
   // see NOTES_AUTOSAVE_DEBOUNCE_MS).
   const pendingNotesAutosaveTimer = useRef<number | null>(null);
+  // The `savedBinId` the geometry-autosave effect has already "arrived
+  // ready" for — becoming able to autosave (this bin id set +
+  // `initialLoadDone`) is itself a dependency change that would otherwise
+  // arm the very first debounce timer, silently re-persisting a recipe
+  // that's already correct (either just loaded via reopen, or just written
+  // by mintInitialSave/Save As). This effect skips exactly that one
+  // transition per bin id, so only a genuine subsequent edit schedules a
+  // save. Almost all of the geometry effect's own dependencies can't diverge
+  // from what's already persisted before that transition — nothing about
+  // them is interactive until the arrange view has rendered tools, which is
+  // the same load this is waiting on. The one exception bundled into this
+  // same effect is `savedLabel`: the bin-name field is only disabled by
+  // `!savedBinId` (already false during a reopen's pending load), so a
+  // rename typed in that window is a genuine pending edit — see
+  // `lastPersistedLabel` below, which lets the skip tell that case apart
+  // from the ordinary "just became ready" transition.
+  const geometryAutosaveReadyFor = useRef<string | null>(null);
+  // What's actually persisted for the bin name, as of the last successful
+  // save (or, before the first one, `initial.label`) — kept in sync
+  // alongside `lastPersistedNotes` below. See `geometryAutosaveReadyFor`.
+  const lastPersistedLabel = useRef(initial?.label ?? null);
+  // What's actually persisted for notes, as of the last successful save (or,
+  // before the first one, `initial.notes`) — kept in sync at the bottom of
+  // `autoSave()`. Unlike geometry above, notes ARE interactive immediately
+  // (the panel renders and accepts typing before any tool does), so a
+  // reopened bin can have a genuine pending edit at the exact moment its
+  // autosave effect first becomes able to run; comparing against the last
+  // known-persisted value (rather than just skipping that first render
+  // outright) tells those two cases apart.
+  const lastPersistedNotes = useRef(initial?.notes ?? "");
 
   const selectedTools = tools.filter((t) => selectedIds.has(t.id));
   const selectedTool = selectedTools.length === 1 ? selectedTools[0] : null;
@@ -1403,6 +1433,16 @@ export function CombineEditor({
   // all, so it can never interact with undo/redo (see `autoSave` above).
   useEffect(() => {
     if (!savedBinId || !initialLoadDone) return;
+    if (geometryAutosaveReadyFor.current !== savedBinId) {
+      // First render this effect can run for this bin id — becoming ready
+      // is not itself a change worth persisting (see geometryAutosaveReadyFor
+      // above), UNLESS a rename landed during the load window: the name
+      // field isn't gated by `initialLoadDone` the way the rest of Bin
+      // config is, so `savedLabel` can have genuinely diverged from what's
+      // persisted by the time this transition fires (see lastPersistedLabel).
+      geometryAutosaveReadyFor.current = savedBinId;
+      if (savedLabel === lastPersistedLabel.current) return;
+    }
     const timer = window.setTimeout(() => {
       pendingAutosaveTimer.current = null;
       void autoSave();
@@ -1425,6 +1465,7 @@ export function CombineEditor({
   // reset this timer, and vice versa.
   useEffect(() => {
     if (!savedBinId || !initialLoadDone) return;
+    if (notes === lastPersistedNotes.current) return; // nothing to save
     const timer = window.setTimeout(() => {
       pendingNotesAutosaveTimer.current = null;
       void autoSave();
@@ -2490,7 +2531,10 @@ export function CombineEditor({
     setSaveErr(null);
     try {
       const label = saveName.trim() || defaultBinName();
-      const saved = await saveBin(label, toolIds, saveOptions(), notes);
+      const sentNotes = notes;
+      const saved = await saveBin(label, toolIds, saveOptions(), sentNotes);
+      lastPersistedNotes.current = sentNotes;
+      lastPersistedLabel.current = label;
       setSavedBinId(saved.id);
       setSavedLabel(label);
       await adoptSavedBinIds(saved);
@@ -2516,7 +2560,10 @@ export function CombineEditor({
   async function mintInitialSave(freshTools: CombineTool[]) {
     try {
       const label = defaultBinName();
-      const saved = await saveBin(label, toolIds, saveOptions(freshTools), notes);
+      const sentNotes = notes;
+      const saved = await saveBin(label, toolIds, saveOptions(freshTools), sentNotes);
+      lastPersistedNotes.current = sentNotes;
+      lastPersistedLabel.current = label;
       setSavedBinId(saved.id);
       setSavedLabel(label);
       await adoptSavedBinIds(saved);
@@ -2546,8 +2593,12 @@ export function CombineEditor({
   async function autoSave() {
     if (!savedBinId) return;
     if (toolIds.length > 0 && tools.length === 0) return;
+    const sentNotes = notes;
+    const sentLabel = savedLabel ?? defaultBinName();
     try {
-      await overwriteBin(savedBinId, savedLabel ?? defaultBinName(), toolIds, saveOptions(), notes);
+      await overwriteBin(savedBinId, sentLabel, toolIds, saveOptions(), sentNotes);
+      lastPersistedNotes.current = sentNotes;
+      lastPersistedLabel.current = sentLabel;
       setSaveDone(true);
       window.setTimeout(() => setSaveDone(false), 3000);
     } catch (e) {
