@@ -48,6 +48,17 @@ const TOOL_POOL: Record<string, ReturnType<typeof baseTool>> = {
     finger_hole_span: true, finger_hole_arc2_mm: 15,
     finger_holes: [[0, -5, 4], [5, -5, 4]] as [number, number, number][],
   },
+  // Same local span geometry as tool-span, but mirrored about local x — so
+  // in world space its "P1" (local (0,-5)) ends up on the *right* of its
+  // "P2" (local (5,-5)), the opposite arrangement from tool-span's own
+  // unmirrored P1(left)/P2(right) — a same-numbered P1↔P1/P2↔P2 pairing
+  // between the two would therefore try to match up the wrong lobes.
+  "tool-span-mirrored": {
+    ...baseTool("tool-span-mirrored", "Vise (mirrored)", 88),
+    finger_hole_span: true, finger_hole_arc2_mm: 15,
+    finger_holes: [[0, -5, 4], [5, -5, 4]] as [number, number, number][],
+    mirror_x: true,
+  },
 };
 
 function buildResponse(ids: string[], placements: Placement[] | null | undefined) {
@@ -199,5 +210,36 @@ describe("CombineEditor finger-hole multi-select", () => {
     expect(xAfter.cx).toBeGreaterThan(xBefore.cx);
     expect(p1After.cx).toBeGreaterThan(p1Before.cx);
     expect(p2After.cx).toBeGreaterThan(p2Before.cx);
+  });
+
+  it("aligns a mirrored span hole together with a plain one, without collapsing its own lobes", async () => {
+    render(<CombineEditor ids={["tool-span", "tool-span-mirrored"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Vise");
+    const [refP1, refP2, mirroredP1, mirroredP2] = visibleFingerCircles();
+    const refP1Pos = circlePos(refP1), refP2Pos = circlePos(refP2);
+    const mirroredP1Pos = circlePos(mirroredP1), mirroredP2Pos = circlePos(mirroredP2);
+    // Sanity-check the fixture: mirroring really did swap which lobe sits on
+    // which side in world space (P1 is right-of P2 here, the opposite of
+    // tool-span's own left-of arrangement).
+    expect(mirroredP1Pos.cx).toBeGreaterThan(mirroredP2Pos.cx);
+    expect(refP1Pos.cx).toBeLessThan(refP2Pos.cx);
+
+    fireEvent.pointerDown(refP1, { clientX: refP1Pos.cx, clientY: -refP1Pos.cy, pointerId: 1 });
+    fireEvent.pointerDown(mirroredP1, { clientX: mirroredP1Pos.cx, clientY: -mirroredP1Pos.cy, pointerId: 2, shiftKey: true });
+    expect((screen.getByText("⟷ Align finger holes") as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByText("⟷ Align finger holes"));
+
+    const [, , mirroredP1After, mirroredP2After] = visibleFingerCircles().map(circlePos);
+    // The mirrored hole's own lobe spacing survives — no collapse onto a
+    // single point, and no cross-lobe mixup with the reference's lobes.
+    expect(Math.abs(mirroredP1After.cx - mirroredP2After.cx)).toBeCloseTo(
+      Math.abs(mirroredP1Pos.cx - mirroredP2Pos.cx), 0,
+    );
+    // Its center (not either individual lobe) now lines up with the
+    // reference's own center.
+    const refCenterX = (refP1Pos.cx + refP2Pos.cx) / 2;
+    const mirroredCenterAfter = (mirroredP1After.cx + mirroredP2After.cx) / 2;
+    expect(mirroredCenterAfter).toBeCloseTo(refCenterX, 0);
   });
 });

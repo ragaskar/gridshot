@@ -89,25 +89,53 @@ export interface FingerAlignPlan {
   updates: Map<string, FingerAlignUpdate>;
 }
 
+/** A candidate's own along-axis/perpendicular-to-axis coordinate pair for
+ *  the given alignment axis: "along" is the coordinate every point in the
+ *  group can actually slide to (x for a horizontal — travelling-along-x —
+ *  group, y for a vertical one); "perp" is the other one, used only to break
+ *  ties when picking a reference. */
+function axisCoords(axis: "horizontal" | "vertical", p: FingerAlignPoint): { along: number; perp: number } {
+  return axis === "horizontal" ? { along: p.cx, perp: p.cy } : { along: p.cy, perp: p.cx };
+}
+
+/** A hole's own center along the alignment axis — the single point every
+ *  other computation below anchors to. For a single-point hole that's just
+ *  P1; for a span hole it's the midpoint of P1 and P2. Consulting *only*
+ *  this (never P1 alone, never a same-numbered P1↔P1/P2↔P2 pairing) is what
+ *  keeps alignment correct across a mirrored tool: mirroring a span hole can
+ *  swap which of its two lobes ended up recorded as P1 vs P2 (that's decided
+ *  by interaction history, not by any geometric convention mirroring
+ *  respects), so treating "P1" as meaningfully different from "P2" pairs the
+ *  wrong lobes across a mirrored/unmirrored pair — the hole's center has no
+ *  such ambiguity. */
+function holeCenter(axis: "horizontal" | "vertical", p1: FingerAlignPoint, p2?: FingerAlignPoint): { along: number; perp: number } {
+  const a = axisCoords(axis, p1);
+  if (!p2) return a;
+  const b = axisCoords(axis, p2);
+  return { along: (a.along + b.along) / 2, perp: (a.perp + b.perp) / 2 };
+}
+
 /** Whether — and how — a selection's finger holes can be aligned onto one
- *  line (or, for a span reference, one line per focal point). Requires at
- *  least 2 candidates, with *every* focal point present in the selection —
- *  both P1 and P2 of every span hole — travelling on the same axis (all
- *  horizontal, i.e. holes sitting level in world space, or all vertical,
- *  standing plumb): a mixed or diagonal group, or one hole with a curved/
- *  rounded-corner point, returns null.
+ *  line. Requires at least 2 candidates, with *every* focal point present in
+ *  the selection — both P1 and P2 of every span hole — travelling on the
+ *  same axis (all horizontal, i.e. holes sitting level in world space, or
+ *  all vertical, standing plumb): a mixed or diagonal group, or one hole
+ *  with a curved/rounded-corner point, returns null.
  *
- *  The reference is the candidate whose **P1** is bottom-most (min world Y)
- *  for a horizontal group, or left-most (min world X) for a vertical one —
- *  span or not, only P1 is consulted to pick it. Every other candidate's P1
- *  slides to line up with the reference's P1. If the reference is itself a
- *  span hole, every other *span* candidate's P2 additionally slides to line
- *  up with the reference's P2 — a single-point candidate has no P2 to move,
- *  and a span candidate under a single-point reference only gets its P1
- *  moved (there's no reference P2 to align to). Each new position is a
- *  first-order estimate along the point's own current tangent — exact on a
- *  straight edge (the common case), an approximation through a curved or
- *  rounded-corner stretch of the outline. */
+ *  The reference is the candidate whose own **center** (see `holeCenter`) is
+ *  bottom-most (min world Y) for a horizontal group, or left-most (min world
+ *  X) for a vertical one. Every other candidate's whole hole — P1, and P2
+ *  too when it has one — slides by the single delta that moves *its own*
+ *  center onto the reference's center's along-axis coordinate, each point
+ *  via its own current tangent. A span hole's P1-to-P2 arc gap (and hence
+ *  its width) is therefore preserved by construction, rather than each point
+ *  separately chasing a same-numbered reference point regardless of how far
+ *  apart the two holes' own widths are — the previous approach, which could
+ *  even collapse a target span hole's two lobes onto the same point when its
+ *  width didn't match the reference's. Each new position is a first-order
+ *  estimate along the point's own current tangent — exact on a straight edge
+ *  (the common case), an approximation through a curved or rounded-corner
+ *  stretch of the outline. */
 export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): FingerAlignPlan | null {
   if (candidatesIn.length < 2) return null;
 
@@ -132,24 +160,23 @@ export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): Fi
   if (!allHorizontal && !allVertical) return null;
   const axis: "horizontal" | "vertical" = allHorizontal ? "horizontal" : "vertical";
 
-  const reference = axis === "horizontal"
-    ? candidatesIn.reduce((best, c) => (c.p1.cy < best.p1.cy ? c : best))
-    : candidatesIn.reduce((best, c) => (c.p1.cx < best.p1.cx ? c : best));
-  const refCoord1 = axis === "horizontal" ? reference.p1.cx : reference.p1.cy;
-  const refCoord2 = reference.p2 ? (axis === "horizontal" ? reference.p2.cx : reference.p2.cy) : null;
+  const reference = candidatesIn.reduce((best, c) => (
+    holeCenter(axis, c.p1, c.p2).perp < holeCenter(axis, best.p1, best.p2).perp ? c : best
+  ));
+  const refAlong = holeCenter(axis, reference.p1, reference.p2).along;
 
   const updates = new Map<string, FingerAlignUpdate>();
   for (const c of candidatesIn) {
     if (c.id === reference.id) continue;
+    const delta = refAlong - holeCenter(axis, c.p1, c.p2).along;
+
     const d1 = dir1.get(c.id)!;
-    const delta1 = axis === "horizontal" ? refCoord1 - c.p1.cx : refCoord1 - c.p1.cy;
-    const proj1 = axis === "horizontal" ? d1[0] * delta1 : d1[1] * delta1;
+    const proj1 = axis === "horizontal" ? d1[0] * delta : d1[1] * delta;
     const update: FingerAlignUpdate = { arc1: c.p1.arcMm + proj1 };
 
-    if (refCoord2 !== null && c.p2) {
+    if (c.p2) {
       const d2 = dir2.get(c.id)!;
-      const delta2 = axis === "horizontal" ? refCoord2 - c.p2.cx : refCoord2 - c.p2.cy;
-      const proj2 = axis === "horizontal" ? d2[0] * delta2 : d2[1] * delta2;
+      const proj2 = axis === "horizontal" ? d2[0] * delta : d2[1] * delta;
       update.arc2 = c.p2.arcMm + proj2;
     }
     updates.set(c.id, update);

@@ -339,7 +339,7 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect(lobe2After).not.toEqual(lobe2Before);
   });
 
-  it("Align finger holes: a span reference moves a single-point target's P1 onto its own P1, leaving the reference untouched", async () => {
+  it("Align finger holes: a span reference moves a single-point target onto its own center (not its P1), leaving the reference untouched", async () => {
     render(<CombineEditor ids={["tool-span", "tool-single"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Vise");
     // Selecting tools no longer enables Align — select the finger holes
@@ -361,9 +361,13 @@ describe("CombineEditor finger-hole selection and position editing", () => {
     expect(lobes.slice(0, 2).map((c) => ({
       cx: Number(c.getAttribute("cx")), cy: Number(c.getAttribute("cy")),
     }))).toEqual(refLobesBefore);
-    // tool-single's one point now shares the reference's P1 world x.
+    // tool-single's one point now shares the reference's own *center* world
+    // x — the midpoint of its two lobes (0 and 5 here → 2.5) — not either
+    // individual lobe, so alignment doesn't depend on which lobe a
+    // (possibly mirrored) tool happens to carry as "P1".
     const target = lobes[2];
-    expect(Number(target.getAttribute("cx"))).toBeCloseTo(refLobesBefore[0].cx, 0);
+    const refCenterX = (refLobesBefore[0].cx + refLobesBefore[1].cx) / 2;
+    expect(Number(target.getAttribute("cx"))).toBeCloseTo(refCenterX, 0);
   });
 
   it("nudging one tool's finger hole, then another's within the coalescing window, undoes only the second one", async () => {

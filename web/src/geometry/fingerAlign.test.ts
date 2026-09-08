@@ -153,7 +153,7 @@ describe("computeFingerAlignPlan — mixed single-point/span holes", () => {
     expect(plan!.updates.get("tgt")!.arc2).toBeUndefined();
   });
 
-  it("span target under a single-point reference: only arc1 moves, arc2 untouched", () => {
+  it("span target under a single-point reference: both lobes move, by the same delta, preserving the span's own width", () => {
     const plan = computeFingerAlignPlan([
       candidate({ id: "ref", p1: point({ cx: 0, cy: 0 }) }), // single-point reference
       candidate({
@@ -163,43 +163,85 @@ describe("computeFingerAlignPlan — mixed single-point/span holes", () => {
       }),
     ]);
     expect(plan).not.toBeNull();
-    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(0); // arcMm(5) + (0-5)
-    expect(plan!.updates.get("tgt")!.arc2).toBeUndefined();
+    // tgt's own center (along x) = (5+6)/2 = 5.5; delta = refAlong(0) - 5.5 = -5.5
+    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(-0.5); // arcMm(5) - 5.5
+    expect(plan!.updates.get("tgt")!.arc2).toBeCloseTo(0.5); // arcMm(6) - 5.5
+    // The gap between the two lobes (their own width) survives unchanged.
+    expect(plan!.updates.get("tgt")!.arc2! - plan!.updates.get("tgt")!.arc1!).toBeCloseTo(1);
   });
 
-  it("single-point target under a span reference: aligns to the reference's P1 only", () => {
+  it("single-point target under a span reference: aligns to the reference's own center, not its P1", () => {
     const plan = computeFingerAlignPlan([
       candidate({
         id: "ref",
         p1: point({ cx: 0, cy: 0 }),
         p2: point({ cx: 1, cy: 0, arcMm: 6 }),
-      }), // span reference (bottom-most by P1)
+      }), // span reference (bottom-most by center)
       candidate({ id: "tgt", p1: point({ cx: 5, cy: 20 }) }),
     ]);
     expect(plan).not.toBeNull();
     expect(plan!.referenceId).toBe("ref");
-    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(0); // aligns to ref's P1 (cx=0)
+    // ref's own center (along x) = (0+1)/2 = 0.5; delta = 0.5 - tgt(5) = -4.5
+    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(0.5); // arcMm(5) - 4.5
     expect(plan!.updates.get("tgt")!.arc2).toBeUndefined();
   });
 
-  it("span target under a span reference: arc1 aligns to ref P1, arc2 aligns to ref P2 independently", () => {
+  it("span target under a span reference: both holes' centers align, each hole's own P1-P2 gap preserved", () => {
     const plan = computeFingerAlignPlan([
       candidate({
         id: "ref",
         p1: point({ cx: 0, cy: 0 }),
         p2: point({ cx: 2, cy: 0, arcMm: 6 }),
-      }), // span reference
+      }), // span reference, own center (along x) = 1
       candidate({
         id: "tgt",
         p1: point({ cx: 5, cy: 20 }),
         p2: point({ cx: 9, cy: 20, arcMm: 7 }),
+      }), // own center (along x) = 7, own P1-P2 arc gap = 2
+    ]);
+    expect(plan).not.toBeNull();
+    // delta = refAlong(1) - tgtAlong(7) = -6
+    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(-1); // arcMm(5) - 6
+    expect(plan!.updates.get("tgt")!.arc2).toBeCloseTo(1); // arcMm(7) - 6
+    // Unlike aligning each lobe independently to the reference's same-
+    // numbered lobe (which here would collapse both onto arc 0, since ref's
+    // own P1-P2 gap is only 2 while tgt's is 4), the target's own gap is
+    // preserved exactly — this is the fix for a mirrored span hole (where
+    // which lobe ended up recorded as P1 vs P2 is arbitrary) showing up
+    // "misaligned" or collapsed after Align.
+    expect(plan!.updates.get("tgt")!.arc2! - plan!.updates.get("tgt")!.arc1!).toBeCloseTo(2);
+  });
+
+  it("a mirrored target whose lobes are swapped relative to the reference still aligns correctly", () => {
+    // Both holes sit on the bottom edge (arc 0..10 on RING) with the same
+    // 4mm-wide span, but tgt is mirrored about local x — flipping which
+    // physical lobe ended up recorded as its "P1" vs "P2" relative to a
+    // plain (unmirrored) reference with the same local arc convention. A
+    // same-numbered P1↔P1/P2↔P2 pairing would try to match up the WRONG
+    // lobes here; the center-based plan doesn't care which lobe is which.
+    const plan = computeFingerAlignPlan([
+      candidate({ id: "ref", p1: point({ cx: 0, cy: 0, arcMm: 3 }), p2: point({ cx: 4, cy: 0, arcMm: 7 }) }),
+      candidate({
+        id: "tgt", mirrorX: true,
+        // Mirrored: world x runs opposite to local arc-length increase, so
+        // the lobe with the *smaller* world x is the one at the *larger*
+        // local arc (P2 here), the reverse of ref's own P1/P2 arrangement.
+        p1: point({ cx: 24, cy: 20, arcMm: 7 }),
+        p2: point({ cx: 20, cy: 20, arcMm: 3 }),
       }),
     ]);
     expect(plan).not.toBeNull();
-    // P1: dir=(1,0), delta = refP1.cx(0) - tgt.p1.cx(5) = -5, proj=-5 → arcMm(5)-5=0
-    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(0);
-    // P2: dir=(1,0), delta = refP2.cx(2) - tgt.p2.cx(9) = -7, proj=-7 → arcMm(7)-7=0
-    expect(plan!.updates.get("tgt")!.arc2).toBeCloseTo(0);
+    // ref center (along x) = 2; tgt center (along x) = (24+20)/2 = 22; delta = -20
+    const dir1 = travelDirection(RING, 7, 0, true, false)!; // tgt's own P1 tangent, mirrored
+    const dir2 = travelDirection(RING, 3, 0, true, false)!; // tgt's own P2 tangent, mirrored
+    const expectedArc1 = 7 + dir1[0] * -20;
+    const expectedArc2 = 3 + dir2[0] * -20;
+    expect(plan!.updates.get("tgt")!.arc1).toBeCloseTo(expectedArc1);
+    expect(plan!.updates.get("tgt")!.arc2).toBeCloseTo(expectedArc2);
+    // The 4mm world-space span survives — no collapse, no cross-lobe mixup.
+    const newP1x = 24 + (expectedArc1 - 7) * dir1[0];
+    const newP2x = 20 + (expectedArc2 - 3) * dir2[0];
+    expect(Math.abs(newP2x - newP1x)).toBeCloseTo(4);
   });
 
   it("a span hole's curved/off-axis P2 disables the whole plan, even though P1 is on-axis", () => {
