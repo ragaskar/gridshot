@@ -190,6 +190,20 @@ describe("CombineEditor nudge-distance annotation", () => {
     expect(screen.queryByText("9.90 mm")).toBeNull();
   });
 
+  it("clears a single tool's stale annotation when the selection grows into a group, instead of leaving it measuring from the old extent", async () => {
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(listRow("Wrench"));
+
+    const arrangeArea = document.querySelector("svg")!.parentElement!;
+    fireEvent.keyDown(arrangeArea, { key: "ArrowRight" });
+    expect(screen.getByText("9.90 mm")).toBeTruthy();
+
+    fireEvent.click(listRow("Pliers"), { shiftKey: true });
+    expect(screen.queryByText("9.90 mm")).toBeNull();
+    expect(screen.queryByText(/mm$/, { selector: "text" })).toBeNull();
+  });
+
   it("shows the annotation from the group's own combined extent when multiple tools are nudged together", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");

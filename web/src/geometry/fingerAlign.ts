@@ -135,7 +135,8 @@ function holeCenter(axis: "horizontal" | "vertical", p1: FingerAlignPoint, p2?: 
  *  width didn't match the reference's. Each new position is a first-order
  *  estimate along the point's own current tangent — exact on a straight edge
  *  (the common case), an approximation through a curved or rounded-corner
- *  stretch of the outline. */
+ *  stretch of the outline; a large enough shift can walk a point past its
+ *  starting edge onto another one, same as before this function's rewrite. */
 export function computeFingerAlignPlan(candidatesIn: FingerAlignCandidate[]): FingerAlignPlan | null {
   if (candidatesIn.length < 2) return null;
 
