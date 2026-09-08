@@ -190,7 +190,7 @@ describe("CombineEditor nudge-distance annotation", () => {
     expect(screen.queryByText("9.90 mm")).toBeNull();
   });
 
-  it("shows no annotation while multiple tools are nudged together", async () => {
+  it("shows the annotation from the group's own combined extent when multiple tools are nudged together", async () => {
     render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
     await screen.findByText("Wrench");
     fireEvent.click(listRow("Wrench"));
@@ -198,7 +198,36 @@ describe("CombineEditor nudge-distance annotation", () => {
 
     const arrangeArea = document.querySelector("svg")!.parentElement!;
     fireEvent.keyDown(arrangeArea, { key: "ArrowRight" });
-    expect(screen.queryByText(/mm$/, { selector: "text" })).toBeNull();
+    // Both tools are selected, so there's no other tool for the ray to hit
+    // in either direction — it measures from the group's own furthest-out
+    // edge to the grid boundary on both sides, which (nudged 0.1mm right,
+    // as one rigid group) comes out equal both ways.
+    expect(screen.getAllByText("16.75 mm")).toHaveLength(2);
+    const boldLines = [...document.querySelectorAll("line")].filter(
+      (l) => l.getAttribute("stroke-width") === "0.8",
+    );
+    expect(boldLines).toHaveLength(2);
+  });
+
+  it("measures from the group's combined extent, not one member's own center, when a third tool sits nearby", async () => {
+    const bases = [
+      baseTool("tool-a", "Wrench", -15),
+      baseTool("tool-b", "Pliers", 15),
+      baseTool("tool-c", "Hammer", 60),
+    ];
+    vi.mocked(combinePreview).mockImplementation(
+      (_ids, options) => Promise.resolve(buildResponse(options?.overrides, options?.placements, bases)),
+    );
+    render(<CombineEditor ids={["tool-a", "tool-b", "tool-c"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(listRow("Wrench"));
+    fireEvent.click(listRow("Pliers"), { shiftKey: true });
+
+    const arrangeArea = document.querySelector("svg")!.parentElement!;
+    fireEvent.keyDown(arrangeArea, { key: "ArrowRight" });
+    // Group's right edge (tool-b's, the further-out one) to tool-c's left
+    // edge — not tool-a's or tool-b's own individual center.
+    expect(screen.getByText("24.90 mm")).toBeTruthy();
   });
 
   it("falls back to the grid edge in both directions when no tool lies along the nudged axis", async () => {

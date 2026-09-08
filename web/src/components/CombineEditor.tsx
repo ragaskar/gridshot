@@ -1326,18 +1326,39 @@ export function CombineEditor({
     || sliceThicknessNum < SLICE_MIN_THICKNESS_MM
     || sliceThicknessNum > maxSliceThicknessMm;
 
-  // "Distance to next tool" nudge annotation — a ray from the selected
-  // tool's own placed bbox center, in the direction just nudged AND its
-  // opposite, to wherever it first meets another tool's placed outline or
-  // (if nothing's closer) the grid's own edge. Kept out of the `layout`
-  // memo above so nudging (which only changes `tools`/`nudgeAnnotationDir`,
-  // both already deps here) doesn't force it to recompute bin/grid geometry.
+  // "Distance to next tool" nudge annotation — a ray from the selection's
+  // own combined placed bbox center (a single tool's bbox, or the furthest-
+  // out extent of every selected tool for a multi-select), in the direction
+  // just nudged AND its opposite, to wherever it first meets another,
+  // unselected tool's placed outline or (if nothing's closer) the grid's own
+  // edge. Kept out of the `layout` memo above so nudging (which only changes
+  // `tools`/`nudgeAnnotationDir`, both already deps here) doesn't force it to
+  // recompute bin/grid geometry.
   const nudgeAnnotation = useMemo(() => {
-    if (!selectedTool || !nudgeAnnotationDir || !layout) return null;
-    const selfIndex = tools.findIndex((t) => t.id === selectedTool.id);
-    if (selfIndex < 0) return null;
-    const box = bboxOf(layout.polys[selfIndex]);
+    if (!selectedIds.size || !nudgeAnnotationDir || !layout) return null;
+    const selectedIndexes = tools
+      .map((t, i) => (selectedIds.has(t.id) ? i : -1))
+      .filter((i) => i >= 0);
+    if (!selectedIndexes.length) return null;
+    const selectedBoxes = selectedIndexes.map((i) => bboxOf(layout.polys[i]));
+    const box = {
+      minx: Math.min(...selectedBoxes.map((b) => b.minx)),
+      maxx: Math.max(...selectedBoxes.map((b) => b.maxx)),
+      miny: Math.min(...selectedBoxes.map((b) => b.miny)),
+      maxy: Math.max(...selectedBoxes.map((b) => b.maxy)),
+    };
     const center: Pt = [(box.minx + box.maxx) / 2, (box.miny + box.maxy) / 2];
+    // A synthetic rectangle standing in for the whole selection's own
+    // combined outline — for a single tool this is just its bbox; for a
+    // multi-select it's the union of all selected tools' bboxes, so the ray
+    // measures from the group's furthest-out extent instead of any one
+    // tool's own center. Every selected tool is excluded from the candidate
+    // list below (not just this synthetic id) so the ray can't hit — and
+    // report a distance to — another member of the same group.
+    const selectionId = "__selection__";
+    const selectionBox: Pt[] = [
+      [box.minx, box.miny], [box.maxx, box.miny], [box.maxx, box.maxy], [box.minx, box.maxy],
+    ];
     // A synthetic rectangle at the grid's own footprint edges, fed into the
     // same ray cast as every other tool — the ray naturally prefers a real
     // tool over this whenever one sits closer, and only ever reaches this
@@ -1352,18 +1373,21 @@ export function CombineEditor({
       [layout.cx - halfW, layout.cy + halfD],
     ];
     const polys = [
-      ...tools.map((t, i) => ({ id: t.id, poly: layout.polys[i] })),
+      { id: selectionId, poly: selectionBox },
+      ...tools
+        .map((t, i) => ({ id: t.id, poly: layout.polys[i] }))
+        .filter((p) => !selectedIds.has(p.id)),
       { id: gridBoundaryId, poly: gridBoundary },
     ];
     const oppositeDir: CardinalDirection = nudgeAnnotationDir === "up" ? "down"
       : nudgeAnnotationDir === "down" ? "up"
       : nudgeAnnotationDir === "left" ? "right" : "left";
-    const toward = nextToolAlongRay(center, nudgeAnnotationDir, polys, selectedTool.id);
-    const away = nextToolAlongRay(center, oppositeDir, polys, selectedTool.id);
+    const toward = nextToolAlongRay(center, nudgeAnnotationDir, polys, selectionId);
+    const away = nextToolAlongRay(center, oppositeDir, polys, selectionId);
     if (!toward && !away) return null;
     const bold = toward !== null && away !== null && toward.distanceMm === away.distanceMm;
     return { toward, away, bold };
-  }, [tools, layout, selectedTool, nudgeAnnotationDir]);
+  }, [tools, layout, selectedIds, nudgeAnnotationDir]);
 
   // Generate after the arrangement settles. This endpoint calls the same solid
   // builder as 3MF export; no browser-side mesh approximation is involved.
@@ -1901,9 +1925,7 @@ export function CombineEditor({
     if (!selectedIds.size) return;
     pushSnapshotCoalesced(`nudge:${selectionKey}`);
     setTools((ts) => ts.map((t) => (selectedIds.has(t.id) ? { ...t, tx: t.tx + dx, ty: t.ty + dy } : t)));
-    // Only a single selected tool has an unambiguous "own center" to annotate
-    // from — a multi-tool nudge shows no annotation at all.
-    setNudgeAnnotationDir(selectedIds.size === 1 ? (dx !== 0 ? (dx > 0 ? "right" : "left") : (dy > 0 ? "up" : "down")) : null);
+    setNudgeAnnotationDir(dx !== 0 ? (dx > 0 ? "right" : "left") : (dy > 0 ? "up" : "down"));
   }
   function handleArrangeKeyDown(e: React.KeyboardEvent) {
     if (gridEditMode) return; // Escape/Enter are handled globally in edit-grid mode
