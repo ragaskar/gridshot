@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fingerHoleRectPoints,
   nearestArcLength, outwardNormalAtArcLength, pointAtArcLength, ringLength, wrapArcLength, type Pt,
 } from "./perimeter";
 
@@ -104,5 +105,46 @@ describe("outwardNormalAtArcLength", () => {
 
   it("is [0, 0] for fewer than two points", () => {
     expect(outwardNormalAtArcLength([[1, 1]], 0)).toEqual([0, 0]);
+  });
+});
+
+describe("fingerHoleRectPoints", () => {
+  // A 20x10 rect, perimeter 60: bottom edge arc [0,20) at y=-5, right
+  // [20,30), top [30,50), left [50,60) — same convention as
+  // CombineEditor.fingerHole.test.tsx's own STAMP. These two cases' expected
+  // bounding boxes are hand-derived (not just re-derived from the function
+  // under test) and independently re-derived in Python against
+  // derive._finger_hole_shape_polygon in test_finger_hole_shape.py's
+  // TestFrontendBackendLockstep — the two are "kept in exact lockstep" per
+  // this module's own header; a regression in either implementation alone
+  // breaks only that language's copy of these numbers.
+  const WIDE_RECT: Pt[] = [[-10, -5], [10, -5], [10, 5], [-10, 5]];
+
+  function bounds(points: Pt[]) {
+    const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+    return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+  }
+
+  it("on the bottom edge (tangent along +x), length spans x and width spans y", () => {
+    const points = fingerHoleRectPoints(WIDE_RECT, 10, 16, 10, 2);
+    const b = bounds(points);
+    expect(b.minx).toBeCloseTo(-8);
+    expect(b.maxx).toBeCloseTo(8);
+    expect(b.miny).toBeCloseTo(-10);
+    expect(b.maxy).toBeCloseTo(0);
+  });
+
+  it("on the right edge (tangent along +y), length spans y and width spans x — a genuine 90° rotation", () => {
+    const points = fingerHoleRectPoints(WIDE_RECT, 25, 16, 10, 2);
+    const b = bounds(points);
+    expect(b.minx).toBeCloseTo(5);
+    expect(b.maxx).toBeCloseTo(15);
+    expect(b.miny).toBeCloseTo(-8);
+    expect(b.maxy).toBeCloseTo(8);
+  });
+
+  it("degrades to a plain (unrounded) rectangle when the corner radius is ~0", () => {
+    const points = fingerHoleRectPoints(WIDE_RECT, 10, 16, 10, 0);
+    expect(points).toHaveLength(4);
   });
 });

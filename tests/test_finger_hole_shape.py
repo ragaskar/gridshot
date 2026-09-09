@@ -203,3 +203,30 @@ class TestValidation:
                 WIDE_OUTLINE, finger_hole_arc_mm=0.0, finger_hole_shape="rounded_rect",
                 finger_hole_corner_radius_mm=-1.0,
             )
+
+
+class TestFrontendBackendLockstep:
+    """Pins the exact same numeric bounding boxes web/src/geometry/
+    perimeter.test.ts's own `fingerHoleRectPoints` describe block asserts,
+    against `_finger_hole_shape_polygon` directly (bypassing
+    `derive_bin_spec`'s outline alignment, which would reorient the ring —
+    see test_finger_hole_shape.py's own orientation tests above for why that
+    matters) so both implementations are checked against the same
+    independently hand-derived numbers rather than against each other."""
+
+    # A 20x10 rect, perimeter 60: bottom edge arc [0,20) at y=-5, right
+    # [20,30), top [30,50), left [50,60) — literally the same ring as the
+    # TS test's WIDE_RECT.
+    RING = [(-10.0, -5.0), (10.0, -5.0), (10.0, 5.0), (-10.0, 5.0)]
+
+    def test_on_the_bottom_edge(self):
+        point, normal = derive_mod._point_and_outward_normal_at_arc_length(self.RING, 10.0)
+        poly = derive_mod._finger_hole_shape_polygon(Point(point), normal, 16.0, 10.0, 2.0)
+        minx, miny, maxx, maxy = poly.bounds
+        assert (minx, miny, maxx, maxy) == pytest.approx((-8.0, -10.0, 8.0, 0.0), abs=1e-6)
+
+    def test_on_the_right_edge_a_genuine_90_degree_rotation(self):
+        point, normal = derive_mod._point_and_outward_normal_at_arc_length(self.RING, 25.0)
+        poly = derive_mod._finger_hole_shape_polygon(Point(point), normal, 16.0, 10.0, 2.0)
+        minx, miny, maxx, maxy = poly.bounds
+        assert (minx, miny, maxx, maxy) == pytest.approx((5.0, -8.0, 15.0, 8.0), abs=1e-6)

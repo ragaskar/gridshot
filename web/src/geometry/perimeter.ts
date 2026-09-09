@@ -95,3 +95,51 @@ export function outwardNormalAtArcLength(ring: Pt[], arcMm: number): Pt {
   }
   return [0, 0];
 }
+
+/** Corner tessellation density for `fingerHoleRectPoints`' rounded corners —
+ *  matches CombineEditor.tsx's `roundedRectPreviewPoints` (the rounded-rect
+ *  *toolshape*'s own preview outline), which this is a sibling of, not a
+ *  caller of (this file sits below CombineEditor.tsx in the import graph). */
+const FINGER_HOLE_RECT_CORNER_SEGMENTS = 8;
+
+/** A "rounded_rect" finger hole's cross-section, in `ring`'s own local
+ *  (stamp) frame, centred on the point at `arcMm` and oriented so its
+ *  *length* edge runs along the ring's own tangent there (tangent = outward
+ *  normal rotated +90°, i.e. `(-normal_y, normal_x)`) and its *width* edge
+ *  along the normal — the exact mirror of derive.py's
+ *  `_finger_hole_shape_polygon`, kept in exact lockstep with it per this
+ *  file's own header (see fingerAlign.test.ts / perimeter.test.ts's paired
+ *  numeric cases against that function). Feed the result through `placed()`
+ *  (same as any other local-frame point list — a tool's own stamp, a
+ *  toolshape's preview outline) for final world-space render points; don't
+ *  rotate it again by the tool's own `rot` first, `placed()` already does
+ *  that. A rounded rectangle is centrally symmetric, so a sign error in
+ *  which of the two tangent directions this resolves to would still
+ *  produce the identical polygon. */
+export function fingerHoleRectPoints(
+  ring: Pt[], arcMm: number, lengthMm: number, widthMm: number, cornerRadiusMm: number,
+): Pt[] {
+  const wrapped = wrapArcLength(ring, arcMm);
+  const [px, py] = pointAtArcLength(ring, wrapped);
+  const [nx, ny] = outwardNormalAtArcLength(ring, wrapped);
+  const tangentRad = Math.atan2(nx, -ny);
+  const c = Math.cos(tangentRad), s = Math.sin(tangentRad);
+  const hw = lengthMm / 2, hl = widthMm / 2;
+  const r = Math.max(0, Math.min(cornerRadiusMm, hw, hl));
+  const local: Pt[] = [];
+  if (r < 0.01) {
+    local.push([-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]);
+  } else {
+    const corners: [number, number, number][] = [
+      [hw - r, hl - r, 0], [-(hw - r), hl - r, 90],
+      [-(hw - r), -(hl - r), 180], [hw - r, -(hl - r), 270],
+    ];
+    for (const [ccx, ccy, startDeg] of corners) {
+      for (let i = 0; i <= FINGER_HOLE_RECT_CORNER_SEGMENTS; i++) {
+        const a = ((startDeg + (i / FINGER_HOLE_RECT_CORNER_SEGMENTS) * 90) * Math.PI) / 180;
+        local.push([ccx + r * Math.cos(a), ccy + r * Math.sin(a)]);
+      }
+    }
+  }
+  return local.map(([lx, ly]): Pt => [lx * c - ly * s + px, lx * s + ly * c + py]);
+}
