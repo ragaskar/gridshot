@@ -30,6 +30,16 @@ from .models import Poly, PrinterProfile
 
 DERIVATION_VERSION = "bin-spec-v3"
 
+# A finger hole's cross-section: "circular" (the historical, diameter-only
+# shape) or "rounded_rect" (length/width/corner-radius, oriented so its
+# length edge runs along the outline's own tangent at that point — see
+# `_finger_hole_shape_polygon`). Sized so a caller who never sets these
+# still gets a reasonable default the moment it switches shape.
+FINGER_HOLE_SHAPES = ("circular", "rounded_rect")
+DEFAULT_FINGER_HOLE_LENGTH_MM = 16.0
+DEFAULT_FINGER_HOLE_WIDTH_MM = 10.0
+DEFAULT_FINGER_HOLE_CORNER_RADIUS_MM = 2.0
+
 
 @dataclass(frozen=True)
 class ToolGeometry:
@@ -102,6 +112,16 @@ class BinSettings:
     # ("out"). Applied identically to both focal points of a span hole,
     # each along its own point's normal. Zero (default) is a no-op.
     finger_hole_radial_offset_mm: float = 0.0
+    # The hole's cross-section shape — see `FINGER_HOLE_SHAPES`. Applies to
+    # both focal points of a span hole; there is no per-point shape.
+    # `finger_hole_length_mm`/`_width_mm`/`_corner_radius_mm` are consulted
+    # only when this is "rounded_rect" (falling back to the DEFAULT_* module
+    # constants when unset); `finger_hole_diameter_mm` remains the only size
+    # knob for "circular", unchanged from before this existed.
+    finger_hole_shape: str = "circular"
+    finger_hole_length_mm: float | None = None
+    finger_hole_width_mm: float | None = None
+    finger_hole_corner_radius_mm: float | None = None
     round_tool: bool = False
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -145,6 +165,15 @@ class DerivedBinSpec:
     # connecting the two points; both are None/0.0 unless span is on.
     finger_hole_arc2_mm: float = 0.0
     finger_hole_span_poly: Poly | None = None
+    # One polygon per entry in `finger_holes`, in the same order — only
+    # populated when `BinSettings.finger_hole_shape` is "rounded_rect" (empty
+    # otherwise, so every existing circular-hole consumer is unaffected).
+    # Already sized, oriented, and positioned in this spec's own local frame
+    # (see `_finger_hole_shape_polygon`) — a caller building the actual 3D
+    # cut extrudes it directly rather than reconstructing a circle from
+    # `finger_holes`' diameter column, which for this shape holds only a
+    # circumscribing fallback value (see `derive_bin_spec`).
+    finger_hole_shape_polys: list[Poly] = field(default_factory=list)
     reserved_cells: list[tuple[float, float]] = field(default_factory=list)
     available_cells: list[tuple[float, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -251,6 +280,30 @@ def _point_and_outward_normal_at_arc_length(
             return (x0 + dx * t, y0 + dy * t), (dy / seg_len, -dx / seg_len)
         remaining -= seg_len
     return ring[0], (0.0, 0.0)
+
+
+def _finger_hole_shape_polygon(
+    point: Point, normal: tuple[float, float],
+    length_mm: float, width_mm: float, corner_radius_mm: float,
+):
+    """A "rounded_rect" finger hole's cross-section, centred at `point` and
+    oriented so its length edge runs along the outline's own tangent there
+    (tangent = normal rotated +90°, i.e. `(-normal_y, normal_x)` — the
+    inverse of how `_point_and_outward_normal_at_arc_length` derived the
+    normal from the tangent in the first place) and its width edge along the
+    outward normal. The frontend computes this independently, from the same
+    ring/arc-length primitives (see perimeter.ts, "kept in exact lockstep"
+    with this module) — a `computeFingerHoleRect`-style mirror of this
+    function, not a value sent over the wire, so the 2D preview and the
+    actual cut can't drift apart.
+    A rounded rectangle is centrally symmetric, so getting the tangent's
+    *sign* backwards here would still produce the identical polygon — only
+    the axis it lies along (not which of its two directions) matters. """
+    nx, ny = normal
+    tangent_angle_deg = math.degrees(math.atan2(nx, -ny))
+    base = grid_mod._rounded_rect_polygon(length_mm, width_mm, corner_radius_mm)
+    oriented = shapely_rotate(base, tangent_angle_deg, origin=(0, 0))
+    return translate(oriented, point.x, point.y)
 
 
 def _point_at_arc_length(ring: list[tuple[float, float]], arc_mm: float) -> tuple[float, float]:
@@ -416,6 +469,19 @@ def derive_bin_spec(
         raise ValueError("finger hole second arc length must be finite")
     if not math.isfinite(settings.finger_hole_radial_offset_mm):
         raise ValueError("finger hole radial offset must be finite")
+    if settings.finger_hole_shape not in FINGER_HOLE_SHAPES:
+        raise ValueError(f"finger hole shape must be one of {FINGER_HOLE_SHAPES}")
+    for name, value in (
+        ("length", settings.finger_hole_length_mm),
+        ("width", settings.finger_hole_width_mm),
+    ):
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            raise ValueError(f"finger hole {name} must be > 0")
+    if settings.finger_hole_corner_radius_mm is not None and (
+        not math.isfinite(settings.finger_hole_corner_radius_mm)
+        or settings.finger_hole_corner_radius_mm < 0
+    ):
+        raise ValueError("finger hole corner radius must be >= 0")
     if not (0.0 <= settings.fill_height_pct <= 100.0):
         raise ValueError(
             f"fill_height_pct must be between 0 and 100, got {settings.fill_height_pct}"
@@ -509,13 +575,31 @@ def derive_bin_spec(
         depth = settings.pocket_depth_mm
 
     fingers: list[tuple[float, float, float]] = []
+    finger_hole_shape_polys: list[Poly] = []
     sizing = pocket_shape
     finger_hole_arc_mm = 0.0
     finger_hole_arc2_mm = 0.0
     span_shape = None
     if settings.finger_hole:
+        is_rounded_rect = settings.finger_hole_shape == "rounded_rect"
+        length_mm = settings.finger_hole_length_mm or DEFAULT_FINGER_HOLE_LENGTH_MM
+        width_mm = settings.finger_hole_width_mm or DEFAULT_FINGER_HOLE_WIDTH_MM
+        corner_radius_mm = (
+            settings.finger_hole_corner_radius_mm
+            if settings.finger_hole_corner_radius_mm is not None
+            else DEFAULT_FINGER_HOLE_CORNER_RADIUS_MM
+        )
+        # For "rounded_rect", `diameter` is never the cut boundary — it's a
+        # circumscribing fallback (the rect's own half-diagonal) for the few
+        # call sites that don't yet know about per-shape geometry (the
+        # general/live-grid construction's retention envelope and reserved-
+        # cell checks — see gridfinity.py's fast-path-only docstrings for
+        # bevel_pockets/included_cells, the same scoping this shares).
+        # Circumscribing rather than e.g. the longer side keeps those checks
+        # conservative (never under-reserving) instead of exact.
         diameter = (
-            settings.finger_hole_diameter_mm
+            math.hypot(length_mm, width_mm) if is_rounded_rect
+            else settings.finger_hole_diameter_mm
             if settings.finger_hole_diameter_mm is not None
             else 20.0
         )
@@ -534,7 +618,12 @@ def derive_bin_spec(
             nx, ny = normal
             point = Point(point.x + nx * radial_offset, point.y + ny * radial_offset)
 
-        sizing = pocket_shape.union(point.buffer(diameter / 2))
+        if is_rounded_rect:
+            shape1 = _finger_hole_shape_polygon(point, normal, length_mm, width_mm, corner_radius_mm)
+            sizing = pocket_shape.union(shape1)
+            finger_hole_shape_polys.append(contour_mod.from_shapely(shape1))
+        else:
+            sizing = pocket_shape.union(point.buffer(diameter / 2))
         finger_hole_arc_mm = arc
         fingers.append((float(point.x), float(point.y), diameter))
 
@@ -555,9 +644,19 @@ def derive_bin_spec(
                 point2 = Point(point2.x + nx2 * radial_offset, point2.y + ny2 * radial_offset)
             finger_hole_arc2_mm = arc2
             fingers.append((float(point2.x), float(point2.y), diameter))
+            # The connecting stadium between the two lobes is sized by the
+            # hole's own reach across the gap it bridges — `width_mm` (not
+            # the circumscribing `diameter` fallback) for a rounded rect, so
+            # a narrow, elongated hole gets a correspondingly narrow bridge
+            # rather than one as wide as its own diagonal.
+            connector_radius = (width_mm / 2) if is_rounded_rect else (diameter / 2)
             span_shape = LineString([point, point2]).buffer(
-                diameter / 2, cap_style="round"
+                connector_radius, cap_style="round"
             )
+            if is_rounded_rect:
+                shape2 = _finger_hole_shape_polygon(point2, normal2, length_mm, width_mm, corner_radius_mm)
+                finger_hole_shape_polys.append(contour_mod.from_shapely(shape2))
+                sizing = sizing.union(shape2)
             sizing = sizing.union(span_shape)
 
         # A large enough radial offset can push the hole(s) fully clear of
@@ -578,6 +677,11 @@ def derive_bin_spec(
     fingers = [(x + dx, y + dy, diameter) for x, y, diameter in fingers]
     if span_shape is not None:
         span_shape = translate(span_shape, dx, dy)
+    if finger_hole_shape_polys:
+        finger_hole_shape_polys = [
+            contour_mod.from_shapely(translate(contour_mod.to_shapely(p), dx, dy))
+            for p in finger_hole_shape_polys
+        ]
 
     gx, gy = grid_mod.auto_grid(contour_mod.from_shapely(sizing), wall=wall)
     need_u = grid_mod.auto_height_u(depth)
@@ -649,6 +753,7 @@ def derive_bin_spec(
         finger_hole_span_poly=(
             contour_mod.from_shapely(span_shape) if span_shape is not None else None
         ),
+        finger_hole_shape_polys=finger_hole_shape_polys,
         reserved_cells=reserved_cells,
         available_cells=available_cells,
         warnings=warnings,

@@ -137,6 +137,14 @@ class LibraryTool(BaseModel):
     # derive.BinSettings.finger_hole_radial_offset_mm. Same bin-time-only
     # plumbing as the other finger-hole fields in this block.
     finger_hole_radial_offset_mm: float = 0.0
+    # The hole's cross-section shape — see derive.FINGER_HOLE_SHAPES.
+    # `finger_hole_diameter_mm` remains the only size knob for "circular";
+    # these three apply only to "rounded_rect" (falling back to derive's
+    # DEFAULT_FINGER_HOLE_* constants when unset).
+    finger_hole_shape: Literal["circular", "rounded_rect"] = "circular"
+    finger_hole_length_mm: Optional[float] = None
+    finger_hole_width_mm: Optional[float] = None
+    finger_hole_corner_radius_mm: Optional[float] = None
     lip: bool = True
     magnet_holes: bool = False
     magnet_hole_diameter_mm: float = grid_mod.MAGNET_HOLE_DIAMETER_MM
@@ -324,6 +332,10 @@ def derive_tool_spec(
             finger_hole_span=tool.finger_hole_span,
             finger_hole_arc2_mm=tool.finger_hole_arc2_mm,
             finger_hole_radial_offset_mm=tool.finger_hole_radial_offset_mm,
+            finger_hole_shape=tool.finger_hole_shape,
+            finger_hole_length_mm=tool.finger_hole_length_mm,
+            finger_hole_width_mm=tool.finger_hole_width_mm,
+            finger_hole_corner_radius_mm=tool.finger_hole_corner_radius_mm,
             round_tool=tool.round_tool,
             magnet_holes=tool.magnet_holes,
             magnet_hole_diameter_mm=tool.magnet_hole_diameter_mm,

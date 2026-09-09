@@ -1071,6 +1071,14 @@ def bin_solid(
         pk_fingers = entry[2] if len(entry) > 2 else ()
         pk_connector = entry[3] if len(entry) > 3 else None
         pk_fillet_radius = entry[4] if len(entry) > 4 else None
+        # One shape (a rounded-rect cross-section, already sized/oriented/
+        # positioned) per entry in `pk_fingers`, or empty for the historical
+        # circular hole — see BinSettings.finger_hole_shape. Fast-path only
+        # (same scoping as `pk_fillet_radius`/`bevel_pockets`/custom bin
+        # shape): the general/corral/live-grid construction below still
+        # cuts every finger as a plain circle of `dia`, which for a rounded
+        # rect is a circumscribing fallback, not the real shape.
+        pk_finger_shapes = entry[5] if len(entry) > 5 else ()
         if not fast_path:
             if depth <= 0:
                 raise ValueError("recess depth must be > 0")
@@ -1125,10 +1133,19 @@ def bin_solid(
             if radius > EPS:
                 cut = cut + _pocket_bottom_fillet(inner, floor_z, radius)
         solid = solid - cut
-        for fx, fy, dia in pk_fingers:
-            cyl = Manifold.cylinder(
-                depth + EPS, dia / 2, dia / 2, CIRCULAR_SEGMENTS
-            ).translate((fx, fy, floor_z))
+        for idx, (fx, fy, dia) in enumerate(pk_fingers):
+            finger_shape = pk_finger_shapes[idx] if idx < len(pk_finger_shapes) else None
+            if finger_shape is not None:
+                # Already sized, oriented, and positioned (see
+                # derive._finger_hole_shape_polygon) — extrude as-is, no
+                # extra translate needed.
+                cyl = Manifold.extrude(
+                    _cross_section_from_poly(finger_shape), depth + EPS
+                ).translate((0, 0, floor_z))
+            else:
+                cyl = Manifold.cylinder(
+                    depth + EPS, dia / 2, dia / 2, CIRCULAR_SEGMENTS
+                ).translate((fx, fy, floor_z))
             solid = solid - cyl
         if pk_connector is not None:
             connector_cut = Manifold.extrude(
@@ -1144,8 +1161,12 @@ def bin_solid(
                 # Each opening gets its own round-over call rather than one
                 # call on their union — see _pocket_top_fillet's docstring.
                 solid = solid - _pocket_top_fillet(inner, top_z, round_radius)
-                for fx, fy, dia in pk_fingers:
-                    finger = CrossSection.circle(dia / 2, CIRCULAR_SEGMENTS).translate((fx, fy))
+                for idx, (fx, fy, dia) in enumerate(pk_fingers):
+                    finger_shape = pk_finger_shapes[idx] if idx < len(pk_finger_shapes) else None
+                    finger = (
+                        _cross_section_from_poly(finger_shape) if finger_shape is not None
+                        else CrossSection.circle(dia / 2, CIRCULAR_SEGMENTS).translate((fx, fy))
+                    )
                     solid = solid - _pocket_top_fillet(finger, top_z, round_radius)
                 if pk_connector is not None:
                     solid = solid - _pocket_top_fillet(
