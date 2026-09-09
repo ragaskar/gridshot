@@ -32,7 +32,7 @@ function baseTool(id: string, label: string, radialOffset = 0) {
     finger_hole_span: false, finger_hole_span_override: null,
     finger_hole_arc2_mm: 0, finger_hole_arc2_mm_override: null,
     finger_hole_radial_offset_mm: radialOffset, finger_hole_radial_offset_mm_inherited: 0,
-    finger_hole_radial_offset_mm_override: radialOffset || null,
+    finger_hole_radial_offset_mm_override: radialOffset || null, finger_hole_shape: "circular" as const, finger_hole_shape_inherited: "circular" as const, finger_hole_shape_override: null, finger_hole_length_mm: 16, finger_hole_length_mm_inherited: 16, finger_hole_length_mm_override: null, finger_hole_width_mm: 10, finger_hole_width_mm_inherited: 10, finger_hole_width_mm_override: null, finger_hole_corner_radius_mm: 2, finger_hole_corner_radius_mm_inherited: 2, finger_hole_corner_radius_mm_override: null,
     finger_holes: [[0, -5 - radialOffset, 4]] as [number, number, number][],
     derivation_key: `${id}-key`,
     toolshape_type: null, toolshape_width_mm: null, toolshape_length_mm: null,

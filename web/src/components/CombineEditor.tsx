@@ -33,6 +33,7 @@ import { binExportName } from "../exportNaming";
 import { computeFingerAlignPlan, type FingerAlignCandidate } from "../geometry/fingerAlign";
 import { binOutlinePath, canRemoveCell, cellKey, type CellKey } from "../geometry/binOutline";
 import {
+  fingerHoleRectPoints,
   nearestArcLength, outwardNormalAtArcLength, pointAtArcLength, ringLength, wrapArcLength,
 } from "../geometry/perimeter";
 import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
@@ -164,6 +165,10 @@ function toolInteractiveFieldsDiverged(before: CombineTool, now: CombineTool): b
     || before.finger_hole_arc2_mm_override !== now.finger_hole_arc2_mm_override
     || before.finger_hole_diameter_mm_override !== now.finger_hole_diameter_mm_override
     || before.finger_hole_radial_offset_mm_override !== now.finger_hole_radial_offset_mm_override
+    || before.finger_hole_shape_override !== now.finger_hole_shape_override
+    || before.finger_hole_length_mm_override !== now.finger_hole_length_mm_override
+    || before.finger_hole_width_mm_override !== now.finger_hole_width_mm_override
+    || before.finger_hole_corner_radius_mm_override !== now.finger_hole_corner_radius_mm_override
     // Every edit that touches finger_holes replaces the array (see
     // commitFingerHoleArc et al.) rather than mutating it in place, so
     // reference equality alone tells us whether it changed.
@@ -183,6 +188,14 @@ function withLocalInteractiveFields(serverTool: CombineTool, local: CombineTool)
     finger_hole_diameter_mm_override: local.finger_hole_diameter_mm_override,
     finger_hole_radial_offset_mm: local.finger_hole_radial_offset_mm,
     finger_hole_radial_offset_mm_override: local.finger_hole_radial_offset_mm_override,
+    finger_hole_shape: local.finger_hole_shape,
+    finger_hole_shape_override: local.finger_hole_shape_override,
+    finger_hole_length_mm: local.finger_hole_length_mm,
+    finger_hole_length_mm_override: local.finger_hole_length_mm_override,
+    finger_hole_width_mm: local.finger_hole_width_mm,
+    finger_hole_width_mm_override: local.finger_hole_width_mm_override,
+    finger_hole_corner_radius_mm: local.finger_hole_corner_radius_mm,
+    finger_hole_corner_radius_mm_override: local.finger_hole_corner_radius_mm_override,
     finger_holes: local.finger_holes,
   };
 }
@@ -742,6 +755,8 @@ export function CombineEditor({
       finger_hole_arc_mm_override, finger_hole_diameter_mm_override,
       finger_hole_span_override, finger_hole_arc2_mm_override,
       finger_hole_radial_offset_mm_override,
+      finger_hole_shape_override, finger_hole_length_mm_override,
+      finger_hole_width_mm_override, finger_hole_corner_radius_mm_override,
       depth_mm_override, depth_pct_override,
     }) => ({
       id,
@@ -752,6 +767,10 @@ export function CombineEditor({
       finger_hole_span: finger_hole_span_override,
       finger_hole_arc2_mm: finger_hole_arc2_mm_override,
       finger_hole_radial_offset_mm: finger_hole_radial_offset_mm_override,
+      finger_hole_shape: finger_hole_shape_override,
+      finger_hole_length_mm: finger_hole_length_mm_override,
+      finger_hole_width_mm: finger_hole_width_mm_override,
+      finger_hole_corner_radius_mm: finger_hole_corner_radius_mm_override,
       locked_rotation_deg: lockedRotationsOverride.has(id) ? rot : null,
       pocket_depth_mm: depth_mm_override,
       pocket_depth_pct: depth_pct_override,
@@ -1069,6 +1088,10 @@ export function CombineEditor({
       tool.finger_hole_span_override,
       tool.finger_hole_arc2_mm_override,
       tool.finger_hole_radial_offset_mm_override,
+      tool.finger_hole_shape_override,
+      tool.finger_hole_length_mm_override,
+      tool.finger_hole_width_mm_override,
+      tool.finger_hole_corner_radius_mm_override,
       tool.depth_mm_override,
     ])),
     [tools],
@@ -1654,6 +1677,71 @@ export function CombineEditor({
       };
     }));
   }
+  /** Switch a finger hole's cross-section between "circular" and
+   *  "rounded_rect" (see gridshot.core.derive.FINGER_HOLE_SHAPES). The 3rd
+   *  slot of each `finger_holes` point keeps tracking a diameter regardless
+   *  of shape — for "rounded_rect" it's the same circumscribing-hypot
+   *  fallback the server computes (see derive.derive_bin_spec), so anything
+   *  still reading that slot alone (hit-testing, the span connector's drawn
+   *  stroke width) degrades to a safe approximation rather than going
+   *  stale. Switching back to "circular" restores whatever diameter this
+   *  tool actually had (its own override, or the inherited default) rather
+   *  than leaving the rounded-rect fallback behind. */
+  function setFingerHoleShape(toolId: string, shape: "circular" | "rounded_rect") {
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      const diameter = shape === "rounded_rect"
+        ? Math.hypot(t.finger_hole_length_mm, t.finger_hole_width_mm)
+        : t.finger_hole_diameter_mm_override ?? t.finger_hole_diameter_mm_inherited;
+      return {
+        ...t,
+        finger_hole_shape: shape,
+        finger_hole_shape_override: shape === t.finger_hole_shape_inherited ? null : shape,
+        finger_holes: t.finger_holes.map(([x, y]) => [x, y, diameter]),
+      };
+    }));
+  }
+  /** Resize a "rounded_rect" finger hole's length (the edge running along
+   *  the outline's own tangent — see perimeter.ts's fingerHoleRectPoints)
+   *  or width (along the outward normal). Same two-tier pattern as
+   *  setFingerHoleDiameter, including keeping finger_holes' diameter slot
+   *  in sync (see setFingerHoleShape's note on why). */
+  function setFingerHoleLength(toolId: string, lengthMm: number) {
+    if (!Number.isFinite(lengthMm) || lengthMm <= 0) return;
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      const diameter = Math.hypot(lengthMm, t.finger_hole_width_mm);
+      return {
+        ...t,
+        finger_hole_length_mm: lengthMm,
+        finger_hole_length_mm_override: lengthMm,
+        finger_holes: t.finger_holes.map(([x, y]) => [x, y, diameter]),
+      };
+    }));
+  }
+  function setFingerHoleWidth(toolId: string, widthMm: number) {
+    if (!Number.isFinite(widthMm) || widthMm <= 0) return;
+    setTools((ts) => ts.map((t) => {
+      if (t.id !== toolId) return t;
+      const diameter = Math.hypot(t.finger_hole_length_mm, widthMm);
+      return {
+        ...t,
+        finger_hole_width_mm: widthMm,
+        finger_hole_width_mm_override: widthMm,
+        finger_holes: t.finger_holes.map(([x, y]) => [x, y, diameter]),
+      };
+    }));
+  }
+  function setFingerHoleCornerRadius(toolId: string, cornerRadiusMm: number) {
+    if (!Number.isFinite(cornerRadiusMm) || cornerRadiusMm < 0) return;
+    setTools((ts) => ts.map((t) => (t.id === toolId
+      ? {
+        ...t,
+        finger_hole_corner_radius_mm: cornerRadiusMm,
+        finger_hole_corner_radius_mm_override: cornerRadiusMm,
+      }
+      : t)));
+  }
   /** Move a finger hole along the local outward normal of the outline at its
    *  own arc-length point — negative pulls it toward the tool's interior,
    *  positive pushes it out into the wall (see gridshot.core.derive.
@@ -2177,6 +2265,10 @@ export function CombineEditor({
     const wantsSpan = base.finger_hole_span;
     const diameter = base.finger_holes[0]?.[2] ?? 20;
     const radialOffset = base.finger_hole_radial_offset_mm;
+    const shape = base.finger_hole_shape;
+    const lengthMm = base.finger_hole_length_mm;
+    const widthMm = base.finger_hole_width_mm;
+    const cornerRadiusMm = base.finger_hole_corner_radius_mm;
     const updated = tools.map((t) => {
       if (!targetIds.has(t.id)) return t;
       const gainingFresh = wantsHole && !t.finger_hole;
@@ -2187,6 +2279,12 @@ export function CombineEditor({
         finger_hole_override: wantsHole,
         ...(wantsHole ? { finger_hole_diameter_mm_override: diameter } : {}),
         ...(wantsHole ? { finger_hole_radial_offset_mm_override: radialOffset } : {}),
+        ...(wantsHole ? {
+          finger_hole_shape_override: shape,
+          finger_hole_length_mm_override: lengthMm,
+          finger_hole_width_mm_override: widthMm,
+          finger_hole_corner_radius_mm_override: cornerRadiusMm,
+        } : {}),
         // A tool losing its hole no longer needs a placed point; a tool
         // gaining one fresh must NOT inherit any stale prior position —
         // both let the server's own auto/legacy placement resolve it next
@@ -3268,16 +3366,25 @@ export function CombineEditor({
                   const toolIndex = tools.findIndex((tool) => tool.id === conn.toolId);
                   const connColor = layout.overflowIds.has(conn.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   const isSelected = selectedFingerHoleToolIds.has(conn.toolId);
+                  const connTool = tools[toolIndex];
+                  // A rounded-rect connector reads as a bridge exactly as
+                  // wide as the hole's own width, not the (larger)
+                  // circumscribing-hypot fallback `conn.diameter` carries —
+                  // matches derive.py's own connector, which uses
+                  // `width_mm/2` rather than the fallback for this shape.
+                  const strokeW = connTool?.finger_hole_shape === "rounded_rect"
+                    ? connTool.finger_hole_width_mm : conn.diameter;
                   return <line
                     key={`${conn.toolId}-finger-connector`}
                     x1={conn.x1} y1={conn.y1} x2={conn.x2} y2={conn.y2}
                     stroke={connColor + (isSelected ? "55" : "2f")}
-                    strokeWidth={conn.diameter}
+                    strokeWidth={strokeW}
                     strokeLinecap="round"
                   />;
                 })}
                 {layout.fingerCircles.filter((hole) => toolshapeResizeLive?.toolId !== hole.toolId).map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
+                  const tool = tools[toolIndex];
                   const holeColor = layout.overflowIds.has(hole.toolId) ? OVERFLOW_COLOR : color(toolIndex);
                   const holeSelected = selectedFingerHoleToolIds.has(hole.toolId);
                   const isActive = holeSelected && selectedFingerHoleToolIds.size === 1 && selectedFingerPointIndex === hole.pointIndex;
@@ -3286,8 +3393,26 @@ export function CombineEditor({
                   // together), so every selected hole gets the ants rather
                   // than none of them.
                   const showAnts = isActive || (holeSelected && selectedFingerHoleToolIds.size > 1);
-                  const isSpan = tools.find((t) => t.id === hole.toolId)?.finger_hole_span ?? false;
+                  const isSpan = tool?.finger_hole_span ?? false;
                   const isHinted = hoveredFingerPoint?.toolId === hole.toolId && hoveredFingerPoint.pointIndex === hole.pointIndex;
+                  // The rendered shape follows the tool's own finger_hole_shape,
+                  // computed independently client-side from the same ring/arc
+                  // primitives the server derives it from (see perimeter.ts's
+                  // fingerHoleRectPoints — "kept in exact lockstep" with
+                  // derive.py's _finger_hole_shape_polygon) rather than shipped
+                  // over the wire. Click/hover hit-testing stays an
+                  // (approximated, circumscribing) circle either way — see
+                  // hole.radius's own doc in the layout memo above.
+                  const rectPoints = tool?.finger_hole_shape === "rounded_rect"
+                    ? placed(
+                      fingerHoleRectPoints(
+                        tool.stamp,
+                        hole.pointIndex === 1 ? tool.finger_hole_arc2_mm : tool.finger_hole_arc_mm,
+                        tool.finger_hole_length_mm, tool.finger_hole_width_mm, tool.finger_hole_corner_radius_mm,
+                      ),
+                      tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+                    )
+                    : null;
                   return <g key={`${hole.toolId}-finger-${index}`}>
                     {isSpan && (
                       <circle
@@ -3301,18 +3426,31 @@ export function CombineEditor({
                         ))}
                       />
                     )}
-                    <circle
-                      cx={hole.cx}
-                      cy={hole.cy}
-                      r={hole.radius}
-                      fill={holeColor + (isActive ? "55" : holeSelected ? "40" : "2f")}
-                      stroke={holeColor}
-                      strokeWidth={isActive ? 1.4 : holeSelected ? 1 : 0.6}
-                      strokeDasharray="2 1"
-                      className={showAnts ? "marching-ants" : undefined}
-                      style={{ cursor: "grab" }}
-                      onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
-                    />
+                    {rectPoints ? (
+                      <polygon
+                        points={rectPoints.map((p) => `${p[0]},${p[1]}`).join(" ")}
+                        fill={holeColor + (isActive ? "55" : holeSelected ? "40" : "2f")}
+                        stroke={holeColor}
+                        strokeWidth={isActive ? 1.4 : holeSelected ? 1 : 0.6}
+                        strokeDasharray="2 1"
+                        className={showAnts ? "marching-ants" : undefined}
+                        style={{ cursor: "grab" }}
+                        onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
+                      />
+                    ) : (
+                      <circle
+                        cx={hole.cx}
+                        cy={hole.cy}
+                        r={hole.radius}
+                        fill={holeColor + (isActive ? "55" : holeSelected ? "40" : "2f")}
+                        stroke={holeColor}
+                        strokeWidth={isActive ? 1.4 : holeSelected ? 1 : 0.6}
+                        strokeDasharray="2 1"
+                        className={showAnts ? "marching-ants" : undefined}
+                        style={{ cursor: "grab" }}
+                        onPointerDown={(e) => downFingerHole(hole.toolId, hole.pointIndex, e)}
+                      />
+                    )}
                     {isHinted && !isActive && (
                       <circle
                         cx={hole.cx} cy={hole.cy} r={hole.radius + 1.5}
@@ -4138,25 +4276,91 @@ export function CombineEditor({
                       <dd className="text-right text-knockout">{fingerHoleReadout ? fingerHoleReadout.y.toFixed(2) : "–"} mm</dd>
                     </dl>
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
-                      <span className="text-muted">Diameter</span>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <input
-                          aria-label="Finger hole diameter in millimetres"
-                          className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
-                          type="number" step={1} min={0.1}
-                          disabled={busy}
-                          defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
-                          key={selectedFingerHoleTool.id}
-                          onChange={(event) => {
-                            const value = Number(event.target.value);
-                            if (Number.isFinite(value) && value > 0) {
-                              setFingerHoleDiameter(selectedFingerHoleTool.id, value);
-                            }
-                          }}
-                        />
-                        <span className="text-muted">mm</span>
+                      <span className="text-muted">Shape</span>
+                      <div className="flex shrink-0 gap-1">
+                        {(["circular", "rounded_rect"] as const).map((shape) => (
+                          <button
+                            key={shape}
+                            aria-pressed={selectedFingerHoleTool.finger_hole_shape === shape}
+                            className={`btn !px-2 !py-1 text-[10px] ${selectedFingerHoleTool.finger_hole_shape === shape ? "border-teal text-teal" : "btn-ghost"}`}
+                            disabled={busy}
+                            onClick={() => setFingerHoleShape(selectedFingerHoleTool.id, shape)}
+                          >
+                            {shape === "circular" ? "Circular" : "Rounded rect"}
+                          </button>
+                        ))}
                       </div>
                     </div>
+                    {selectedFingerHoleTool.finger_hole_shape === "rounded_rect" ? (
+                      <>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                          <span className="text-muted">Length</span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <input
+                              aria-label="Finger hole length in millimetres"
+                              className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                              type="number" step={1} min={0.1}
+                              disabled={busy}
+                              defaultValue={selectedFingerHoleTool.finger_hole_length_mm}
+                              key={`${selectedFingerHoleTool.id}-length`}
+                              onChange={(event) => setFingerHoleLength(selectedFingerHoleTool.id, Number(event.target.value))}
+                            />
+                            <span className="text-muted">mm</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                          <span className="text-muted">Width</span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <input
+                              aria-label="Finger hole width in millimetres"
+                              className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                              type="number" step={1} min={0.1}
+                              disabled={busy}
+                              defaultValue={selectedFingerHoleTool.finger_hole_width_mm}
+                              key={`${selectedFingerHoleTool.id}-width`}
+                              onChange={(event) => setFingerHoleWidth(selectedFingerHoleTool.id, Number(event.target.value))}
+                            />
+                            <span className="text-muted">mm</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                          <span className="text-muted">Corner radius</span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <input
+                              aria-label="Finger hole corner radius in millimetres"
+                              className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                              type="number" step={0.5} min={0}
+                              disabled={busy}
+                              defaultValue={selectedFingerHoleTool.finger_hole_corner_radius_mm}
+                              key={`${selectedFingerHoleTool.id}-corner-radius`}
+                              onChange={(event) => setFingerHoleCornerRadius(selectedFingerHoleTool.id, Number(event.target.value))}
+                            />
+                            <span className="text-muted">mm</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
+                        <span className="text-muted">Diameter</span>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <input
+                            aria-label="Finger hole diameter in millimetres"
+                            className="mono-input min-w-0 w-16 !px-2 !py-1 !text-sm"
+                            type="number" step={1} min={0.1}
+                            disabled={busy}
+                            defaultValue={selectedFingerHoleTool.finger_holes[0]?.[2] ?? 20}
+                            key={selectedFingerHoleTool.id}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value) && value > 0) {
+                                setFingerHoleDiameter(selectedFingerHoleTool.id, value);
+                              }
+                            }}
+                          />
+                          <span className="text-muted">mm</span>
+                        </div>
+                      </div>
+                    )}
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
                       <span
                         className="text-muted"
