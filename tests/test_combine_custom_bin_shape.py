@@ -2,8 +2,10 @@
 gridfinity units out of a [forced-size](test_combine_force_size.py)
 fast-path (fill_height_pct=100, live_grid off) bin, rounding both the outer
 and notch corners. Requires force_gx/force_gy, the fast path, a single
-connected remaining shape, and no tool geometry crossing into a removed
-cell."""
+connected remaining shape, and — for anything that generates real output
+(export, GLB preview, save) — no tool geometry crossing into a removed cell.
+The JSON preview alone tolerates that last one, so a tool placed past a
+removed cell still renders instead of vanishing behind a 422."""
 
 from __future__ import annotations
 
@@ -116,19 +118,30 @@ class TestCustomBinShape:
         assert response.status_code == 422
         assert "connected" in response.json()["detail"]
 
-    def test_tool_overlapping_a_removed_cell_is_rejected(self, client, library_dir):
+    def test_tool_overlapping_a_removed_cell_previews_leniently(self, client, library_dir):
+        """Preview is the one caller that tolerates this — a tool just placed
+        (e.g. via "Add tool") past a removed cell must still come back with
+        its geometry so the client can render it as an overflow outline,
+        rather than the whole arrangement vanishing behind a 422. Generating
+        real output for it stays rejected below."""
         _seed_two_tools()
 
-        response = client.post("/api/library/combine/preview", json={
+        body = {
             "ids": ["tool-a", "tool-b"],
             "placements": CALIBRATED_PLACEMENTS,
             # 3x1 grid, end cell (0,0) removed — still connected ({1,0},{2,0}
             # remain adjacent) but its rect reaches tool-a's position.
             "force_gx": 3, "force_gy": 1, "removed_cells": [[0, 0]],
-        })
+        }
 
-        assert response.status_code == 422
-        assert "Wrench" in response.json()["detail"]
+        preview = client.post("/api/library/combine/preview", json=body)
+        assert preview.status_code == 200
+        assert [t["id"] for t in preview.json()["tools"]] == ["tool-a", "tool-b"]
+
+        for path in ("/api/library/combine", "/api/library/combine/preview.glb"):
+            response = client.post(path, json=body)
+            assert response.status_code == 422, path
+            assert "Wrench" in response.json()["detail"]
 
     def test_save_and_reopen_round_trips_removed_cells(self, client, library_dir):
         _seed_two_tools()

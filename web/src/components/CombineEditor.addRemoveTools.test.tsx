@@ -12,12 +12,13 @@ vi.mock("../api", () => ({
   saveBin: vi.fn(),
   overwriteBin: vi.fn(),
   duplicateTool: vi.fn(),
+  getLibraryOutline: vi.fn(),
   listLibrary: vi.fn(),
   listBinProfiles: vi.fn(),
 }));
 
 import {
-  combinePreview, combinePreviewGlb, duplicateTool, listBinProfiles, listLibrary,
+  combinePreview, combinePreviewGlb, duplicateTool, getLibraryOutline, listBinProfiles, listLibrary,
   overwriteBin, saveBin,
 } from "../api";
 import { mockPassthroughSaves } from "./combineTestSupport";
@@ -121,6 +122,7 @@ describe("CombineEditor add/remove tools", () => {
     vi.mocked(listBinProfiles).mockResolvedValue([]);
     vi.mocked(listLibrary).mockReset();
     vi.mocked(duplicateTool).mockReset();
+    vi.mocked(getLibraryOutline).mockReset().mockResolvedValue(null);
     mockPassthroughSaves(vi.mocked(saveBin), vi.mocked(overwriteBin));
   });
 
@@ -183,6 +185,68 @@ describe("CombineEditor add/remove tools", () => {
     const placement = last[1]?.placements?.find((p) => p.id === "bintool-chisel");
     expect(placement).toEqual({ id: "bintool-chisel", tx: 20, ty: 10, rot: 0, mirror_x: false, mirror_y: false });
     expect(screen.queryByText(/Click the grid to place/)).toBeNull();
+  });
+
+  it("the placement ghost traces the picked tool's real outline, not a grid_x/grid_y bounding box", async () => {
+    vi.mocked(listLibrary).mockResolvedValue([PICKED_TOOL]);
+    vi.mocked(getLibraryOutline).mockResolvedValue({
+      exterior: [[0, 0], [12, 0], [0, 12]],
+      holes: [],
+    });
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(addToolButton());
+    fireEvent.click(await screen.findByTitle(`Add ${PICKED_TOOL.label}`));
+    await screen.findByText(`Click the grid to place "${PICKED_TOOL.label}" · Esc to cancel`);
+    await waitFor(() => expect(getLibraryOutline).toHaveBeenCalledWith("lib-chisel"));
+
+    fireEvent.pointerMove(svg(), { clientX: 0, clientY: 0 });
+
+    await waitFor(() => {
+      const ghost = Array.from(document.querySelectorAll("polygon"))
+        .find((p) => p.getAttribute("stroke") === "#548cd6");
+      expect(ghost).toBeTruthy();
+      // A bbox ghost is always a 4-point rectangle; the real (triangular)
+      // outline has 3 — this only passes once the fetched outline has
+      // replaced the fallback.
+      const points = ghost!.getAttribute("points")!.trim().split(/\s+/);
+      expect(points).toHaveLength(3);
+    });
+  });
+
+  it("a placement the server rejects (doesn't fit) doesn't leave an orphan id behind", async () => {
+    vi.mocked(listLibrary).mockResolvedValue([PICKED_TOOL]);
+    vi.mocked(duplicateTool).mockResolvedValue({ ...PICKED_TOOL, id: "bintool-chisel" });
+    vi.mocked(combinePreview).mockImplementationOnce(
+      (ids, options) => Promise.resolve(buildResponse(ids, options?.placements)),
+    ); // the mount-time auto-pack load()
+    render(<CombineEditor ids={["tool-a", "tool-b"]} overallHeight={null} onClose={() => {}} />);
+    await screen.findByText("Wrench");
+    fireEvent.click(addToolButton());
+    fireEvent.click(await screen.findByTitle(`Add ${PICKED_TOOL.label}`));
+    await screen.findByText(`Click the grid to place "${PICKED_TOOL.label}" · Esc to cancel`);
+
+    vi.mocked(combinePreview).mockRejectedValueOnce(new Error("doesn't fit"));
+    fireEvent.pointerDown(svg(), { clientX: 500, clientY: -500 });
+
+    await waitFor(() => expect(duplicateTool).toHaveBeenCalledWith("lib-chisel"));
+    await screen.findByText("doesn't fit"); // load()'s own error surfaces
+    // Placement mode stays armed (so the user can just try again) and the
+    // rejected tool never renders on its own — only the two it started with.
+    expect(screen.getByText(`Click the grid to place "${PICKED_TOOL.label}" · Esc to cancel`)).toBeTruthy();
+    expect(screen.queryByText("Chisel")).toBeNull();
+
+    // A follow-up placement (this time accepted) proves toolIds actually
+    // rolled back rather than merely being masked in the UI — otherwise this
+    // second duplicate would ride along on top of a still-orphaned first one.
+    vi.mocked(combinePreview).mockImplementation(
+      (ids, options) => Promise.resolve(buildResponse(ids, options?.placements)),
+    );
+    vi.mocked(duplicateTool).mockResolvedValue({ ...PICKED_TOOL, id: "bintool-chisel-2" });
+    fireEvent.pointerDown(svg(), { clientX: 20, clientY: -10 });
+    await waitFor(() => expect(duplicateTool).toHaveBeenCalledWith("lib-chisel"));
+    const last = vi.mocked(combinePreview).mock.calls.at(-1)!;
+    expect(last[0]).toEqual(["tool-a", "tool-b", "bintool-chisel-2"]);
   });
 
   it("Escape cancels an armed placement without duplicating anything", async () => {

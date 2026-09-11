@@ -2633,11 +2633,19 @@ class CombineRequest(BaseModel):
         return self
 
 
-def _combine_layout(req: "CombineRequest") -> dict:
+def _combine_layout(req: "CombineRequest", *, strict: bool = True) -> dict:
     """Shared multi-tool-bin geometry, used by both preview and export: each
     tool's cleared + printer-compensated + CAD-flipped pocket and finger-access
     envelope, its effective settings, and a placement (auto-packed, or from the
-    request for manual arrange), all centred in the sized gridfinity footprint."""
+    request for manual arrange), all centred in the sized gridfinity footprint.
+
+    `strict=False` (preview only) skips the removed-cell-overlap rejection
+    below so a manual placement that doesn't fit still returns its geometry —
+    the client already renders that leniently (an orange "overflow" outline,
+    see CombineEditor's `overflowIds`) rather than needing the request to
+    fail. Every other caller (export, slice, save) stays strict: this is the
+    authoritative check behind that client-side hint, and none of them may
+    ever produce output for an arrangement that doesn't actually fit."""
     from shapely.affinity import rotate as srotate
     from shapely.affinity import scale as sscale
     from shapely.affinity import translate as stranslate
@@ -3074,7 +3082,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
                 shapes += [Point(fx, fy).buffer(dia / 2) for fx, fy, dia in centered_fingers[i]]
                 if centered_connectors[i] is not None:
                     shapes.append(contour_mod.to_shapely(centered_connectors[i]))
-                if unary_union(shapes).intersects(removed_union):
+                if strict and unary_union(shapes).intersects(removed_union):
                     label = tools[i].label or tools[i].id
                     raise HTTPException(
                         status_code=422,
@@ -3188,7 +3196,7 @@ def _combine_layout(req: "CombineRequest") -> dict:
 def library_combine_preview(req: CombineRequest) -> dict:
     """Return pocket stamps, finger access, settings, and layout transforms."""
 
-    lay = _combine_layout(req)
+    lay = _combine_layout(req, strict=False)
     tools_json = []
     for i, t in enumerate(lay["tools"]):
         stamp = lay["pocket_stamps"][i]

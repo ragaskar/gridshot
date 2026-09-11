@@ -6,6 +6,7 @@ import {
   combinePreviewGlb,
   createToolshape,
   duplicateTool,
+  getLibraryOutline,
   listLibrary,
   overwriteBin,
   saveBin,
@@ -113,6 +114,29 @@ function resizeCursorFor(normalLocal: Pt, tool: CombineTool): string {
 function bboxOf(poly: Pt[]): { minx: number; maxx: number; miny: number; maxy: number } {
   const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   return { minx: Math.min(...xs), maxx: Math.max(...xs), miny: Math.min(...ys), maxy: Math.max(...ys) };
+}
+
+/** Area-weighted polygon centroid (the shoelace-formula one shapely's own
+ *  `.centroid` uses), not the vertex average — matches `stamp_poly`'s
+ *  centroid-normalisation server-side so a centred client-side preview
+ *  (e.g. the "add tool" ghost) lands where the real placement will. Falls
+ *  back to the bbox center for a degenerate (near-zero-area) ring. */
+function centroidOf(ring: Pt[]): Pt {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[(i + 1) % ring.length];
+    const cross = x0 * y1 - x1 * y0;
+    a += cross;
+    cx += (x0 + x1) * cross;
+    cy += (y0 + y1) * cross;
+  }
+  a *= 0.5;
+  if (Math.abs(a) < 1e-9) {
+    const b = bboxOf(ring);
+    return [(b.minx + b.maxx) / 2, (b.miny + b.maxy) / 2];
+  }
+  return [cx / (6 * a), cy / (6 * a)];
 }
 
 function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
@@ -569,6 +593,14 @@ export function CombineEditor({
   const [toolPickerBusy, setToolPickerBusy] = useState(false);
   const [toolPickerErr, setToolPickerErr] = useState<string | null>(null);
   const [placingTool, setPlacingTool] = useState<LibraryTool | null>(null);
+  // The picked tool's real physical outline, centred on its own area
+  // centroid (matching the server's centroid-normalised `stamp` — see
+  // `centroidOf`) — fetched once placement arms, so the ghost preview traces
+  // the actual footprint instead of a grid_x/grid_y bounding box. Null while
+  // it's loading, or if the tool has no outline to fetch; the ghost falls
+  // back to the bbox approximation in that case.
+  const [placingToolOutline, setPlacingToolOutline] = useState<Pt[] | null>(null);
+  const placingToolOutlineRequest = useRef(0);
   const [placeToolBusy, setPlaceToolBusy] = useState(false);
   const [placeToolErr, setPlaceToolErr] = useState<string | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -1031,6 +1063,13 @@ export function CombineEditor({
    *  change — call at the top of every discrete, one-shot committing action. */
   function pushSnapshot() {
     pushSnapshotValue(snapshot());
+  }
+
+  /** Undoes a `pushSnapshot()` whose action turned out not to commit after
+   *  all (e.g. `load()` rejected the placement it was about to record) — so
+   *  a failed action doesn't leave a no-op step in the undo stack. */
+  function popSnapshot() {
+    setUndoStack((s) => s.slice(0, -1));
   }
 
   /** Same as `pushSnapshot`, but for a *burst* of rapid-fire actions (nudge
@@ -2786,7 +2825,9 @@ export function CombineEditor({
    *  with defaults the panel can edit before a click on the canvas commits
    *  them (see the arrange <svg>'s onPointerDown/onPointerMove below). */
   function startPlacingToolshape() {
+    placingToolOutlineRequest.current++;
     setPlacingTool(null);
+    setPlacingToolOutline(null);
     setToolPickerOpen(false);
     setSelectedIds(new Set());
     setPlaceToolshapeErr(null);
@@ -2803,7 +2844,9 @@ export function CombineEditor({
    *  finger-hole-select elsewhere in this editor. */
   async function openToolPicker() {
     cancelPlacingToolshape();
+    placingToolOutlineRequest.current++;
     setPlacingTool(null);
+    setPlacingToolOutline(null);
     setGhostPos(null);
     setToolPickerErr(null);
     setToolPickerOpen(true);
@@ -2822,10 +2865,26 @@ export function CombineEditor({
     setSelectedIds(new Set());
     setPlaceToolErr(null);
     setPlacingTool(tool);
+    setPlacingToolOutline(null);
+    // Best-effort: an outline fetch failure (or a tool with none, e.g. an
+    // unusual legacy entry) just leaves the ghost on its bbox fallback below.
+    // Tagged with a request counter so a slow fetch for a tool the user has
+    // since moved on from can't clobber a later pick's outline.
+    const requestId = ++placingToolOutlineRequest.current;
+    void getLibraryOutline(tool.id)
+      .then((poly) => {
+        if (placingToolOutlineRequest.current !== requestId) return;
+        if (!poly || !poly.exterior.length) return;
+        const centroid = centroidOf(poly.exterior);
+        setPlacingToolOutline(poly.exterior.map(([x, y]): Pt => [x - centroid[0], y - centroid[1]]));
+      })
+      .catch(() => {});
   }
 
   function cancelPlacingTool() {
+    placingToolOutlineRequest.current++;
     setPlacingTool(null);
+    setPlacingToolOutline(null);
     setGhostPos(null);
   }
 
@@ -2840,15 +2899,25 @@ export function CombineEditor({
     try {
       const duplicated = await duplicateTool(placingTool.id);
       pushSnapshot();
+      const prevIds = toolIds;
       const nextIds = [...toolIds, duplicated.id];
       setToolIds(nextIds);
       const placements: Placement[] = [
         ...placementsFor(tools),
         { id: duplicated.id, tx, ty, rot: 0, mirror_x: false, mirror_y: false },
       ];
-      await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      const result = await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      if (!result) {
+        // load() already recorded the failure in `err` — undo the optimistic
+        // id append so the newly-forked tool doesn't sit in `toolIds` with no
+        // matching entry in `tools` (invisible, unremovable except by reload).
+        setToolIds(prevIds);
+        popSnapshot();
+        return;
+      }
       setSelectedIds(new Set([duplicated.id]));
       setPlacingTool(null);
+      setPlacingToolOutline(null);
       setGhostPos(null);
     } catch (e) {
       setPlaceToolErr((e as Error).message);
@@ -2890,13 +2959,19 @@ export function CombineEditor({
     try {
       const created = await createToolshape(placingToolshape);
       pushSnapshot();
+      const prevIds = toolIds;
       const nextIds = [...toolIds, created.id];
       setToolIds(nextIds);
       const placements: Placement[] = [
         ...placementsFor(tools),
         { id: created.id, tx, ty, rot: 0, mirror_x: false, mirror_y: false },
       ];
-      await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      const result = await load(placements, overridesFor(tools), fillHeightPct, undefined, undefined, lip, structural, magnetHoles, magnetHoleDiameter, magnetHoleDepth, nextIds);
+      if (!result) {
+        setToolIds(prevIds);
+        popSnapshot();
+        return;
+      }
       setSelectedIds(new Set([created.id]));
       setPlacingToolshape(null);
       setGhostPos(null);
@@ -4108,14 +4183,23 @@ export function CombineEditor({
                     pointerEvents="none"
                   />
                 )}
-                {/* An existing tool's real outline isn't known client-side
-                    (the Tool Library listing carries no geometry) — this
-                    approximates its footprint from grid_x/grid_y instead of
-                    omitting a ghost entirely. */}
+                {/* The picked tool's real physical outline (fetched by
+                    pickToolToPlace, centred on its own centroid) once it's
+                    loaded; a grid_x/grid_y bounding box only until then, or
+                    if the tool turns out to have no outline to fetch (the
+                    Tool Library listing itself carries no geometry). The
+                    real outline omits the pocket's clearance margin the
+                    eventual placement gets, so it previews slightly smaller
+                    than the landed pocket — still far closer than the bbox. */}
                 {placingTool && ghostPos && (() => {
-                  const hw = (placingTool.grid_x * (meta?.pitch ?? 42)) / 2;
-                  const hl = (placingTool.grid_y * (meta?.pitch ?? 42)) / 2;
-                  const pts: Pt[] = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
+                  let pts: Pt[];
+                  if (placingToolOutline) {
+                    pts = placingToolOutline;
+                  } else {
+                    const hw = (placingTool.grid_x * (meta?.pitch ?? 42)) / 2;
+                    const hl = (placingTool.grid_y * (meta?.pitch ?? 42)) / 2;
+                    pts = [[-hw, -hl], [hw, -hl], [hw, hl], [-hw, hl]];
+                  }
                   return <polygon
                     points={pts.map(([x, y]) => `${x + ghostPos[0]},${y + ghostPos[1]}`).join(" ")}
                     fill="#548cd655" stroke="#548cd6" strokeWidth={0.8} strokeDasharray="2 1.5"
