@@ -38,6 +38,9 @@ import {
 } from "../geometry/perimeter";
 import { nextToolAlongRay, type CardinalDirection } from "../geometry/nudgeDistance";
 import { placed, placedPoint, type Pt } from "../geometry/placement";
+import {
+  capsuleMidsectionPoints, circlePoints, extremePoint, nearestOtherAlongRay, selfExitAlongRay,
+} from "../geometry/spacing";
 import { useBinProfiles } from "../useBinProfiles";
 import { pathForBinReopen } from "../urlState";
 
@@ -426,6 +429,7 @@ export function CombineEditor({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showPreview3d, setShowPreview3d] = useState(false);
+  const [showSpacing, setShowSpacing] = useState(false);
   const { value: leftSidebarCollapsed, toggle: toggleLeftSidebarCollapsed } = usePersistedBoolean(
     false, "gridshot.combine.sidebar.left.collapsed",
   );
@@ -1679,6 +1683,124 @@ export function CombineEditor({
     const bold = toward !== null && away !== null && toward.distanceMm === away.distanceMm;
     return { toward, away, bold };
   }, [tools, layout, selectedIds, nudgeAnnotationDir]);
+
+  // "Show Spacing" overlay (global toggle, not tied to selection/nudging) —
+  // for every tool, up to 8 point-to-point lines: 4 cast from its own
+  // bbox-center in each cardinal direction (to the nearest point of
+  // whatever's next that way), and 4 cast from its own outline's leftmost/
+  // rightmost/topmost/bottommost point straight out in the matching
+  // direction. Every line ends at an actual outline point (self and target
+  // alike) rather than a bounding-box edge, unlike `nudgeAnnotation` above.
+  // A tool's own outline here is its stamp *plus* every finger-hole scallop
+  // and span bridge unioned onto it — see spacing.ts's `selfExitAlongRay`
+  // doc for why a hole is additive material, never a subtraction.
+  const spacingSegments = useMemo(() => {
+    if (!showSpacing || !layout) return [];
+    const CARDINALS: CardinalDirection[] = ["up", "down", "left", "right"];
+
+    // Every ring belonging to each tool, in world coordinates — the same
+    // shapes that tool's own finger-hole overlay renders (see the
+    // layout.fingerCircles/fingerConnectors block below, ~3790+).
+    const ringsByTool = new Map<string, Pt[][]>();
+    tools.forEach((tool, i) => {
+      const rings: Pt[][] = [layout.polys[i]];
+      for (const hole of layout.fingerCircles.filter((h) => h.toolId === tool.id)) {
+        if (tool.finger_hole_shape === "rounded_rect") {
+          const arcMm = hole.pointIndex === 1 ? tool.finger_hole_arc2_mm : tool.finger_hole_arc_mm;
+          rings.push(placed(
+            fingerHoleRectPoints(
+              tool.stamp, arcMm,
+              tool.finger_hole_length_mm, tool.finger_hole_width_mm, tool.finger_hole_corner_radius_mm,
+            ),
+            tool.tx, tool.ty, tool.rot, tool.mirror_x, tool.mirror_y,
+          ));
+        } else {
+          rings.push(circlePoints(hole.cx, hole.cy, hole.radius));
+        }
+      }
+      const conn = layout.fingerConnectors.find((c) => c.toolId === tool.id);
+      if (conn) {
+        // Round caps of the span bridge's stroke coincide exactly with the
+        // two lobe rings just added above for a circular hole (same
+        // radius), so only the straight midsection needs its own ring here.
+        // For rounded_rect this is an approximation — the lobes are rects
+        // oriented along their own local ring tangents, which generally
+        // don't line up with the bridge's own end-cap direction, so a
+        // sliver near each cap can go unmodeled.
+        const radius = (tool.finger_hole_shape === "rounded_rect" ? tool.finger_hole_width_mm : conn.diameter) / 2;
+        const bridge = capsuleMidsectionPoints([conn.x1, conn.y1], [conn.x2, conn.y2], radius);
+        if (bridge.length) rings.push(bridge);
+      }
+      ringsByTool.set(tool.id, rings);
+    });
+
+    // Grid-edge stand-in, the same synthetic rectangle `nudgeAnnotation`
+    // above uses — a real tool always wins over it when one sits closer.
+    const gridBoundaryId = "__grid_edge__";
+    const halfW = layout.ow / 2, halfD = layout.od / 2;
+    const gridBoundary: Pt[] = [
+      [layout.cx - halfW, layout.cy - halfD], [layout.cx + halfW, layout.cy - halfD],
+      [layout.cx + halfW, layout.cy + halfD], [layout.cx - halfW, layout.cy + halfD],
+    ];
+    const allRings: { id: string; poly: Pt[] }[] = [
+      ...tools.flatMap((tool) => (ringsByTool.get(tool.id) ?? []).map((poly) => ({ id: tool.id, poly }))),
+      { id: gridBoundaryId, poly: gridBoundary },
+    ];
+
+    type Segment = { start: Pt; end: Pt; distanceMm: number; kind: "center" | "extreme" };
+    const segments: Segment[] = [];
+    const DEDUPE_EPS_MM = 1e-6;
+
+    for (const tool of tools) {
+      const rings = ringsByTool.get(tool.id);
+      if (!rings?.length) continue;
+      const allPts = rings.flat();
+      const xs = allPts.map((p) => p[0]), ys = allPts.map((p) => p[1]);
+      const center: Pt = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+
+      const centerStarts = new Map<CardinalDirection, Pt>();
+      for (const dir of CARDINALS) {
+        const exit = selfExitAlongRay(center, dir, rings);
+        if (!exit) continue;
+        const other = nearestOtherAlongRay(center, dir, allRings, tool.id);
+        if (!other) continue;
+        centerStarts.set(dir, exit.point);
+        segments.push({
+          start: exit.point, end: other.point,
+          distanceMm: Math.round((other.t - exit.t) * 100) / 100,
+          kind: "center",
+        });
+      }
+
+      const extremes: { dir: CardinalDirection; axis: "x" | "y"; find: "min" | "max" }[] = [
+        { dir: "left", axis: "x", find: "min" },
+        { dir: "right", axis: "x", find: "max" },
+        { dir: "up", axis: "y", find: "max" },
+        { dir: "down", axis: "y", find: "min" },
+      ];
+      for (const { dir, axis, find } of extremes) {
+        const point = extremePoint(rings, axis, find);
+        if (!point) continue;
+        const centerStart = centerStarts.get(dir);
+        // Skip when this is the identical point/direction the center-based
+        // ray above already drew (a plain rectangle's edge midpoint, say) —
+        // no point stacking two overlapping lines and labels.
+        if (
+          centerStart
+          && Math.abs(centerStart[0] - point[0]) < DEDUPE_EPS_MM
+          && Math.abs(centerStart[1] - point[1]) < DEDUPE_EPS_MM
+        ) continue;
+        const other = nearestOtherAlongRay(point, dir, allRings, tool.id);
+        if (!other) continue;
+        segments.push({
+          start: point, end: other.point,
+          distanceMm: Math.round(other.t * 100) / 100,
+          kind: "extreme",
+        });
+      }
+    }
+    return segments;
+  }, [tools, layout, showSpacing]);
 
   // Generate after the arrangement settles. This endpoint calls the same solid
   // builder as 3MF export; no browser-side mesh approximation is involved.
@@ -3190,6 +3312,15 @@ export function CombineEditor({
             </button>
             <button
               type="button"
+              aria-pressed={showSpacing}
+              className={`btn !px-2 !py-1 text-[10px] normal-case ml-2 ${showSpacing ? "border-teal text-teal" : "btn-ghost"}`}
+              onClick={() => setShowSpacing((v) => !v)}
+              title="Show point-to-point spacing lines from every tool's outline (including finger holes) to its nearest neighbor or the grid edge"
+            >
+              Show Spacing
+            </button>
+            <button
+              type="button"
               aria-pressed={showPreview3d}
               className={`btn !px-2 !py-1 text-[10px] normal-case ml-2 ${showPreview3d ? "border-teal text-teal" : "btn-ghost"}`}
               onClick={() => setShowPreview3d((v) => !v)}
@@ -3933,6 +4064,36 @@ export function CombineEditor({
                           style={{ fontFamily: "monospace" }}
                         >
                           {hit.distanceMm.toFixed(2)} mm
+                        </text>
+                      </g>
+                    </g>
+                  );
+                })}
+                {spacingSegments.map((seg, i) => {
+                  const [sx, sy] = seg.start;
+                  const [ex, ey] = seg.end;
+                  const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+                  // Center-based rays (part 1) in teal, extreme-point rays
+                  // (part 2) in violet — distinct colors since, for a plain
+                  // rectangular tool, they're often two different lines
+                  // reporting the same reading and would otherwise be hard
+                  // to tell apart.
+                  const color = seg.kind === "center" ? "#2f8f95" : "#8f6fb0";
+                  return (
+                    <g key={i}>
+                      <line
+                        x1={sx} y1={sy} x2={ex} y2={ey} stroke={color}
+                        strokeWidth={0.3}
+                        strokeDasharray="1.5 1"
+                      />
+                      {/* Counter-flip: the parent group mirrors y for display,
+                          which would otherwise draw this label upside down. */}
+                      <g transform={`translate(${mx} ${my}) scale(1,-1)`}>
+                        <text
+                          x={0} y={-2} textAnchor="middle" fontSize={2.6} fill={color}
+                          style={{ fontFamily: "monospace" }}
+                        >
+                          {seg.distanceMm.toFixed(2)} mm
                         </text>
                       </g>
                     </g>
