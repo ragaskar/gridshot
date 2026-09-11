@@ -731,7 +731,14 @@ export interface PhotoOutline {
   display?: string;
   width?: number;
   height?: number;
+  // The accepted photo selection, always present.
   outline: [number, number][];
+  // The physical cutout projected back onto the photo — only present once
+  // it's diverged from `outline` (see `diverged`); null otherwise, so a
+  // consumer that only cares about "is there a second outline to draw" can
+  // just check truthiness.
+  cutout_outline?: [number, number][] | null;
+  diverged: boolean;
 }
 
 export async function getLibraryPhotoOutline(id: string): Promise<PhotoOutline> {
@@ -968,6 +975,22 @@ export async function getLibraryOutline(id: string): Promise<Poly | null> {
   const r = await fetch(`/api/library/${id}/outline`, { cache: "no-store" });
   if (!r.ok) throw new Error("outline fetch failed");
   return (await r.json()).outline;
+}
+
+export interface LibraryCutout {
+  outline: Poly | null;
+  // What auto-derivation from the accepted photo selection would currently
+  // produce — the physical-cutout editor's shadow outline and "Revert to
+  // photo selection" target. Same (corrected) space as `outline`.
+  photo_baseline: Poly | null;
+  // Whether `outline` has been hand-edited away from `photo_baseline`.
+  diverged: boolean;
+}
+
+export async function getLibraryCutout(id: string): Promise<LibraryCutout> {
+  const r = await fetch(`/api/library/${id}/outline`, { cache: "no-store" });
+  if (!r.ok) throw new Error("outline fetch failed");
+  return r.json();
 }
 
 export async function updateLibraryTool(

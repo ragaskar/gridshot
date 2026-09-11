@@ -4,7 +4,7 @@ import {
   createLibraryBackup,
   deleteLibraryTool,
   downloadLibraryArchive,
-  getLibraryOutline,
+  getLibraryCutout,
   getLibraryPhotoOutline,
   getResult,
   libraryEditClick,
@@ -46,6 +46,7 @@ export function Library() {
     id: string;
     label: string;
     polygon: Poly;
+    photoBaseline: Poly | null;
   } | null>(null);
   const [sam, setSam] = useState<{ id: string; sess: LibraryEditResult } | null>(null);
   const [viewing, setViewing] = useState<{ t: LibraryTool; data: PhotoOutline } | null>(null);
@@ -74,12 +75,13 @@ export function Library() {
 
   async function openOutline(id: string) {
     try {
-      const polygon = await getLibraryOutline(id);
-      if (!polygon) throw new Error("this tool has no physical cutout");
+      const cutout = await getLibraryCutout(id);
+      if (!cutout.outline) throw new Error("this tool has no physical cutout");
       setEditing({
         id,
         label: tools.find((tool) => tool.id === id)?.label || id,
-        polygon,
+        polygon: cutout.outline,
+        photoBaseline: cutout.photo_baseline,
       });
     } catch (e) {
       alert((e as Error).message);
@@ -679,6 +681,7 @@ export function Library() {
             </div>
             <PhysicalCutoutEditor
               initial={editing.polygon}
+              photoBaseline={editing.photoBaseline}
               busy={busy}
               onSave={saveOutline}
               onCancel={() => setEditing(null)}

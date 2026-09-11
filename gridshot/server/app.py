@@ -26,7 +26,7 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from pydantic import BaseModel, Field, model_validator
 
 from gridshot.core import batch as batch_mod
@@ -192,6 +192,49 @@ def _library_raw_outline(tool):
     )
 
 
+def _photo_derived_outline(tool):
+    """The physical cutout auto-derivation from the tool's accepted photo
+    selection (`_library_raw_outline`) would currently produce — i.e. the
+    "photo baseline" the physical-cutout editor's shadow outline and Revert
+    button compare against. Distinct from the raw (pre-parallax) outline
+    itself: this is in the *same* corrected mat-mm space as `tool.outline`,
+    so it's directly comparable/drawable alongside it. Identity (no-op
+    correction) when there's no calibration/thickness to correct with."""
+    raw = _library_raw_outline(tool)
+    if raw is None:
+        return None
+    if tool.calibration is not None and tool.thickness_mm:
+        try:
+            return parallax_mod.correct_polygon(raw, tool.calibration, tool.thickness_mm)
+        except (parallax_mod.MissingPoseError, ValueError):
+            pass
+    return raw
+
+
+def _cutout_diverged(tool) -> bool:
+    """Whether the stored physical cutout has been hand-edited away from what
+    auto-derivation from the accepted photo selection would produce — i.e.
+    whether "Edit physical cutout" has ever actually changed the shape (as
+    opposed to a SAM/thickness edit, which always re-derives the cutout from
+    the photo selection and so never diverges). Compared by IoU rather than
+    exact equality since a JSON round-trip alone introduces float noise."""
+    if tool.outline is None:
+        return False
+    baseline = _photo_derived_outline(tool)
+    if baseline is None:
+        return False
+    try:
+        current_shape = contour_mod.to_shapely(tool.outline)
+        baseline_shape = contour_mod.to_shapely(baseline)
+    except Exception:
+        return False
+    union = current_shape.union(baseline_shape).area
+    if union <= 0:
+        return False
+    iou = current_shape.intersection(baseline_shape).area / union
+    return iou < 0.999
+
+
 def _tool_readiness(tool) -> readiness_mod.ReadinessReport:
     if tool.readiness is not None:
         return tool.readiness
@@ -271,33 +314,92 @@ def _store_lib_photo(tid: str, src: Path) -> bool:
         return False
 
 
+# Bump whenever _regen_photo_thumb's drawing changes in a way that isn't
+# otherwise triggered by an edit — library_photo_thumb below regenerates any
+# thumbnail whose sidecar version file doesn't match, so every existing
+# tool's thumbnail self-heals onto new drawing logic the next time it's
+# viewed, without a one-shot migration pass.
+_THUMB_RENDER_VERSION = 2
+
+# Photo-selection vs physical-cutout outline colors — shared by the baked
+# thumbnail crop (_regen_photo_thumb) and, via api.ts, the client-side
+# PhotoLightbox overlay, so the two surfaces agree on what each color means.
+_PHOTO_OUTLINE_COLOR = (255, 214, 90)   # yellow: the accepted photo selection
+_CUTOUT_OUTLINE_COLOR = (90, 170, 255)  # blue: the physical cutout, once it diverges
+
+
+def _thumb_render_version_path(tool_id: str) -> Path:
+    return library_mod.library_dir() / f"{tool_id}-photo-thumb.v"
+
+
+def _draw_photo_legend(draw: "ImageDraw.ImageDraw", entries: list[tuple[tuple[int, int, int], str]]) -> None:
+    """A small swatch-and-label key in the photo crop's top-left corner —
+    only called when more than one outline color is drawn, so the two
+    colors are never left for the viewer to guess at."""
+    font_size = 16
+    font = ImageFont.load_default(size=font_size)
+    pad = 5
+    swatch = font_size - 2
+    line_h = font_size + pad
+    text_w = max(int(draw.textlength(text, font=font)) for _, text in entries)
+    box_w = pad * 3 + swatch + text_w
+    box_h = pad + line_h * len(entries)
+    draw.rectangle([pad, pad, pad + box_w, pad + box_h], fill=(20, 20, 20))
+    for i, (color, text) in enumerate(entries):
+        y = pad + pad // 2 + i * line_h
+        draw.rectangle([pad * 2, y, pad * 2 + swatch, y + swatch], fill=color)
+        draw.text((pad * 3 + swatch, y - 1), text, font=font, fill=(255, 255, 255))
+
+
 def _regen_photo_thumb(t) -> None:
     """A photo crop around the tool — the library card's real-photo thumbnail, so
-    tools with near-identical outlines (screwdrivers) are told apart at a glance."""
+    tools with near-identical outlines (screwdrivers) are told apart at a glance.
+    Always draws the accepted photo selection (yellow); additionally draws the
+    physical cutout (blue, with a legend) whenever it's been hand-edited away
+    from that selection — see _cutout_diverged — so an edit that changes the
+    cutout without touching the photo trace is still visible here."""
     photo = library_mod.library_dir() / f"{t.id}-photo.jpg"
     raw = _library_raw_outline(t)
     if not (t.has_photo and raw is not None and t.calibration is not None and photo.is_file()):
         return
     try:
         px = _poly_to_px(raw, t.calibration)
-        xs = [p[0] for p in px]
-        ys = [p[1] for p in px]
+        diverged = _cutout_diverged(t)
+        cutout_px = (
+            _poly_to_px(
+                _raw_outline_for_photo(t.outline, t.calibration, t.thickness_mm), t.calibration
+            )
+            if diverged and t.outline is not None
+            else None
+        )
+        xs = [p[0] for p in px] + [p[0] for p in (cutout_px or [])]
+        ys = [p[1] for p in px] + [p[1] for p in (cutout_px or [])]
         img = Image.open(photo).convert("RGB")
         W, H = img.size
         pad = 0.18 * max(max(xs) - min(xs), max(ys) - min(ys)) + 10
         x0, y0 = max(0, min(xs) - pad), max(0, min(ys) - pad)
         x1, y1 = min(W, max(xs) + pad), min(H, max(ys) + pad)
         crop = img.crop((x0, y0, x1, y1))
-        # draw the outline on the crop (dark halo + bright line → visible on any
-        # background) so the card shows which tools need outline fixing
+        # draw the outline(s) on the crop (dark halo + bright line → visible on
+        # any background) so the card shows which tools need outline fixing
         ring = [(x - x0, y - y0) for x, y in px]
         ring.append(ring[0])
         lw = max(3, int((x1 - x0) / 110))
         draw = ImageDraw.Draw(crop)
         draw.line(ring, fill=(0, 0, 0), width=lw + 3, joint="curve")
-        draw.line(ring, fill=(255, 214, 90), width=lw, joint="curve")
+        draw.line(ring, fill=_PHOTO_OUTLINE_COLOR, width=lw, joint="curve")
+        if cutout_px:
+            cring = [(x - x0, y - y0) for x, y in cutout_px]
+            cring.append(cring[0])
+            draw.line(cring, fill=(0, 0, 0), width=lw + 3, joint="curve")
+            draw.line(cring, fill=_CUTOUT_OUTLINE_COLOR, width=lw, joint="curve")
+            _draw_photo_legend(draw, [
+                (_PHOTO_OUTLINE_COLOR, "photo selection"),
+                (_CUTOUT_OUTLINE_COLOR, "physical cutout"),
+            ])
         crop.thumbnail((320, 320))
         crop.save(library_mod.library_dir() / f"{t.id}-photo-thumb.jpg", quality=88)
+        _thumb_render_version_path(t.id).write_text(str(_THUMB_RENDER_VERSION))
     except Exception:
         pass
 
@@ -1798,7 +1900,16 @@ def library_outline(tool_id: str) -> dict:
         t = library_mod.load(tool_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such tool")
-    return {"outline": t.outline.model_dump() if t.outline else None}
+    baseline = _photo_derived_outline(t)
+    return {
+        "outline": t.outline.model_dump() if t.outline else None,
+        # What auto-derivation from the accepted photo selection would
+        # currently produce — the physical-cutout editor's shadow outline and
+        # Revert-to-photo-selection target. Same (corrected) mat-mm space as
+        # `outline` itself, so it's directly comparable/drawable alongside it.
+        "photo_baseline": baseline.model_dump() if baseline else None,
+        "diverged": _cutout_diverged(t),
+    }
 
 
 def library_thumb(tool_id: str) -> FileResponse:
@@ -1817,29 +1928,62 @@ def library_photo(tool_id: str) -> FileResponse:
 
 def library_photo_thumb(tool_id: str) -> FileResponse:
     p = (library_mod.library_dir() / f"{tool_id}-photo-thumb.jpg").resolve()
-    if not str(p).startswith(str(library_mod.library_dir().resolve())) or not p.is_file():
+    if not str(p).startswith(str(library_mod.library_dir().resolve())):
+        raise HTTPException(status_code=404, detail="no photo thumbnail")
+    version_path = _thumb_render_version_path(tool_id)
+    stale = (
+        not p.is_file() or not version_path.is_file()
+        or version_path.read_text().strip() != str(_THUMB_RENDER_VERSION)
+    )
+    if stale:
+        # Self-heals every existing tool's thumbnail onto the current
+        # drawing logic (e.g. this render version's new divergence overlay)
+        # the first time it's viewed, rather than needing a migration pass —
+        # see _THUMB_RENDER_VERSION.
+        try:
+            _regen_photo_thumb(library_mod.load(tool_id))
+        except KeyError:
+            pass
+    if not p.is_file():
         raise HTTPException(status_code=404, detail="no photo thumbnail")
     return FileResponse(p)
 
 
 def library_photo_outline(tool_id: str) -> dict:
-    """For the vertex editor: the tool's photo + its outline projected into photo
-    pixels, so vertices can be dragged on top of the real image. Falls back to
-    geometry-only (mat-mm outline, no photo) for tools without a stored photo."""
+    """For the vertex editor and the read-only lightbox: the tool's photo +
+    its outline(s) projected into photo pixels. `outline` is always the
+    accepted photo selection; `cutout_outline` is the physical cutout too,
+    projected back onto the photo, but only when it's diverged from that
+    selection (see _cutout_diverged) — same rule _regen_photo_thumb's baked
+    thumbnail follows, so the two surfaces always agree. Falls back to
+    geometry-only (mat-mm outline, no photo) for tools without a stored
+    photo."""
     try:
         t = library_mod.load(tool_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="no such tool")
+    diverged = _cutout_diverged(t)
     photo = library_mod.library_dir() / f"{tool_id}-photo.jpg"
     if not (t.has_photo and t.calibration is not None and photo.is_file()):
-        return {"has_photo": False, "outline": t.outline.exterior if t.outline else []}
+        return {
+            "has_photo": False,
+            "outline": t.outline.exterior if t.outline else [],
+            "diverged": diverged,
+        }
     w, h = Image.open(photo).size
     raw = _library_raw_outline(t)
+    cutout_px = (
+        _poly_to_px(_raw_outline_for_photo(t.outline, t.calibration, t.thickness_mm), t.calibration)
+        if diverged and t.outline is not None
+        else None
+    )
     return {
         "has_photo": True,
         "display": f"/api/library/{tool_id}/photo",
         "width": w, "height": h,
         "outline": _poly_to_px(raw, t.calibration) if raw else [],
+        "cutout_outline": cutout_px,
+        "diverged": diverged,
     }
 
 

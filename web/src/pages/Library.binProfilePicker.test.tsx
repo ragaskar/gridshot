@@ -14,6 +14,7 @@ vi.mock("../api", () => ({
   drawerPreviewGlb: vi.fn(),
   exportDrawer: vi.fn(),
   getLibraryOutline: vi.fn(),
+  getLibraryCutout: vi.fn(),
   getLibraryPhotoOutline: vi.fn(),
   getResult: vi.fn(),
   libraryEditClick: vi.fn(),

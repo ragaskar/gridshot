@@ -21,8 +21,8 @@ function changedRing(poly: Poly, ringIndex: number, ring: Ring): Poly {
   };
 }
 
-function bounds(poly: Poly) {
-  const points = [poly.exterior, ...poly.holes].flat();
+function bounds(...polys: Poly[]) {
+  const points = polys.flatMap((poly) => [poly.exterior, ...poly.holes]).flat();
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   const minx = Math.min(...xs);
@@ -34,16 +34,25 @@ function bounds(poly: Poly) {
 
 export function PhysicalCutoutEditor({
   initial,
+  photoBaseline,
   busy,
   onSave,
   onCancel,
 }: {
   initial: Poly;
+  // What auto-derivation from the accepted photo selection would produce —
+  // the shadow outline and "Revert to photo selection" target. Omitted (or
+  // null) when there's nothing to derive it from — an unusual tool with no
+  // photo trace at all, or a caller (the single-capture Result/Batch flows)
+  // that has no such baseline to offer — in which case the shadow and revert
+  // button just don't render.
+  photoBaseline?: Poly | null;
   busy: boolean;
   onSave: (polygon: Poly) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const initialRef = useRef(initial);
+  const photoBaselineRef = useRef(photoBaseline ?? null);
   const [history, setHistory] = useState<Poly[]>([initial]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [current, setCurrent] = useState(initial);
@@ -51,7 +60,10 @@ export function PhysicalCutoutEditor({
   const [holeDraft, setHoleDraft] = useState<Ring>([]);
   const polygonRef = useRef(current);
   const dragVertex = useRef<{ ring: number; point: number } | null>(null);
-  const originalBounds = useMemo(() => bounds(initialRef.current), []);
+  const originalBounds = useMemo(
+    () => bounds(initialRef.current, ...(photoBaselineRef.current ? [photoBaselineRef.current] : [])),
+    [],
+  );
   const padding = Math.max(originalBounds.width, originalBounds.height) * 0.06 + 2;
   const base = {
     x: originalBounds.minx - padding,
@@ -67,6 +79,13 @@ export function PhysicalCutoutEditor({
   const dimensions = [currentBounds.width, currentBounds.height].sort((a, b) => b - a);
   const rings = [current.exterior, ...current.holes];
   const changed = JSON.stringify(current) !== JSON.stringify(initialRef.current);
+  // Whether the *current* cutout differs from the photo baseline — distinct
+  // from `changed` (which only tracks this editing session): a tool opened
+  // here already diverged from a past physical edit is diverged from the
+  // moment the modal opens, before any vertex has moved.
+  const diverged =
+    photoBaselineRef.current != null &&
+    JSON.stringify(current) !== JSON.stringify(photoBaselineRef.current);
 
   function replace(poly: Poly) {
     polygonRef.current = poly;
@@ -187,6 +206,21 @@ export function PhysicalCutoutEditor({
         Vertex changes here are final physical dimensions; parallax will not be
         applied to them again.
       </p>
+      {photoBaselineRef.current && (
+        <div className="flex flex-wrap items-center gap-4 mb-3 font-mono text-[10px] text-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-0.5 w-4" style={{ background: "var(--c-teal)" }} />
+            physical cutout
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block h-0 w-4 border-t-2 border-dotted"
+              style={{ borderColor: "var(--c-gold)" }}
+            />
+            photo selection
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="inline-flex border border-line">
           {modeButton("move", "Move")}
@@ -227,14 +261,18 @@ export function PhysicalCutoutEditor({
           style={{ maxHeight: "65vh", margin: "0 auto" }}
           preserveAspectRatio="xMidYMid meet"
         >
-          <path
-            d={polyPath(initialRef.current)}
-            fill="none"
-            fillRule="evenodd"
-            stroke="#888"
-            strokeWidth={stroke}
-            strokeDasharray={`${extent / 90 / zp.zoomFactor}`}
-          />
+          {photoBaselineRef.current && (
+            <path
+              d={polyPath(photoBaselineRef.current)}
+              fill="none"
+              fillRule="evenodd"
+              stroke="var(--c-gold)"
+              strokeOpacity={0.6}
+              strokeWidth={stroke}
+              strokeDasharray={`${stroke * 0.6} ${extent / 220 / zp.zoomFactor}`}
+              strokeLinecap="round"
+            />
+          )}
           <path
             d={polyPath(current)}
             fill="rgba(36,110,114,0.28)"
@@ -282,7 +320,16 @@ export function PhysicalCutoutEditor({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button className="btn btn-ghost text-xs" disabled={busy || historyIndex === 0} onClick={() => step(historyIndex - 1)}>Undo</button>
         <button className="btn btn-ghost text-xs" disabled={busy || historyIndex === history.length - 1} onClick={() => step(historyIndex + 1)}>Redo</button>
-        <button className="btn btn-ghost text-xs" disabled={busy || !changed} onClick={() => commit(initialRef.current)}>Reset</button>
+        {photoBaselineRef.current && (
+          <button
+            className="btn btn-ghost text-xs"
+            disabled={busy || !diverged}
+            title="Discard every physical-cutout edit (this session's and any earlier one's) and restore the shape auto-derived from the accepted photo selection"
+            onClick={() => photoBaselineRef.current && commit(photoBaselineRef.current)}
+          >
+            Revert to photo selection
+          </button>
+        )}
         <div className="flex-1" />
         <button className="btn" disabled={busy} onClick={onCancel}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !changed || current.exterior.length < 3} onClick={() => onSave(current)}>

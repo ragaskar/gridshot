@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Library } from "./Library";
 import type { LibraryTool, ReadinessReport } from "../api";
 
@@ -13,7 +13,6 @@ vi.mock("../api", () => ({
   composeLibrary: vi.fn(),
   drawerPreviewGlb: vi.fn(),
   exportDrawer: vi.fn(),
-  getLibraryOutline: vi.fn(),
   getLibraryCutout: vi.fn(),
   getLibraryPhotoOutline: vi.fn(),
   getResult: vi.fn(),
@@ -25,9 +24,9 @@ vi.mock("../api", () => ({
   downloadLibraryArchive: vi.fn(),
 }));
 
-import { listBinProfiles, listLibrary, updateLibraryTool } from "../api";
+import { getLibraryCutout, listBinProfiles, listLibrary } from "../api";
 
-function readiness(status: ReadinessReport["status"]): ReadinessReport {
+function readiness(status: ReadinessReport["status"] = "pass"): ReadinessReport {
   return { status, checks: [], metrics: {} };
 }
 
@@ -42,45 +41,47 @@ function tool(id: string, label: string): LibraryTool {
     magnet_hole_diameter_mm: 6.5, magnet_hole_depth_mm: 2, magnet_corners_only: false, magnet_easy_release: "off",
     has_photo: false, source_project: `${id}-proj`, source_tool: id,
     created_ts: 0, thumb: `/thumb/${id}.png`, photo_thumb: null,
-    readiness: readiness("pass"), provenance: null, outline_revision: 1,
+    readiness: readiness(), provenance: null, outline_revision: 1,
   };
 }
 
-describe("Library number-field commit", () => {
+describe("Library 'Edit physical cutout' wires the photo baseline through", () => {
   beforeEach(() => {
     vi.mocked(listLibrary).mockResolvedValue([tool("t-a", "Wrench")]);
     vi.mocked(listBinProfiles).mockResolvedValue([]);
-    vi.mocked(updateLibraryTool).mockImplementation(async (id, changes) => ({
-      ...tool(id, "Wrench"),
-      ...changes,
-    }));
   });
 
-  afterEach(() => {
-    cleanup();
-  });
+  afterEach(() => cleanup());
 
-  it("persists a clearance value changed via the native change event without a blur (spin buttons)", async () => {
+  it("passes the fetched photo_baseline into the editor, enabling Revert when diverged", async () => {
+    vi.mocked(getLibraryCutout).mockResolvedValue({
+      outline: { exterior: [[0, 0], [10, 0], [10, 10], [0, 10]], holes: [] },
+      photo_baseline: { exterior: [[1, 1], [11, 1], [11, 11], [1, 11]], holes: [] },
+      diverged: true,
+    });
     render(<Library />);
     await screen.findByDisplayValue("Wrench");
 
-    const clearanceInput = screen.getByLabelText("Pocket clearance in millimetres") as HTMLInputElement;
-    fireEvent.change(clearanceInput, { target: { value: "2.5" } });
+    fireEvent.click(screen.getByText(/Edit physical cutout/));
 
-    await waitFor(() => {
-      expect(updateLibraryTool).toHaveBeenCalledWith("t-a", { clearance_mm: 2.5 });
-    });
+    await screen.findByText("Library cutout · Wrench");
+    expect(getLibraryCutout).toHaveBeenCalledWith("t-a");
+    const revert = await screen.findByText("Revert to photo selection");
+    expect((revert.closest("button") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("persists a thickness value changed via the native change event without a blur", async () => {
+  it("shows no shadow outline or revert button when the tool has no photo baseline", async () => {
+    vi.mocked(getLibraryCutout).mockResolvedValue({
+      outline: { exterior: [[0, 0], [10, 0], [10, 10], [0, 10]], holes: [] },
+      photo_baseline: null,
+      diverged: false,
+    });
     render(<Library />);
     await screen.findByDisplayValue("Wrench");
 
-    const input = screen.getByLabelText("Tool thickness in millimetres") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "6" } });
+    fireEvent.click(screen.getByText(/Edit physical cutout/));
 
-    await waitFor(() => {
-      expect(updateLibraryTool).toHaveBeenCalledWith("t-a", { thickness_mm: 6 });
-    });
+    await screen.findByText("Library cutout · Wrench");
+    expect(screen.queryByText("Revert to photo selection")).toBeNull();
   });
 });

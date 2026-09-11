@@ -21,6 +21,7 @@ export function PhotoLightbox({
   const h = data.height ?? 1000;
   const zp = useZoomPan({ x: 0, y: 0, w, h });
   const pts = data.outline.map((p) => `${p[0]},${p[1]}`).join(" ");
+  const cutoutPts = data.cutout_outline?.map((p) => `${p[0]},${p[1]}`).join(" ");
 
   return (
     <div className="panel !p-4 sm:!p-6 max-h-[calc(100dvh-2rem)] overflow-auto" style={{ width: "min(94vw, 900px)" }}>
@@ -34,7 +35,7 @@ export function PhotoLightbox({
         </span>
       </div>
       <p className="font-mono text-[10px] text-muted mb-2">scroll or ＋/− to zoom · drag to pan</p>
-      <div className="border border-line bg-field overflow-hidden" style={{ borderRadius: 2 }}>
+      <div className="relative border border-line bg-field overflow-hidden" style={{ borderRadius: 2 }}>
         <svg
           ref={zp.svgRef}
           viewBox={zp.viewBox}
@@ -49,10 +50,45 @@ export function PhotoLightbox({
           {data.outline.length > 2 && (
             <>
               <polygon points={pts} fill="none" stroke="#000" strokeWidth={(w / 160) / zp.zoomFactor} />
-              <polygon points={pts} fill="rgba(47,199,199,0.10)" stroke="#2fd7d7" strokeWidth={(w / 300) / zp.zoomFactor} />
+              <polygon
+                points={pts}
+                fill={cutoutPts ? "none" : "rgba(239,169,46,0.12)"}
+                stroke="var(--c-gold)"
+                strokeWidth={(w / 300) / zp.zoomFactor}
+              />
+            </>
+          )}
+          {/* The physical cutout, projected back onto the photo — only drawn
+              once it's diverged from the photo selection above (see
+              `diverged` on PhotoOutline), so an untouched tool shows exactly
+              one outline, same as before this overlay existed. */}
+          {cutoutPts && (
+            <>
+              <polygon points={cutoutPts} fill="none" stroke="#000" strokeWidth={(w / 160) / zp.zoomFactor} />
+              <polygon
+                points={cutoutPts}
+                fill="rgba(15,116,184,0.12)"
+                stroke="var(--c-teal)"
+                strokeWidth={(w / 300) / zp.zoomFactor}
+              />
             </>
           )}
         </svg>
+        {cutoutPts && (
+          <div
+            className="absolute left-2 top-2 flex flex-col gap-1 rounded-sm px-2 py-1.5 font-mono text-[10px] text-white"
+            style={{ background: "rgba(20,20,20,0.82)" }}
+          >
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-0.5 w-4" style={{ background: "var(--c-gold)" }} />
+              photo selection
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-0.5 w-4" style={{ background: "var(--c-teal)" }} />
+              physical cutout
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap gap-3 mt-3">
         <button className="btn" onClick={onRefine}>◐ Correct photo selection</button>
