@@ -70,6 +70,28 @@ export function canRemoveCell(
   return true;
 }
 
+/** Whether `removed` (as a whole, not just one incremental toggle — see
+ *  `canRemoveCell` for that) contains a diagonal pinch: two removed cells
+ *  touching only at a shared corner, with neither of the two cells bridging
+ *  that corner also removed. Used where a shape's removed set can be built
+ *  by adding/removing cells in any order (so `canRemoveCell`'s "only the
+ *  newly-removed cell can introduce a pinch" invariant doesn't hold), e.g.
+ *  picking an arbitrary sub-region of an existing grid rather than carving
+ *  one cell at a time out of a fixed one. */
+export function hasDiagonalPinch(gx: number, gy: number, removed: ReadonlySet<CellKey>): boolean {
+  for (const k of removed) {
+    const [ix, iy] = k.split(",").map(Number);
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+      const nx = ix + dx, ny = iy + dy;
+      if (nx < 0 || ny < 0 || nx >= gx || ny >= gy) continue;
+      if (!removed.has(cellKey(nx, ny))) continue;
+      const bridge1 = cellKey(ix + dx, iy), bridge2 = cellKey(ix, iy + dy);
+      if (!removed.has(bridge1) && !removed.has(bridge2)) return true;
+    }
+  }
+  return false;
+}
+
 type Pt = [number, number];
 
 /** Boundary loops of the included cells, in integer grid-corner space (cell

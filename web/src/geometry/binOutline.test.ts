@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { binOutlinePath, cellKey, isShapeConnected } from "./binOutline";
+import { binOutlinePath, cellKey, hasDiagonalPinch, isShapeConnected } from "./binOutline";
 
 const countOccurrences = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 const subpathCount = (d: string) => countOccurrences(d, /M /g);
@@ -26,6 +26,28 @@ describe("isShapeConnected", () => {
 
   it("is false for an empty shape", () => {
     expect(isShapeConnected(2, 2, new Set([cellKey(0, 0), cellKey(1, 0), cellKey(0, 1), cellKey(1, 1)]))).toBe(false);
+  });
+});
+
+describe("hasDiagonalPinch", () => {
+  it("is false for the full grid", () => {
+    expect(hasDiagonalPinch(2, 2, new Set())).toBe(false);
+  });
+
+  it("is false for an L-shape (one corner removed)", () => {
+    expect(hasDiagonalPinch(2, 2, new Set([cellKey(0, 0)]))).toBe(false);
+  });
+
+  it("is true for two removed cells touching only at a corner", () => {
+    expect(hasDiagonalPinch(2, 2, new Set([cellKey(1, 0), cellKey(0, 1)]))).toBe(true);
+  });
+
+  it("is false when a bridging cell is also removed", () => {
+    expect(hasDiagonalPinch(2, 2, new Set([cellKey(1, 0), cellKey(0, 1), cellKey(0, 0)]))).toBe(false);
+  });
+
+  it("is false for a diagonal pair fully outside the grid bounds", () => {
+    expect(hasDiagonalPinch(1, 1, new Set([cellKey(0, 0)]))).toBe(false);
   });
 });
 
