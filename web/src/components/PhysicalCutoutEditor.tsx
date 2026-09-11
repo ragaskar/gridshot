@@ -320,11 +320,19 @@ export function PhysicalCutoutEditor({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button className="btn btn-ghost text-xs" disabled={busy || historyIndex === 0} onClick={() => step(historyIndex - 1)}>Undo</button>
         <button className="btn btn-ghost text-xs" disabled={busy || historyIndex === history.length - 1} onClick={() => step(historyIndex + 1)}>Redo</button>
+        <button
+          className="btn btn-ghost text-xs"
+          disabled={busy || !changed}
+          title="Undo every change made in this session only, back to how the cutout looked when this editor opened"
+          onClick={() => commit(initialRef.current)}
+        >
+          Reset
+        </button>
         {photoBaselineRef.current && (
           <button
             className="btn btn-ghost text-xs"
             disabled={busy || !diverged}
-            title="Discard every physical-cutout edit (this session's and any earlier one's) and restore the shape auto-derived from the accepted photo selection"
+            title="Discard every physical-cutout edit — this session's and any earlier one's — and restore the shape auto-derived from the accepted photo selection"
             onClick={() => photoBaselineRef.current && commit(photoBaselineRef.current)}
           >
             Revert to photo selection

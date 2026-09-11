@@ -188,3 +188,16 @@ class TestPhotoThumbDivergenceOverlay:
         # above produces isn't guaranteed byte-identical run to run, but the
         # version stamp having moved forward is: regeneration actually ran.
         assert thumb_path.read_bytes() != b""
+
+    def test_photo_thumb_route_is_never_browser_cached(self, client, library_dir):
+        # The file behind this URL can change with no query-string version
+        # bump (the self-heal above, or a divergence appearing/disappearing)
+        # — a cached response would keep showing a stale single-outline
+        # image indefinitely, reproducing the user's original complaint as a
+        # caching artifact instead of a missing feature.
+        _seed_photo_tool("diverged", diverged=True)
+
+        response = client.get("/api/library/diverged/photo-thumb")
+
+        assert response.status_code == 200
+        assert response.headers.get("cache-control") == "no-store"

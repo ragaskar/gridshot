@@ -1946,7 +1946,13 @@ def library_photo_thumb(tool_id: str) -> FileResponse:
             pass
     if not p.is_file():
         raise HTTPException(status_code=404, detail="no photo thumbnail")
-    return FileResponse(p)
+    # The file backing this URL can change (self-heal above, or an outline
+    # edit's own regen) with no query-string version bump to bust a cache —
+    # unlike an outline edit through the Library page itself, which does bump
+    # `bust` client-side. Without this, a browser that already cached the
+    # single-outline thumbnail from a prior visit would never re-request it,
+    # so a since-diverged tool would keep showing the stale image.
+    return FileResponse(p, headers={"Cache-Control": "no-store"})
 
 
 def library_photo_outline(tool_id: str) -> dict:
