@@ -1,6 +1,6 @@
-# Save Slice: splitting one big layout into printable bins
+# Save Segment: splitting one big layout into printable bins
 
-**Save Slice is unrelated to "Export slice (3MF)"**, the trace-tolerance
+**Save Segment is unrelated to "Export slice (3MF)"**, the trace-tolerance
 coupon feature described in
 [trace-tolerance-slice.md](trace-tolerance-slice.md) — that one exports a
 thin cross-section through every tool's cutout to test-fit before printing
@@ -11,22 +11,22 @@ the full bin. This feature spins off a whole new *bin*.
 The combine editor's grid can be laid out all at once — one big forced-size
 arrangement, so alignment between neighbouring tools is handled by hand once,
 in one place. But a single huge bin is a long print, and a bad idea if
-anything in the layout might get rearranged later. Save Slice lets you carve
-a sub-region of that big grid off into its own, independently-printable bin,
-without disturbing anything about the tools' actual placement.
+anything in the layout might get rearranged later. Save Segment lets you
+carve a sub-region of that big grid off into its own, independently-printable
+bin, without disturbing anything about the tools' actual placement.
 
 ## Using it
 
-**"Save Slice…"** sits in the combine editor's toolbar, next to "Save As…".
-It's only available once this bin has a locked, forced-size grid (100% fill
-height, live grid off, and nothing currently crossing the locked edge) — the
-same "Force size" setup **Edit Grid** requires (see
+**"Save Segment…"** sits in the combine editor's toolbar, next to "Save
+As…". It's only available once this bin has a locked, forced-size grid (100%
+fill height, live grid off, and nothing currently crossing the locked edge)
+— the same "Force size" setup **Edit Grid** requires (see
 [combine-editor-add-remove-tools.md](combine-editor-add-remove-tools.md) for
 Force size itself).
 
 Clicking it opens a small panel — a **Name** field (defaulting to
-`"<bin name> Slice"`) and **Cancel**/**Save As** buttons — and switches the
-Arrange 2D view into a grid-cell picker, reusing the same click-a-cell
+`"<bin name> Segment"`) and **Cancel**/**Save As** buttons — and switches
+the Arrange 2D view into a grid-cell picker, reusing the same click-a-cell
 gesture Edit Grid uses. Click cells to build up the sub-region you want to
 carve off:
 
@@ -49,38 +49,39 @@ carve off:
   either — there's no material there to include.
 - **Esc**, or the **Cancel** button, drops the selection and returns to
   normal 2D arrange mode. Nothing about the source bin is ever changed by
-  selecting, cancelling, or saving a slice — unlike Edit Grid, this never
-  touches `removed_cells` on the bin you're slicing *from*.
+  selecting, cancelling, or saving a segment — unlike Edit Grid, this never
+  touches `removed_cells` on the bin you're carving the segment *from*.
 
 **Save As** (disabled until at least one cell is selected, nothing
 straddles, and any hole is allowed) creates a **brand-new** Bin Library
 entry: a locked bin sized to exactly the selected cells' bounding box, with
-the included tools' placements translated so the slice's own footprint lands
-verbatim on the new bin's origin — no re-auto-fit, no repacking. A tool that
-was flush against another in the big layout is still flush against it in the
-slice.
+the included tools' placements translated so the segment's own footprint
+lands verbatim on the new bin's origin — no re-auto-fit, no repacking. A
+tool that was flush against another in the big layout is still flush against
+it in the segment.
 
 Everything else about the new bin — fill height, magnets, bevels, lip,
 structural overrides, the applied bin profile — is copied straight from the
-bin you sliced from. Anything computed from the bin's own footprint (most
-notably magnet corner positions with "corners only" on) recomputes against
-the *slice's* corners automatically, since that's derived from the bin's
-own geometry at generation time, never cached per-tool.
+bin the segment came from. Anything computed from the bin's own footprint
+(most notably magnet corner positions with "corners only" on) recomputes
+against the *segment's* own corners automatically, since that's derived
+from the bin's own geometry at generation time, never cached per-tool.
 
 Saving leaves you exactly where you were, still editing the source bin — the
-whole point is being able to slice the same big layout more than once. The
-panel shows a confirmation with a link to open the new bin in a new tab.
+whole point is being able to carve more than one segment off the same big
+layout. The panel shows a confirmation with a link to open the new bin in a
+new tab.
 
 ## Implementation notes
 
-- Selection state (`saveSliceCells`, a `Set<CellKey>` of *included* cells) is
-  purely local UI state — it never touches `removedCells`, `tools`, or any
+- Selection state (`saveSegmentCells`, a `Set<CellKey>` of *included* cells)
+  is purely local UI state — it never touches `removedCells`, `tools`, or any
   other committed bin state, so there's no undo/redo interaction and no
   baseline-snapshot dance the way Edit Grid needs.
 - A toggle is rejected outright (not applied, then rejected) if it would
   leave a disconnected or diagonally-pinched shape — see
-  `saveSliceToggleCandidate` in `CombineEditor.tsx` and `hasDiagonalPinch` in
-  `geometry/binOutline.ts`. Unlike Edit Grid's `canRemoveCell` (which only
+  `saveSegmentToggleCandidate` in `CombineEditor.tsx` and `hasDiagonalPinch`
+  in `geometry/binOutline.ts`. Unlike Edit Grid's `canRemoveCell` (which only
   ever needs to check the single newly-removed cell against an
   already-valid fixed-size grid), this selection's own bounding box can grow
   or shrink with every click, so legality is re-checked against the whole

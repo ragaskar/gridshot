@@ -94,7 +94,7 @@ function baseInitial(placements: Placement[], removedCells: [number, number][] |
   };
 }
 
-describe("CombineEditor Save Slice", () => {
+describe("CombineEditor Save Segment", () => {
   beforeEach(() => {
     vi.mocked(combinePreview).mockImplementation((ids, options) =>
       Promise.resolve(buildResponse(ids, options?.placements)));
@@ -119,12 +119,12 @@ describe("CombineEditor Save Slice", () => {
     await screen.findByText("B");
     expect(saveBin).not.toHaveBeenCalled(); // reopening with no edits never autosaves
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
-    // Default name is "$bin_name Slice" — "Big Layout" here.
-    expect((screen.getByLabelText("Slice bin name") as HTMLInputElement).value).toBe("Big Layout Slice");
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
+    // Default name is "$bin_name Segment" — "Big Layout" here.
+    expect((screen.getByLabelText("Segment bin name") as HTMLInputElement).value).toBe("Big Layout Segment");
     // Right-hand column: (ix=1, iy=0) i.e. "column 2, row 1" and (ix=1, iy=1).
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 2, row 1/));
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 2, row 2/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 2, row 1/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 2, row 2/));
 
     const saveAsButton = screen.getByRole("button", { name: "Save As" }) as HTMLButtonElement;
     expect(saveAsButton.disabled).toBe(false);
@@ -165,8 +165,8 @@ describe("CombineEditor Save Slice", () => {
     );
     await screen.findByText("Wide");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 2, row 1/));
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 2, row 1/));
 
     // "Wide" spans both column-1 and column-2 of row 1 — with only column 2
     // selected, it straddles the boundary and must block Save As.
@@ -174,12 +174,12 @@ describe("CombineEditor Save Slice", () => {
     expect(screen.getByText(/Wide.*straddles the selection/)).toBeTruthy();
 
     // Including the other cell it spans resolves the straddle.
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 1, row 1/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 1, row 1/));
     expect((screen.getByRole("button", { name: "Save As" }) as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     // Cancel/reopen must not leave stale cells armed for next time.
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
     expect((screen.getByRole("button", { name: "Save As" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -194,13 +194,13 @@ describe("CombineEditor Save Slice", () => {
     );
     await screen.findByText("B");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
     // Select three of the four cells — (0,0), (1,0), (1,1) — leaving (0,1)
     // (tool "C") unselected but inside the resulting 2x2 bounding box, so it
     // becomes a hole in the new bin rather than shrinking the box.
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 1, row 1/));
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 2, row 1/));
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 2, row 2/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 1, row 1/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 2, row 1/));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 2, row 2/));
 
     fireEvent.click(screen.getByRole("button", { name: "Save As" }));
     await waitFor(() => expect(saveBin).toHaveBeenCalledTimes(1));
@@ -224,22 +224,22 @@ describe("CombineEditor Save Slice", () => {
     await screen.findByText("B");
 
     // Esc with focus elsewhere (e.g. right after clicking a grid cell).
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
-    fireEvent.click(screen.getByLabelText(/^Slice grid cell column 1, row 1/));
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
+    fireEvent.click(screen.getByLabelText(/^Segment grid cell column 1, row 1/));
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByLabelText("Slice bin name")).toBeNull();
+    expect(screen.queryByLabelText("Segment bin name")).toBeNull();
     expect(screen.queryByRole("button", { name: "Save As" })).toBeNull();
 
     // Esc while the autofocused Name field itself has focus — the field is
     // autofocused on open, so this is the common case, not an edge case.
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
-    const nameInput = screen.getByLabelText("Slice bin name");
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
+    const nameInput = screen.getByLabelText("Segment bin name");
     nameInput.focus();
     fireEvent.keyDown(nameInput, { key: "Escape" });
-    expect(screen.queryByLabelText("Slice bin name")).toBeNull();
+    expect(screen.queryByLabelText("Segment bin name")).toBeNull();
 
     // A later reopen starts from a clean selection either way.
-    fireEvent.click(screen.getByRole("button", { name: "Save Slice…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Segment…" }));
     expect((screen.getByRole("button", { name: "Save As" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

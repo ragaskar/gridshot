@@ -503,21 +503,21 @@ export function CombineEditor({
   // shouldn't disable Export bin/Save-to-library, which have nothing to do
   // with the slice dialog.
   const [sliceErr, setSliceErr] = useState<string | null>(null);
-  // "Save Slice…": picks a rectangular sub-region of cells out of this
+  // "Save Segment…": picks a rectangular sub-region of cells out of this
   // (locked, forced-size) bin's grid and spins it off as a brand-new,
   // independently-saved bin at exactly the same tool placements — see
-  // `saveSliceBin`. Named `saveSlice*` throughout, never a bare `slice*`
+  // `saveSegmentBin`. Named `saveSegment*` throughout, never a bare `slice*`
   // identifier, to keep this unrelated to the `sliceDialogOpen`/`sliceThickness`
   // trace-tolerance-coupon feature above, which sits right next to this one's
   // own toolbar button.
-  const [saveSliceMode, setSaveSliceMode] = useState(false);
-  const [saveSliceCells, setSaveSliceCells] = useState<Set<CellKey>>(new Set());
-  const [hoveredSaveSliceCell, setHoveredSaveSliceCell] = useState<CellKey | null>(null);
-  const [saveSliceDialogOpen, setSaveSliceDialogOpen] = useState(false);
-  const [saveSliceName, setSaveSliceName] = useState("");
-  const [saveSliceBusy, setSaveSliceBusy] = useState(false);
-  const [saveSliceErr, setSaveSliceErr] = useState<string | null>(null);
-  const [saveSliceSaved, setSaveSliceSaved] = useState<SavedBin | null>(null);
+  const [saveSegmentMode, setSaveSegmentMode] = useState(false);
+  const [saveSegmentCells, setSaveSegmentCells] = useState<Set<CellKey>>(new Set());
+  const [hoveredSaveSegmentCell, setHoveredSaveSegmentCell] = useState<CellKey | null>(null);
+  const [saveSegmentDialogOpen, setSaveSegmentDialogOpen] = useState(false);
+  const [saveSegmentName, setSaveSegmentName] = useState("");
+  const [saveSegmentBusy, setSaveSegmentBusy] = useState(false);
+  const [saveSegmentErr, setSaveSegmentErr] = useState<string | null>(null);
+  const [saveSegmentSaved, setSaveSegmentSaved] = useState<SavedBin | null>(null);
   const [lockedRotations, setLockedRotations] = useState<Set<string>>(new Set());
   const [forceSize, setForceSize] = useState(
     Boolean(initial?.forceGx && initial?.forceGy) || Boolean(!initial && defaultForceSize),
@@ -694,14 +694,14 @@ export function CombineEditor({
   // of that has an obvious meaning and could surprise someone mid-edit.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Save Slice's Escape must work even while its Name field has focus
+      // Save Segment's Escape must work even while its Name field has focus
       // (it's autofocused on open) — checked ahead of the generic
       // input-focus early return just below, unlike every other shortcut
       // here, which has no obvious meaning while typing in a field.
-      if (saveSliceDialogOpen) {
+      if (saveSegmentDialogOpen) {
         if (e.key === "Escape") {
           e.preventDefault();
-          closeSaveSliceDialog();
+          closeSaveSegmentDialog();
         }
         return;
       }
@@ -755,7 +755,7 @@ export function CombineEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     undo, redo, placingToolshape, placingTool, toolPickerOpen, gridEditMode, cancelGridEditMode,
-    confirmExitGridEditMode, saveSliceDialogOpen, closeSaveSliceDialog,
+    confirmExitGridEditMode, saveSegmentDialogOpen, closeSaveSegmentDialog,
   ]);
 
   /** Plain click replaces the selection with just this tool (unless it's
@@ -1265,46 +1265,46 @@ export function CombineEditor({
   }, [layout, removedCells]);
 
   // Cells whose toggle would currently leave an illegal shape (see
-  // `saveSliceToggleCandidate`) — recomputed only when the selection or the
+  // `saveSegmentToggleCandidate`) — recomputed only when the selection or the
   // underlying grid actually changes, same rationale as `illegalOffCells`.
-  const illegalSaveSliceCells = useMemo(() => {
+  const illegalSaveSegmentCells = useMemo(() => {
     const illegal = new Set<CellKey>();
-    if (!saveSliceMode || !layout) return illegal;
+    if (!saveSegmentMode || !layout) return illegal;
     for (let ix = 0; ix < layout.gx; ix++) {
       for (let iy = 0; iy < layout.gy; iy++) {
         const key = cellKey(ix, iy);
         if (removedCells.has(key)) continue;
-        if (!saveSliceToggleCandidate(ix, iy)) illegal.add(key);
+        if (!saveSegmentToggleCandidate(ix, iy)) illegal.add(key);
       }
     }
     return illegal;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saveSliceMode, layout, removedCells, saveSliceCells]);
+  }, [saveSegmentMode, layout, removedCells, saveSegmentCells]);
 
-  const saveSliceBbox = useMemo(() => {
-    if (saveSliceCells.size === 0) return null;
+  const saveSegmentBbox = useMemo(() => {
+    if (saveSegmentCells.size === 0) return null;
     let minIx = Infinity, maxIx = -Infinity, minIy = Infinity, maxIy = -Infinity;
-    for (const k of saveSliceCells) {
+    for (const k of saveSegmentCells) {
       const [x, y] = k.split(",").map(Number);
       minIx = Math.min(minIx, x); maxIx = Math.max(maxIx, x);
       minIy = Math.min(minIy, y); maxIy = Math.max(maxIy, y);
     }
     return { minIx, maxIx, minIy, maxIy, gx: maxIx - minIx + 1, gy: maxIy - minIy + 1 };
-  }, [saveSliceCells]);
+  }, [saveSegmentCells]);
 
   // Per-tool "in"/"out"/"straddle" against the current selection — a tool
-  // touching only selected cells is "in" (goes into the slice, recentred
+  // touching only selected cells is "in" (goes into the segment, recentred
   // verbatim); touching only unselected ones is "out" (left behind, exactly
   // like a tool that was never selected); touching both is a straddle and
   // blocks Save As until the selection is grown or shrunk to resolve it (see
-  // `saveSliceValid`). Bounding-box overlap only (not exact polygon), same
+  // `saveSegmentValid`). Bounding-box overlap only (not exact polygon), same
   // approximation the locked-bin/removed-cell overflow checks in `layout`
   // already make; EPS shrinks the tool's own box before testing so a tool
   // placed flush against a grid line reads as cleanly on one side rather
   // than straddling it by a floating-point hair.
-  const saveSliceToolStatus = useMemo(() => {
+  const saveSegmentToolStatus = useMemo(() => {
     const status = new Map<string, "in" | "out" | "straddle">();
-    if (!saveSliceMode || !layout || !meta) return status;
+    if (!saveSegmentMode || !layout || !meta) return status;
     const EPS = 1e-3;
     const half = meta.bin_size / 2;
     const cellRect = (ix: number, iy: number) => {
@@ -1327,47 +1327,47 @@ export function CombineEditor({
           const overlaps = boxMinX + EPS < rect.maxX && boxMaxX - EPS > rect.minX
             && boxMinY + EPS < rect.maxY && boxMaxY - EPS > rect.minY;
           if (!overlaps) continue;
-          if (saveSliceCells.has(cellKey(ix, iy))) touchesIncluded = true; else touchesExcluded = true;
+          if (saveSegmentCells.has(cellKey(ix, iy))) touchesIncluded = true; else touchesExcluded = true;
         }
       }
       status.set(t.id, touchesIncluded && touchesExcluded ? "straddle" : touchesIncluded ? "in" : "out");
     });
     return status;
-  }, [saveSliceMode, layout, meta, tools, saveSliceCells]);
+  }, [saveSegmentMode, layout, meta, tools, saveSegmentCells]);
 
-  const saveSliceHasStraddle = useMemo(
-    () => [...saveSliceToolStatus.values()].some((s) => s === "straddle"),
-    [saveSliceToolStatus],
+  const saveSegmentHasStraddle = useMemo(
+    () => [...saveSegmentToolStatus.values()].some((s) => s === "straddle"),
+    [saveSegmentToolStatus],
   );
 
   // The destination bin's removed_cells (local to its own 0..gx-1/0..gy-1),
   // built straight from the bbox: any bbox cell the user didn't select —
   // whether they explicitly excluded it or it was already a hole in the
-  // source — becomes a hole in the slice too.
-  const saveSliceDestRemovedLocal = useMemo((): [number, number][] => {
-    if (!saveSliceBbox) return [];
-    const { minIx, maxIx, minIy, maxIy } = saveSliceBbox;
+  // source — becomes a hole in the segment too.
+  const saveSegmentDestRemovedLocal = useMemo((): [number, number][] => {
+    if (!saveSegmentBbox) return [];
+    const { minIx, maxIx, minIy, maxIy } = saveSegmentBbox;
     const removedLocal: [number, number][] = [];
     for (let ix = minIx; ix <= maxIx; ix++) {
       for (let iy = minIy; iy <= maxIy; iy++) {
-        if (!saveSliceCells.has(cellKey(ix, iy))) removedLocal.push([ix - minIx, iy - minIy]);
+        if (!saveSegmentCells.has(cellKey(ix, iy))) removedLocal.push([ix - minIx, iy - minIy]);
       }
     }
     return removedLocal;
-  }, [saveSliceBbox, saveSliceCells]);
+  }, [saveSegmentBbox, saveSegmentCells]);
 
   // At least one cell (an empty selection has nothing to save — no minimum
-  // tool count though, an all-empty slice is exactly as legal a blank bin as
-  // "+ New bin" already allows); no tool straddling the boundary; and a
-  // slice with any hole in it (see `saveSliceDestRemovedLocal`) needs the
+  // tool count though, an all-empty segment is exactly as legal a blank bin
+  // as "+ New bin" already allows); no tool straddling the boundary; and a
+  // segment with any hole in it (see `saveSegmentDestRemovedLocal`) needs the
   // same `allowCustomShape` Edit Grid itself requires, since the spun-off
   // bin inherits the source's own applied profile.
-  const saveSliceValid = Boolean(saveSliceBbox) && !saveSliceHasStraddle
-    && (saveSliceDestRemovedLocal.length === 0 || allowCustomShape);
-  const saveSliceIncludedCount = [...saveSliceToolStatus.values()].filter((s) => s === "in").length;
-  const saveSliceStraddlingTools = tools.filter((t) => saveSliceToolStatus.get(t.id) === "straddle");
+  const saveSegmentValid = Boolean(saveSegmentBbox) && !saveSegmentHasStraddle
+    && (saveSegmentDestRemovedLocal.length === 0 || allowCustomShape);
+  const saveSegmentIncludedCount = [...saveSegmentToolStatus.values()].filter((s) => s === "in").length;
+  const saveSegmentStraddlingTools = tools.filter((t) => saveSegmentToolStatus.get(t.id) === "straddle");
 
-  const gridEditPreconditionsMet = forceSize && Boolean(layout) && fillHeightPct === 100 && !liveGrid && allowCustomShape && !saveSliceMode;
+  const gridEditPreconditionsMet = forceSize && Boolean(layout) && fillHeightPct === 100 && !liveGrid && allowCustomShape && !saveSegmentMode;
 
   // A profile switch (or fill height / live grid change) can drop the
   // preconditions "Edit grid" required while a session is still open, which
@@ -1439,23 +1439,23 @@ export function CombineEditor({
     );
   }
 
-  // "Save Slice…" only makes sense against a stable, fully-on-grid footprint
+  // "Save Segment…" only makes sense against a stable, fully-on-grid footprint
   // — the same forced/100%-fill/non-live-grid shape Edit Grid requires,
   // *not* also requiring `allowCustomShape`: unlike Edit Grid, this never
   // needs to carve a hole in the *source* bin, only (optionally) in the
-  // spun-off one — see `saveSliceValid`'s own `allowCustomShape` check for
+  // spun-off one — see `saveSegmentValid`'s own `allowCustomShape` check for
   // where that actually matters. Mutually exclusive with Edit Grid, since
   // both repurpose the same click-a-grid-cell gesture for different things.
-  const saveSlicePreconditionsMet =
+  const saveSegmentPreconditionsMet =
     forceSize && Boolean(layout) && fillHeightPct === 100 && !liveGrid && !hasOverflow && !gridEditMode;
 
   useEffect(() => {
-    if (saveSliceDialogOpen && !saveSlicePreconditionsMet) closeSaveSliceDialog();
+    if (saveSegmentDialogOpen && !saveSegmentPreconditionsMet) closeSaveSegmentDialog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saveSliceDialogOpen, saveSlicePreconditionsMet]);
+  }, [saveSegmentDialogOpen, saveSegmentPreconditionsMet]);
 
-  function defaultSaveSliceName(): string {
-    return `${savedLabel ?? defaultBinName()} Slice`;
+  function defaultSaveSegmentName(): string {
+    return `${savedLabel ?? defaultBinName()} Segment`;
   }
 
   /** Whether toggling (ix, iy) would leave a legal shape — checked against
@@ -1468,12 +1468,12 @@ export function CombineEditor({
    *  that's what the server (`validate_connected_shape`) and the outline
    *  renderer (`binOutlinePath`) both require. Returns the candidate set
    *  itself (so callers don't recompute it) or null if illegal. */
-  function saveSliceToggleCandidate(ix: number, iy: number): Set<CellKey> | null {
+  function saveSegmentToggleCandidate(ix: number, iy: number): Set<CellKey> | null {
     if (!layout) return null;
     if (ix < 0 || iy < 0 || ix >= layout.gx || iy >= layout.gy) return null;
     const key = cellKey(ix, iy);
     if (removedCells.has(key)) return null; // no bin material there in the source
-    const candidate = new Set(saveSliceCells);
+    const candidate = new Set(saveSegmentCells);
     if (candidate.has(key)) candidate.delete(key); else candidate.add(key);
     if (candidate.size === 0) return candidate;
     let minIx = Infinity, maxIx = -Infinity, minIy = Infinity, maxIy = -Infinity;
@@ -1494,58 +1494,59 @@ export function CombineEditor({
     return candidate;
   }
 
-  function enterSaveSliceMode() {
+  function enterSaveSegmentMode() {
     // Already open — re-clicking the toolbar button would otherwise silently
     // wipe whatever's selected so far. And never alongside the *other*
     // "Save As…" dialog: both would show a confirm button named exactly
-    // "Save As", and the wrong one saves the whole bin instead of the slice.
-    if (!saveSlicePreconditionsMet || saveSliceDialogOpen) return;
+    // "Save As", and the wrong one saves the whole bin instead of the segment.
+    if (!saveSegmentPreconditionsMet || saveSegmentDialogOpen) return;
     setSaveDialogOpen(false);
     setSliceDialogOpen(false);
-    setSaveSliceCells(new Set());
-    setHoveredSaveSliceCell(null);
-    setSaveSliceErr(null);
-    setSaveSliceSaved(null);
-    setSaveSliceName(defaultSaveSliceName());
-    setSaveSliceMode(true);
-    setSaveSliceDialogOpen(true);
+    setSaveSegmentCells(new Set());
+    setHoveredSaveSegmentCell(null);
+    setSaveSegmentErr(null);
+    setSaveSegmentSaved(null);
+    setSaveSegmentName(defaultSaveSegmentName());
+    setSaveSegmentMode(true);
+    setSaveSegmentDialogOpen(true);
   }
 
   /** Cancel, Esc, or the post-save "Done" — always a full reset. Nothing
-   *  here ever touched committed bin state (see `saveSliceCells`' own doc),
+   *  here ever touched committed bin state (see `saveSegmentCells`' own doc),
    *  so unlike Edit Grid there's no baseline to restore. */
-  function closeSaveSliceDialog() {
-    setSaveSliceDialogOpen(false);
-    setSaveSliceMode(false);
-    setSaveSliceCells(new Set());
-    setHoveredSaveSliceCell(null);
-    setSaveSliceErr(null);
-    setSaveSliceSaved(null);
+  function closeSaveSegmentDialog() {
+    setSaveSegmentDialogOpen(false);
+    setSaveSegmentMode(false);
+    setSaveSegmentCells(new Set());
+    setHoveredSaveSegmentCell(null);
+    setSaveSegmentErr(null);
+    setSaveSegmentSaved(null);
   }
 
-  function toggleSaveSliceCell(ix: number, iy: number) {
-    if (!saveSliceMode) return;
-    const candidate = saveSliceToggleCandidate(ix, iy);
+  function toggleSaveSegmentCell(ix: number, iy: number) {
+    if (!saveSegmentMode) return;
+    const candidate = saveSegmentToggleCandidate(ix, iy);
     if (!candidate) return;
-    setSaveSliceCells(candidate);
+    setSaveSegmentCells(candidate);
   }
 
-  /** Creates the new Bin Library entry the slice selection describes — a
+  /** Creates the new Bin Library entry the segment selection describes — a
    *  standalone save, deliberately NOT sharing any of `saveToBinLibrary`'s
    *  tail: it must never rebind *this* editor session (no `setSavedBinId`,
    *  no `adoptSavedBinIds`, no `onSaved`) since the source bin's own
-   *  autosave needs to keep targeting the source bin, not the slice this
+   *  autosave needs to keep targeting the source bin, not the segment this
    *  spins off. The source layout is left completely untouched — the user's
-   *  whole point is slicing the same big arrangement repeatedly. */
-  async function saveSliceBin() {
-    if (!saveSliceValid || !saveSliceBbox || !layout || !meta) return;
-    setSaveSliceBusy(true);
-    setSaveSliceErr(null);
+   *  whole point is carving several segments off the same big arrangement,
+   *  repeatedly. */
+  async function saveSegmentBin() {
+    if (!saveSegmentValid || !saveSegmentBbox || !layout || !meta) return;
+    setSaveSegmentBusy(true);
+    setSaveSegmentErr(null);
     try {
-      const { minIx, maxIx, minIy, maxIy, gx: newGx, gy: newGy } = saveSliceBbox;
+      const { minIx, maxIx, minIy, maxIy, gx: newGx, gy: newGy } = saveSegmentBbox;
       // World-space centre of the selected cells, in the *source* bin's
       // frame (itself centred at layout.cx/cy — always (0,0) here, since
-      // `saveSlicePreconditionsMet` requires a locked/forced-size bin).
+      // `saveSegmentPreconditionsMet` requires a locked/forced-size bin).
       // Shifting every included tool by this offset re-centres exactly the
       // selected footprint onto the new bin's own (0,0) origin, with no
       // repacking — see docs on `_combine_layout`'s `placements`+`force_gx`
@@ -1553,23 +1554,23 @@ export function CombineEditor({
       const sliceCx = layout.cx + ((minIx + maxIx) / 2 - (layout.gx - 1) / 2) * meta.pitch;
       const sliceCy = layout.cy + ((minIy + maxIy) / 2 - (layout.gy - 1) / 2) * meta.pitch;
       const includedTools = tools
-        .filter((t) => saveSliceToolStatus.get(t.id) === "in")
+        .filter((t) => saveSegmentToolStatus.get(t.id) === "in")
         .map((t) => ({ ...t, tx: t.tx - sliceCx, ty: t.ty - sliceCy }));
-      const label = saveSliceName.trim() || defaultSaveSliceName();
+      const label = saveSegmentName.trim() || defaultSaveSegmentName();
       const options = {
         ...saveOptions(includedTools),
         forceGx: newGx,
         forceGy: newGy,
-        removedCells: saveSliceDestRemovedLocal.length > 0 ? saveSliceDestRemovedLocal : null,
+        removedCells: saveSegmentDestRemovedLocal.length > 0 ? saveSegmentDestRemovedLocal : null,
       };
       const saved = await saveBin(label, includedTools.map((t) => t.id), options, notes);
-      setSaveSliceSaved(saved);
-      setSaveSliceMode(false);
-      setSaveSliceCells(new Set());
+      setSaveSegmentSaved(saved);
+      setSaveSegmentMode(false);
+      setSaveSegmentCells(new Set());
     } catch (e) {
-      setSaveSliceErr((e as Error).message);
+      setSaveSegmentErr((e as Error).message);
     } finally {
-      setSaveSliceBusy(false);
+      setSaveSegmentBusy(false);
     }
   }
 
@@ -3107,7 +3108,7 @@ export function CombineEditor({
               className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
               aria-label="Undo"
               title="Undo (Cmd/Ctrl+Z)"
-              disabled={!undoStack.length || gridEditMode || saveSliceMode}
+              disabled={!undoStack.length || gridEditMode || saveSegmentMode}
               onClick={undo}
             >
               ↶ Undo
@@ -3117,7 +3118,7 @@ export function CombineEditor({
               className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
               aria-label="Redo"
               title="Redo (Cmd/Ctrl+Shift+Z)"
-              disabled={!redoStack.length || gridEditMode || saveSliceMode}
+              disabled={!redoStack.length || gridEditMode || saveSegmentMode}
               onClick={redo}
             >
               ↷ Redo
@@ -3131,7 +3132,7 @@ export function CombineEditor({
             </button>
             <button
               className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
-              disabled={busy || !tools.length || Boolean(err) || saveSliceDialogOpen}
+              disabled={busy || !tools.length || Boolean(err) || saveSegmentDialogOpen}
               onClick={() => { setSliceErr(null); setSliceDialogOpen(true); }}
               title="Thin coupon through every tool's cutout at once — print this alone to check trace tolerance before committing to the full bin"
             >
@@ -3140,7 +3141,7 @@ export function CombineEditor({
             {savedBinId ? (
               <button
                 className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
-                disabled={busy || !tools.length || Boolean(err) || saveSliceDialogOpen}
+                disabled={busy || !tools.length || Boolean(err) || saveSegmentDialogOpen}
                 onClick={() => {
                   setSaveName(savedLabel ?? defaultBinName());
                   setSaveErr(null);
@@ -3153,19 +3154,19 @@ export function CombineEditor({
             {savedBinId ? (
               <button
                 className="btn btn-ghost !px-2 !py-1 text-[10px] normal-case"
-                disabled={busy || !saveSlicePreconditionsMet || saveDialogOpen || sliceDialogOpen}
+                disabled={busy || !saveSegmentPreconditionsMet || saveDialogOpen || sliceDialogOpen}
                 title={
                   saveDialogOpen || sliceDialogOpen
                     ? "Finish or cancel that dialog first"
                     : !forceSize
                     ? "Requires Force size"
-                    : !saveSlicePreconditionsMet
+                    : !saveSegmentPreconditionsMet
                     ? "Slicing only works at 100% fill height with live grid off, on a bin with no tool crossing the locked edge"
                     : "Pick a rectangular sub-region of this grid and spin it off as its own bin, at the exact same tool placements"
                 }
-                onClick={enterSaveSliceMode}
+                onClick={enterSaveSegmentMode}
               >
-                Save Slice…
+                Save Segment…
               </button>
             ) : null}
             {!savedBinId ? (
@@ -3295,15 +3296,15 @@ export function CombineEditor({
             </div>
           </div>
         )}
-        {saveSliceDialogOpen && (
+        {saveSegmentDialogOpen && (
           <div className="mt-2 border border-line bg-field p-3 font-mono text-[10px]" style={{ borderRadius: 2 }}>
-            {saveSliceSaved ? (
+            {saveSegmentSaved ? (
               <>
-                <p className="text-teal">Saved &quot;{saveSliceSaved.label}&quot;.</p>
+                <p className="text-teal">Saved &quot;{saveSegmentSaved.label}&quot;.</p>
                 <p className="mt-1">
                   <a
                     className="underline hover:text-teal"
-                    href={pathForBinReopen(saveSliceSaved.id)}
+                    href={pathForBinReopen(saveSegmentSaved.id)}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -3311,7 +3312,7 @@ export function CombineEditor({
                   </a>
                 </p>
                 <div className="mt-2 max-w-xs">
-                  <button className="btn text-xs" onClick={closeSaveSliceDialog}>Done</button>
+                  <button className="btn text-xs" onClick={closeSaveSegmentDialog}>Done</button>
                 </div>
               </>
             ) : (
@@ -3319,49 +3320,49 @@ export function CombineEditor({
                 <label className="block">
                   <span className="block uppercase text-muted">Name</span>
                   <input
-                    aria-label="Slice bin name"
+                    aria-label="Segment bin name"
                     className="mono-input mt-1 w-full max-w-xs !px-2 !py-1 !text-sm"
                     type="text"
-                    value={saveSliceName}
-                    onChange={(event) => setSaveSliceName(event.target.value)}
+                    value={saveSegmentName}
+                    onChange={(event) => setSaveSegmentName(event.target.value)}
                     autoFocus
                   />
                 </label>
                 <p className="mt-2 text-muted">
-                  Click grid cells in the Arrange view to pick the slice's footprint — every
+                  Click grid cells in the Arrange view to pick the segment's footprint — every
                   tool must land entirely in or entirely out (colored in vs. dimmed below).
                 </p>
-                {saveSliceBbox && (
+                {saveSegmentBbox && (
                   <p className="mt-1 text-muted">
-                    {saveSliceBbox.gx}×{saveSliceBbox.gy}u · {saveSliceIncludedCount} tool{saveSliceIncludedCount === 1 ? "" : "s"} included
+                    {saveSegmentBbox.gx}×{saveSegmentBbox.gy}u · {saveSegmentIncludedCount} tool{saveSegmentIncludedCount === 1 ? "" : "s"} included
                   </p>
                 )}
-                {saveSliceStraddlingTools.length > 0 && (
+                {saveSegmentStraddlingTools.length > 0 && (
                   <p className="mt-1 text-orange">
-                    {saveSliceStraddlingTools.map((t) => t.label || t.id).join(", ")}
-                    {" "}{saveSliceStraddlingTools.length === 1 ? "straddles" : "straddle"} the selection
-                    boundary — include or exclude {saveSliceStraddlingTools.length === 1 ? "it" : "them"} fully.
+                    {saveSegmentStraddlingTools.map((t) => t.label || t.id).join(", ")}
+                    {" "}{saveSegmentStraddlingTools.length === 1 ? "straddles" : "straddle"} the selection
+                    boundary — include or exclude {saveSegmentStraddlingTools.length === 1 ? "it" : "them"} fully.
                   </p>
                 )}
-                {saveSliceStraddlingTools.length === 0 && saveSliceDestRemovedLocal.length > 0 && !allowCustomShape && (
+                {saveSegmentStraddlingTools.length === 0 && saveSegmentDestRemovedLocal.length > 0 && !allowCustomShape && (
                   <p className="mt-1 text-orange">
                     This selection has a gap in it, which the current bin profile doesn't allow —
                     select a solid rectangle, or switch to a profile that allows a custom shape.
                   </p>
                 )}
-                {saveSliceErr && <p className="mt-1 text-orange">{saveSliceErr}</p>}
+                {saveSegmentErr && <p className="mt-1 text-orange">{saveSegmentErr}</p>}
                 <div className="mt-2 grid max-w-xs grid-cols-2 gap-1">
                   <button
                     className="btn text-xs"
-                    disabled={saveSliceBusy}
-                    onClick={closeSaveSliceDialog}
+                    disabled={saveSegmentBusy}
+                    onClick={closeSaveSegmentDialog}
                   >
                     Cancel
                   </button>
                   <button
                     className="btn btn-primary text-xs"
-                    disabled={saveSliceBusy || !saveSliceValid}
-                    onClick={() => void saveSliceBin()}
+                    disabled={saveSegmentBusy || !saveSegmentValid}
+                    onClick={() => void saveSegmentBin()}
                   >
                     Save As
                   </button>
@@ -3642,7 +3643,7 @@ export function CombineEditor({
                 {/* Grid-edit mode fades every tool out of the way (so it's
                     obvious the grid, not the tools, is what's being edited)
                     and disables their pointer handling so a click always
-                    lands on the grid-cell overlay below instead. Save-Slice
+                    lands on the grid-cell overlay below instead. Save-Segment
                     mode disables pointer handling the same way (dragging a
                     tool mid-selection has no obvious meaning), but keeps
                     full opacity and recolors below instead of fading — the
@@ -3650,12 +3651,12 @@ export function CombineEditor({
                     in, out, or straddling the selection. */}
                 <g
                   opacity={gridEditMode ? 0.3 : 1}
-                  pointerEvents={gridEditMode || saveSliceMode ? "none" : undefined}
+                  pointerEvents={gridEditMode || saveSegmentMode ? "none" : undefined}
                 >
                 {/* cleared pockets — turn red once locked and past the locked footprint;
                     hovering an unselected tool shades it to hint it's clickable */}
                 {tools.map((t, i) => {
-                  const sliceStatus = saveSliceMode ? saveSliceToolStatus.get(t.id) : undefined;
+                  const sliceStatus = saveSegmentMode ? saveSegmentToolStatus.get(t.id) : undefined;
                   const toolColor = sliceStatus === "straddle" || layout.overflowIds.has(t.id)
                     ? OVERFLOW_COLOR
                     : sliceStatus === "out" ? "#767676" : color(i);
@@ -3738,7 +3739,7 @@ export function CombineEditor({
                     lands on the hole, not the pocket fill beneath it */}
                 {layout.fingerConnectors.filter((conn) => toolshapeResizeLive?.toolId !== conn.toolId).map((conn) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === conn.toolId);
-                  const connSliceStatus = saveSliceMode ? saveSliceToolStatus.get(conn.toolId) : undefined;
+                  const connSliceStatus = saveSegmentMode ? saveSegmentToolStatus.get(conn.toolId) : undefined;
                   const connColor = connSliceStatus === "straddle" || layout.overflowIds.has(conn.toolId)
                     ? OVERFLOW_COLOR
                     : connSliceStatus === "out" ? "#767676" : color(toolIndex);
@@ -3762,7 +3763,7 @@ export function CombineEditor({
                 {layout.fingerCircles.filter((hole) => toolshapeResizeLive?.toolId !== hole.toolId).map((hole, index) => {
                   const toolIndex = tools.findIndex((tool) => tool.id === hole.toolId);
                   const tool = tools[toolIndex];
-                  const holeSliceStatus = saveSliceMode ? saveSliceToolStatus.get(hole.toolId) : undefined;
+                  const holeSliceStatus = saveSegmentMode ? saveSegmentToolStatus.get(hole.toolId) : undefined;
                   const holeColor = holeSliceStatus === "straddle" || layout.overflowIds.has(hole.toolId)
                     ? OVERFLOW_COLOR
                     : holeSliceStatus === "out" ? "#767676" : color(toolIndex);
@@ -3871,20 +3872,20 @@ export function CombineEditor({
                     );
                   })
                 ))}
-                {/* Save-Slice interactive overlay — same shape as the
+                {/* Save-Segment interactive overlay — same shape as the
                     Edit-grid one above (one hit-target per gx×gy cell, on
                     top of everything so a click never lands on a tool
                     instead), but the fill is persistent rather than
                     hover-only: it's the only visual record of which cells
                     are currently selected, since (unlike Edit Grid) nothing
                     here is written into `removedCells`. */}
-                {saveSliceMode && layout && meta && Array.from({ length: layout.gx }, (_, ix) => (
+                {saveSegmentMode && layout && meta && Array.from({ length: layout.gx }, (_, ix) => (
                   Array.from({ length: layout.gy }, (_, iy) => {
                     const key = cellKey(ix, iy);
                     const sourceHole = removedCells.has(key);
-                    const selected = saveSliceCells.has(key);
-                    const legal = !illegalSaveSliceCells.has(key);
-                    const hovered = hoveredSaveSliceCell === key;
+                    const selected = saveSegmentCells.has(key);
+                    const legal = !illegalSaveSegmentCells.has(key);
+                    const hovered = hoveredSaveSegmentCell === key;
                     const x = layout.cx + (ix - (layout.gx - 1) / 2) * meta.pitch;
                     const y = layout.cy + (iy - (layout.gy - 1) / 2) * meta.pitch;
                     const half = meta.bin_size / 2;
@@ -3898,15 +3899,15 @@ export function CombineEditor({
                     return (
                       <rect
                         key={`saveslice-${key}`}
-                        aria-label={`Slice grid cell column ${ix + 1}, row ${iy + 1}${selected ? " (selected)" : ""}`}
+                        aria-label={`Segment grid cell column ${ix + 1}, row ${iy + 1}${selected ? " (selected)" : ""}`}
                         x={x - half} y={y - half} width={half * 2} height={half * 2}
                         fill={fill}
                         stroke={sourceHole ? "transparent" : selected ? "#2f8f95" : hovered && legal ? "#2f8f9599" : "transparent"}
                         strokeWidth={selected ? 1 : 0.8}
                         style={{ cursor: sourceHole ? "not-allowed" : legal ? "pointer" : "not-allowed" }}
-                        onPointerEnter={() => setHoveredSaveSliceCell(key)}
-                        onPointerLeave={() => setHoveredSaveSliceCell((c) => (c === key ? null : c))}
-                        onClick={() => toggleSaveSliceCell(ix, iy)}
+                        onPointerEnter={() => setHoveredSaveSegmentCell(key)}
+                        onPointerLeave={() => setHoveredSaveSegmentCell((c) => (c === key ? null : c))}
+                        onClick={() => toggleSaveSegmentCell(ix, iy)}
                       />
                     );
                   })
@@ -4283,8 +4284,8 @@ export function CombineEditor({
               title={
                 !forceSize
                   ? "Requires Force size"
-                  : saveSliceMode
-                  ? "Finish or cancel Save Slice first"
+                  : saveSegmentMode
+                  ? "Finish or cancel Save Segment first"
                   : !gridEditPreconditionsMet
                   ? "Grid editing only works at 100% fill height with live grid off, on a profile that allows it"
                   : gridEditMode
