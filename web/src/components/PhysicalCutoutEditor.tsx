@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { Poly, Ring } from "../api";
+import type { OutlineCurveCorner, OutlineCurves, Poly, Ring } from "../api";
 import { useZoomPan } from "./useZoomPan";
 
 type Mode = "move" | "insert" | "delete" | "curve" | "hole";
@@ -101,6 +101,43 @@ function sharpPoly(poly: Poly): CornerPoly {
   return { exterior: sharpRing(poly.exterior), holes: poly.holes.map(sharpRing) };
 }
 
+function ringToOutlineCurves(ring: CornerRing): OutlineCurveCorner[] {
+  return ring.map((node) => ({
+    p: node.p,
+    h_in: node.round ? node.round.hIn : null,
+    h_out: node.round ? node.round.hOut : null,
+  }));
+}
+
+function toOutlineCurves(poly: CornerPoly): OutlineCurves {
+  return { exterior: ringToOutlineCurves(poly.exterior), holes: poly.holes.map(ringToOutlineCurves) };
+}
+
+function outlineCurvesToRing(corners: OutlineCurveCorner[]): CornerRing {
+  return corners.map((corner) => ({
+    p: corner.p,
+    round: corner.h_in != null && corner.h_out != null ? { hIn: corner.h_in, hOut: corner.h_out } : null,
+  }));
+}
+
+function fromOutlineCurves(curves: OutlineCurves): CornerPoly {
+  return { exterior: outlineCurvesToRing(curves.exterior), holes: curves.holes.map(outlineCurvesToRing) };
+}
+
+/** The corner graph to actually start editing from: the persisted one, but
+ *  only if it still bakes to exactly the outline we were handed — belt and
+ *  suspenders against stale/mismatched data, even though the server only
+ *  ever sends a graph it's already checked against the current outline
+ *  revision (see GET .../outline's outline_curves). Falls back to treating
+ *  every corner as sharp, same as a tool with no curve graph at all. */
+function resolveInitialCornerPoly(initial: Poly, initialCurves: OutlineCurves | null | undefined): CornerPoly {
+  if (initialCurves) {
+    const fromCurves = fromOutlineCurves(initialCurves);
+    if (JSON.stringify(bakeCornerPoly(fromCurves)) === JSON.stringify(initial)) return fromCurves;
+  }
+  return sharpPoly(initial);
+}
+
 function changedCornerRing(poly: CornerPoly, ringIndex: number, ring: CornerRing): CornerPoly {
   if (ringIndex < 0) return { ...poly, exterior: ring };
   return {
@@ -131,12 +168,19 @@ function bounds(...polys: CornerPoly[]) {
 
 export function PhysicalCutoutEditor({
   initial,
+  initialCurves,
   photoBaseline,
   busy,
   onSave,
   onCancel,
 }: {
   initial: Poly;
+  // The persisted "Edit curves" control graph `initial` was baked from, if
+  // any — lets a tool with an already-eased corner reopen with adjustable
+  // handles instead of the corner reading as an ordinary hard vertex.
+  // Omitted (or null, or stale — see resolveInitialCornerPoly) means every
+  // corner starts sharp, same as a tool that's never used this mode.
+  initialCurves?: OutlineCurves | null;
   // What auto-derivation from the accepted photo selection would produce —
   // the shadow outline and "Revert to photo selection" target. Omitted (or
   // null) when there's nothing to derive it from — an unusual tool with no
@@ -145,10 +189,15 @@ export function PhysicalCutoutEditor({
   // button just don't render.
   photoBaseline?: Poly | null;
   busy: boolean;
-  onSave: (polygon: Poly) => void | Promise<void>;
+  onSave: (polygon: Poly, curves: OutlineCurves) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const initialRef = useRef(sharpPoly(initial));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- captured once at
+  // mount, like initial/photoBaseline elsewhere in this file; recomputing it
+  // (a bake + two full-polygon JSON.stringify calls) on every render/drag
+  // frame would be pure waste for a value that can't change after mount.
+  const initialCornerPoly = useMemo(() => resolveInitialCornerPoly(initial, initialCurves), []);
+  const initialRef = useRef(initialCornerPoly);
   const photoBaselineRef = useRef(photoBaseline ? sharpPoly(photoBaseline) : null);
   const [history, setHistory] = useState<CornerPoly[]>([initialRef.current]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -542,7 +591,7 @@ export function PhysicalCutoutEditor({
         )}
         <div className="flex-1" />
         <button className="btn" disabled={busy} onClick={onCancel}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !changed || current.exterior.length < 3} onClick={() => onSave(bakedCurrent)}>
+        <button className="btn btn-primary" disabled={busy || !changed || current.exterior.length < 3} onClick={() => onSave(bakedCurrent, toOutlineCurves(current))}>
           {busy ? "Regenerating…" : "Save cutout and regenerate"}
         </button>
       </div>

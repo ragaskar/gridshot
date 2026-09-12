@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, model_validator
 from . import bench as bench_mod
 from . import derive as derive_mod
 from . import gridfinity as grid_mod
-from .models import Calibration, Poly, PrinterProfile, config_dir
+from .models import Calibration, CurvePoly, Poly, PrinterProfile, config_dir
 from .readiness import ArtifactProvenance, ReadinessReport
 
 
@@ -172,6 +172,16 @@ class LibraryTool(BaseModel):
     # clicks live in an in-memory session; an explicit Save appends one entry.
     outline_revision: int = 0
     outline_history: list[OutlineEditRevision] = Field(default_factory=list)
+    # The physical-cutout editor's "Edit curves" control graph that `outline`
+    # was baked from — kept only so reopening the editor can offer adjustable
+    # handles on an already-eased corner again, instead of it reading as an
+    # ordinary hard vertex. Valid only while outline_curves_revision matches
+    # outline_revision (see gridshot.server.app._apply_outline): any edit
+    # that changes outline through a route unaware of curves — SAM,
+    # thickness, a manual pixel edit — invalidates it without needing to be
+    # explicitly cleared.
+    outline_curves: CurvePoly | None = None
+    outline_curves_revision: int | None = None
     created_ts: int = 0
 
 

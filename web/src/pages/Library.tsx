@@ -16,6 +16,7 @@ import {
   type LibraryEditResult,
   type LibraryTool,
   type MagnetEasyRelease,
+  type OutlineCurves,
   type OutlineVariant,
   type PhotoOutline,
   type Poly,
@@ -47,6 +48,7 @@ export function Library() {
     label: string;
     polygon: Poly;
     photoBaseline: Poly | null;
+    curves: OutlineCurves | null;
   } | null>(null);
   const [sam, setSam] = useState<{ id: string; sess: LibraryEditResult } | null>(null);
   const [viewing, setViewing] = useState<{ t: LibraryTool; data: PhotoOutline } | null>(null);
@@ -82,17 +84,19 @@ export function Library() {
         label: tools.find((tool) => tool.id === id)?.label || id,
         polygon: cutout.outline,
         photoBaseline: cutout.photo_baseline,
+        curves: cutout.outline_curves,
       });
     } catch (e) {
       alert((e as Error).message);
     }
   }
-  async function saveOutline(polygon: Poly) {
+  async function saveOutline(polygon: Poly, curves: OutlineCurves) {
     if (!editing) return;
     setBusy(true);
     try {
       await patch(editing.id, {
         outline: polygon,
+        outline_curves: curves,
         edit_source: "physical",
       });
       setEditing(null);
@@ -681,6 +685,7 @@ export function Library() {
             </div>
             <PhysicalCutoutEditor
               initial={editing.polygon}
+              initialCurves={editing.curves}
               photoBaseline={editing.photoBaseline}
               busy={busy}
               onSave={saveOutline}

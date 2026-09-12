@@ -35,6 +35,28 @@ class Poly(BaseModel):
     holes: list[list[Vec2]] = Field(default_factory=list)
 
 
+class CurveCorner(BaseModel):
+    """One editable corner of a hand-eased outline: its position, and — while
+    eased — how far its two Bezier handles reach back along the incoming and
+    outgoing edge. `h_in`/`h_out` both `None` means a sharp corner."""
+
+    p: Vec2
+    h_in: Optional[float] = None
+    h_out: Optional[float] = None
+
+
+class CurvePoly(BaseModel):
+    """The editable control graph a `Poly` was baked from (see the physical
+    cutout editor's "Edit curves" mode and gridshot.core.library's
+    `outline_curves`/`outline_curves_revision`). Round-trips a tool's eased
+    corners across editing sessions; never consumed by geometry, nesting, or
+    export code — `Poly` itself, already baked to straight segments, remains
+    the only representation those need."""
+
+    exterior: list[CurveCorner]
+    holes: list[list[CurveCorner]] = Field(default_factory=list)
+
+
 class MatSpec(BaseModel):
     """Geometry of a printable ChArUco calibration mat.
 

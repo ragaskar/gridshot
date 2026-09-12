@@ -977,6 +977,19 @@ export async function getLibraryOutline(id: string): Promise<Poly | null> {
   return (await r.json()).outline;
 }
 
+// One editable corner of a hand-eased outline — a position, plus, while
+// eased, how far its two Bezier handles reach back along the incoming and
+// outgoing edge. `h_in`/`h_out` both null means a sharp corner.
+export interface OutlineCurveCorner {
+  p: [number, number];
+  h_in: number | null;
+  h_out: number | null;
+}
+export interface OutlineCurves {
+  exterior: OutlineCurveCorner[];
+  holes: OutlineCurveCorner[][];
+}
+
 export interface LibraryCutout {
   outline: Poly | null;
   // What auto-derivation from the accepted photo selection would currently
@@ -985,6 +998,11 @@ export interface LibraryCutout {
   photo_baseline: Poly | null;
   // Whether `outline` has been hand-edited away from `photo_baseline`.
   diverged: boolean;
+  // The "Edit curves" control graph `outline` was baked from, so reopening
+  // the editor can offer adjustable handles on an already-eased corner
+  // again — null when there's none, or it's gone stale (any edit that
+  // changed `outline` through a route unaware of curves invalidates it).
+  outline_curves: OutlineCurves | null;
 }
 
 export async function getLibraryCutout(id: string): Promise<LibraryCutout> {
@@ -1013,6 +1031,9 @@ export async function updateLibraryTool(
     magnet_easy_release?: MagnetEasyRelease;
     outline?: Poly;
     raw_outline?: Poly;
+    // Physical edits only — ignored (and, server-side, invalidated) for
+    // every other edit_source.
+    outline_curves?: OutlineCurves;
     edit_source?: "sam" | "manual" | "physical";
     edit_diagnostics?: Record<string, number>;
   },

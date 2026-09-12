@@ -49,7 +49,7 @@ from gridshot.core import quality as quality_mod
 from gridshot.core import readiness as readiness_mod
 from gridshot.core import session_store
 from gridshot.core import trace as trace_mod
-from gridshot.core.models import Poly, config_dir
+from gridshot.core.models import CurvePoly, Poly, config_dir
 from gridshot.seg import client as seg_client
 
 PROJECTS = Path("projects")
@@ -471,8 +471,15 @@ class PhysicalPoly(BaseModel):
     holes: list[list[list[float]]] = Field(default_factory=list)
 
 
-def _validated_physical_outline(polygon: PhysicalPoly) -> Poly:
-    """Validate and lightly clean a directly edited millimetre-space outline."""
+def _validated_physical_outline(polygon: PhysicalPoly, *, preserve_points: bool = False) -> Poly:
+    """Validate and lightly clean a directly edited millimetre-space outline.
+
+    `preserve_points=True` (an edit carrying an `outline_curves` graph) skips
+    the simplify step: `outline_curves`' corners must bake to *exactly* this
+    polygon (see resolveInitialCornerPoly client-side, and library_edit's
+    revision-gated staleness check) — the usual small simplify would thin
+    the many closely-spaced points a baked curve produces, breaking that
+    match and silently losing the curve graph's editability on reopen."""
     if len(polygon.exterior) < 3 or any(len(ring) < 3 for ring in polygon.holes):
         raise HTTPException(
             status_code=422, detail="outline and holes need at least 3 points"
@@ -496,7 +503,7 @@ def _validated_physical_outline(polygon: PhysicalPoly) -> Poly:
     if raw_shape.area > trace_mod.MAX_TOOL_AREA_MM2:
         raise HTTPException(status_code=422, detail="physical outline is implausibly large")
     try:
-        return contour_mod.clean(candidate, simplify_tol=0.05)
+        return contour_mod.clean(candidate, simplify_tol=0.0 if preserve_points else 0.05)
     except (ValueError, contour_mod.NoToolFoundError) as exc:
         raise HTTPException(status_code=422, detail=f"invalid physical outline: {exc}")
 
@@ -1848,6 +1855,8 @@ def _lib_json(t, printer_profile=None) -> dict:
     d.pop("raw_outline", None)   # heavy; fetched only for photo editing
     d.pop("calibration", None)   # heavy; only used server-side for SAM re-editing
     d.pop("outline_history", None)  # heavy; revision number remains public
+    d.pop("outline_curves", None)      # only meaningful to the cutout editor itself
+    d.pop("outline_curves_revision", None)
     d["thumb"] = f"/api/library/{t.id}/thumb"  # silhouette (always present)
     # a real-photo crop when the tool carries a photo — the browsable thumbnail.
     # Backfill it for tools saved before this existed, on first list.
@@ -1901,6 +1910,10 @@ def library_outline(tool_id: str) -> dict:
     except KeyError:
         raise HTTPException(status_code=404, detail="no such tool")
     baseline = _photo_derived_outline(t)
+    # Stale the moment outline has moved on without it (any non-physical
+    # edit) — see _apply_outline. A stale graph is worse than none: it would
+    # offer handles that don't actually correspond to `outline`'s corners.
+    curves_valid = t.outline_curves is not None and t.outline_curves_revision == t.outline_revision
     return {
         "outline": t.outline.model_dump() if t.outline else None,
         # What auto-derivation from the accepted photo selection would
@@ -1909,6 +1922,9 @@ def library_outline(tool_id: str) -> dict:
         # `outline` itself, so it's directly comparable/drawable alongside it.
         "photo_baseline": baseline.model_dump() if baseline else None,
         "diverged": _cutout_diverged(t),
+        # The "Edit curves" control graph, so reopening the editor can offer
+        # adjustable handles on an already-eased corner again.
+        "outline_curves": t.outline_curves.model_dump() if curves_valid else None,
     }
 
 
@@ -2290,6 +2306,9 @@ class LibraryUpdate(BaseModel):
     magnet_easy_release: Optional[str] = None
     outline: Optional[dict] = None  # edited Poly from the outline editor
     raw_outline: Optional[dict] = None  # matching visible silhouette on the photo
+    # The "Edit curves" control graph `outline` was baked from — physical
+    # edits only (see _apply_outline); ignored for every other edit_source.
+    outline_curves: Optional[dict] = None
     edit_source: Optional[Literal["sam", "manual", "physical"]] = None
     edit_diagnostics: Optional[dict[str, float | int]] = None
 
@@ -2301,6 +2320,7 @@ def _apply_outline(
     *,
     source: Literal["sam", "manual", "physical", "thickness"] = "manual",
     diagnostics: dict | None = None,
+    outline_curves: dict | None = None,
 ):
     """Save a new outline and keep everything in sync: re-derive the footprint,
     thumbnail, photo crop, and immutable accepted-edit history."""
@@ -2334,11 +2354,18 @@ def _apply_outline(
         outline=poly,
         diagnostics=diagnostics or {},
     ))
+    # Any edit path other than the physical-cutout editor itself (SAM, a
+    # manual pixel edit, a thickness change) has no curve graph to offer and
+    # invalidates whatever was there before — outline is about to differ
+    # from what that graph was baked from.
+    curves = CurvePoly.model_validate(outline_curves) if (source == "physical" and outline_curves) else None
     updated = t.model_copy(update={
         "raw_outline": raw_outline,
         "outline": poly,
         "outline_revision": revision,
         "outline_history": history,
+        "outline_curves": curves,
+        "outline_curves_revision": revision if curves is not None else None,
     })
     saved = library_mod.save(_refresh_tool_readiness(updated))
     _regen_photo_thumb(saved)
@@ -2353,6 +2380,7 @@ def library_edit(tool_id: str, upd: LibraryUpdate) -> dict:
     changes = upd.model_dump(exclude_unset=True)  # only fields the client sent
     outline = changes.pop("outline", None)
     raw_outline = changes.pop("raw_outline", None)
+    outline_curves = changes.pop("outline_curves", None)
     edit_source = changes.pop("edit_source", None) or "manual"
     edit_diagnostics = changes.pop("edit_diagnostics", None)
     silhouette = changes.pop("silhouette_height_mm", None)
@@ -2392,11 +2420,13 @@ def library_edit(tool_id: str, upd: LibraryUpdate) -> dict:
         physical_poly = contour_mod.Poly(**outline)
         if edit_source == "physical":
             physical_poly = _validated_physical_outline(
-                PhysicalPoly.model_validate(outline)
+                PhysicalPoly.model_validate(outline),
+                preserve_points=bool(outline_curves),
             )
         return _lib_json(_apply_outline(
             t, physical_poly, raw_outline=raw_poly,
             source=edit_source, diagnostics=edit_diagnostics,
+            outline_curves=outline_curves,
         ))
     if thickness_changed and raw_for_thickness is not None and t.calibration is not None:
         corrected = (
