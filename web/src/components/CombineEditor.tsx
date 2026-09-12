@@ -1996,7 +1996,7 @@ export function CombineEditor({
     // grabbing it, or a click meant to place a new toolshape on top of an
     // existing tool would silently select that tool instead and leave
     // placement mode stuck open.
-    if (placingToolshape) return;
+    if (placingToolshape || placingTool) return;
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedFingerHoleToolIds(new Set());
@@ -2255,8 +2255,8 @@ export function CombineEditor({
    *  exactly one tool's hole is selected. */
   function downFingerHole(toolId: string, pointIndex: 0 | 1, e: React.PointerEvent) {
     // Same reasoning as down() above — don't let an existing finger hole
-    // swallow a click meant to place a new toolshape.
-    if (placingToolshape) return;
+    // swallow a click meant to place a new tool or toolshape.
+    if (placingToolshape || placingTool) return;
     e.stopPropagation();
     arrangeRef.current?.focus();
     setSelectedIds(new Set());
@@ -3849,15 +3849,18 @@ export function CombineEditor({
                 {/* Grid-edit mode fades every tool out of the way (so it's
                     obvious the grid, not the tools, is what's being edited)
                     and disables their pointer handling so a click always
-                    lands on the grid-cell overlay below instead. Save-Segment
-                    mode disables pointer handling the same way (dragging a
-                    tool mid-selection has no obvious meaning), but keeps
-                    full opacity and recolors below instead of fading — the
-                    whole point here is seeing at a glance which tools are
-                    in, out, or straddling the selection. */}
+                    lands on the grid-cell overlay below instead. Placing a
+                    new tool/toolshape fades the same way, for the same
+                    reason: the placement ghost, not the existing layout, is
+                    what's being interacted with. Save-Segment mode disables
+                    pointer handling the same way (dragging a tool
+                    mid-selection has no obvious meaning), but keeps full
+                    opacity and recolors below instead of fading — the whole
+                    point here is seeing at a glance which tools are in,
+                    out, or straddling the selection. */}
                 <g
-                  opacity={gridEditMode ? 0.3 : 1}
-                  pointerEvents={gridEditMode || saveSegmentMode ? "none" : undefined}
+                  opacity={gridEditMode || placingToolshape || placingTool ? 0.3 : 1}
+                  pointerEvents={gridEditMode || saveSegmentMode || placingToolshape || placingTool ? "none" : undefined}
                 >
                 {/* cleared pockets — turn red once locked and past the locked footprint;
                     hovering an unselected tool shades it to hint it's clickable */}
